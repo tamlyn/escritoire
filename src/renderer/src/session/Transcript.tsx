@@ -1,10 +1,16 @@
-import { CheckIcon, ChevronRightIcon, LoaderCircleIcon, XIcon } from 'lucide-react'
-import { Streamdown } from 'streamdown'
-import { StickToBottom } from 'use-stick-to-bottom'
-import type { Item, ToolStatus, ToolView } from '../../../shared/agent'
+import { CodeBlock } from '@/components/ai-elements/code-block'
+import {
+  Conversation,
+  ConversationContent,
+  ConversationScrollButton,
+} from '@/components/ai-elements/conversation'
+import { Message, MessageContent, MessageResponse } from '@/components/ai-elements/message'
+import { Reasoning, ReasoningContent, ReasoningTrigger } from '@/components/ai-elements/reasoning'
+import { Tool, ToolContent, ToolHeader, ToolInput, ToolOutput } from '@/components/ai-elements/tool'
 import { cn } from '@/lib/utils'
+import type { Item, ToolView } from '../../../shared/agent'
 
-export function Transcript({ items }: { items: Item[] }) {
+export function Transcript({ items, working }: { items: Item[]; working: boolean }) {
   const children = new Map<string, Item[]>()
   const topLevel: Item[] = []
   for (const item of items) {
@@ -12,57 +18,67 @@ export function Transcript({ items }: { items: Item[] }) {
     if (parentId) children.set(parentId, [...(children.get(parentId) ?? []), item])
     else topLevel.push(item)
   }
+  const last = items.at(-1)
 
   return (
-    <StickToBottom className="relative min-h-0 flex-1 overflow-y-auto" initial="instant" resize="smooth">
-      <StickToBottom.Content className="mx-auto flex max-w-3xl flex-col gap-3 px-4 py-6">
+    <Conversation className="min-h-0 select-text" initial="instant">
+      <ConversationContent className="mx-auto max-w-3xl gap-4 px-4 py-6">
         {topLevel.map((item) => (
-          <ItemView key={item.id} item={item} nested={children} />
+          <ItemView
+            key={item.id}
+            item={item}
+            nested={children}
+            streaming={working && item === last}
+          />
         ))}
-      </StickToBottom.Content>
-    </StickToBottom>
+      </ConversationContent>
+      <ConversationScrollButton />
+    </Conversation>
   )
 }
 
 function ItemView({
   item,
   nested,
+  streaming,
 }: {
   item: Item
   nested: Map<string, Item[]>
+  streaming: boolean
 }) {
   switch (item.kind) {
     case 'userMessage':
       return (
-        <div className="bg-muted self-end rounded-lg px-3 py-2 whitespace-pre-wrap">{item.text}</div>
+        <Message from="user">
+          <MessageContent className="whitespace-pre-wrap">{item.text}</MessageContent>
+        </Message>
       )
     case 'agentMessage':
-      return <Markdown text={item.text} />
+      return (
+        <Message from="assistant">
+          <MessageContent>
+            <MessageResponse isAnimating={streaming}>{item.text}</MessageResponse>
+          </MessageContent>
+        </Message>
+      )
     case 'reasoning':
-      return item.text ? (
-        <Disclosure summary={<span className="text-muted-foreground">Thinking</span>}>
-          <div className="text-muted-foreground text-sm">
-            <Markdown text={item.text} />
-          </div>
-        </Disclosure>
-      ) : null
+      return (
+        <Reasoning className="mb-0" isStreaming={streaming}>
+          <ReasoningTrigger />
+          <ReasoningContent>{item.text}</ReasoningContent>
+        </Reasoning>
+      )
     case 'toolCall':
       return (
-        <Disclosure
-          summary={
-            <>
-              <StatusIcon status={item.status} />
-              <span className="truncate font-mono text-[13px]">{item.title}</span>
-            </>
-          }
-        >
-          <ToolBody view={item.view} />
-          {nested.get(item.id)?.map((child) => (
-            <div key={child.id} className="border-l pl-3">
-              <ItemView item={child} nested={nested} />
-            </div>
-          ))}
-        </Disclosure>
+        <Tool className="mb-0">
+          <ToolHeader title={item.title} status={item.status} />
+          <ToolContent>
+            <ToolBody view={item.view} failed={item.status === 'failed'} />
+            {nested.get(item.id)?.map((child) => (
+              <ItemView key={child.id} item={child} nested={nested} streaming={false} />
+            ))}
+          </ToolContent>
+        </Tool>
       )
     case 'notice':
       return (
@@ -77,96 +93,43 @@ function ItemView({
       )
     case 'unknown':
       return (
-        <Disclosure summary={<span className="text-muted-foreground">{item.label}</span>}>
-          <Pre>{JSON.stringify(item.raw, null, 2)}</Pre>
-        </Disclosure>
+        <Tool className="mb-0">
+          <ToolHeader title={item.label} status="completed" />
+          <ToolContent>
+            <ToolInput input={item.raw} />
+          </ToolContent>
+        </Tool>
       )
   }
 }
 
-function Markdown({ text }: { text: string }) {
-  return <Streamdown className="flex flex-col gap-3 leading-relaxed">{text}</Streamdown>
-}
-
-export function ToolBody({ view }: { view: ToolView }) {
+export function ToolBody({ view, failed = false }: { view: ToolView; failed?: boolean }) {
   switch (view.type) {
     case 'command':
       return (
-        <Pre>
-          <span className="text-muted-foreground">$ </span>
-          {view.command}
-          {view.output && `\n\n${view.output}`}
-        </Pre>
+        <>
+          <CodeBlock code={view.command} language="bash" />
+          <ToolOutput output={view.output} isError={failed} />
+        </>
       )
     case 'fileChange':
       return (
-        <div className="flex flex-col gap-2">
+        <>
           {view.changes.map((change) => (
-            <div key={change.path}>
-              <div className="text-muted-foreground mb-1 font-mono text-xs">{change.path}</div>
-              <Diff diff={change.diff} />
+            <div key={change.path} className="space-y-2">
+              <h4 className="text-muted-foreground font-mono text-xs">{change.path}</h4>
+              <CodeBlock code={change.diff.replace(/\n$/, '')} language="diff" />
             </div>
           ))}
-          {view.output && <Pre>{view.output}</Pre>}
-        </div>
+          <ToolOutput output={view.output} isError={failed} />
+        </>
       )
     case 'generic':
       return (
-        <div className="flex flex-col gap-2">
-          <Pre>{JSON.stringify(view.input, null, 2)}</Pre>
-          {view.output && <Pre>{view.output}</Pre>}
-        </div>
+        <>
+          <ToolInput input={view.input} />
+          <ToolOutput output={view.output} isError={failed} />
+        </>
       )
-  }
-}
-
-function Diff({ diff }: { diff: string }) {
-  return (
-    <pre className="bg-muted/50 max-h-96 overflow-auto rounded-md py-2 font-mono text-xs">
-      {diff.split('\n').map((line, index) => (
-        <div
-          // Lines can repeat, and the diff never reorders, so position is a stable key.
-          key={index}
-          className={cn(
-            'px-3',
-            line.startsWith('+') && 'bg-green-500/15',
-            line.startsWith('-') && 'bg-red-500/15',
-          )}
-        >
-          {line || ' '}
-        </div>
-      ))}
-    </pre>
-  )
-}
-
-function Pre({ children }: { children: React.ReactNode }) {
-  return (
-    <pre className="bg-muted/50 max-h-96 overflow-auto rounded-md px-3 py-2 font-mono text-xs whitespace-pre-wrap">
-      {children}
-    </pre>
-  )
-}
-
-function Disclosure({ summary, children }: { summary: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <details className="group">
-      <summary className="hover:bg-accent/60 flex cursor-default list-none items-center gap-2 rounded-md px-1 py-0.5 text-sm [&::-webkit-details-marker]:hidden">
-        <ChevronRightIcon className="text-muted-foreground size-3.5 shrink-0 transition-transform group-open:rotate-90" />
-        {summary}
-      </summary>
-      <div className="mt-2 ml-5 flex flex-col gap-2">{children}</div>
-    </details>
-  )
-}
-
-function StatusIcon({ status }: { status: ToolStatus }) {
-  switch (status) {
-    case 'running':
-      return <LoaderCircleIcon className="text-muted-foreground size-3.5 shrink-0 animate-spin" />
-    case 'completed':
-      return <CheckIcon className="size-3.5 shrink-0 text-green-600" />
-    case 'failed':
-      return <XIcon className="text-destructive size-3.5 shrink-0" />
   }
 }

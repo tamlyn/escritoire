@@ -35,7 +35,7 @@ export function SessionTab({ tab, pointer }: { tab: Tab; pointer: SessionPointer
 
   return (
     <div className="flex h-full flex-col">
-      <Transcript items={view.items} />
+      <Transcript items={view.items} working={view.status === 'working'} />
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-2 px-4 pb-4">
         <StatusLine status={view.status} error={view.error} />
         <Requests requests={view.requests} pointer={pointer} />
