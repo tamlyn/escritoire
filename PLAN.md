@@ -21,7 +21,7 @@ This document captures the direction and current decisions, not an exhaustive sp
 ## Decisions made
 
 1. **Claude is integrated through the Claude Agent SDK**, not through ACP and not by embedding the terminal UI. Reason: it is first-party, ships alongside Claude Code, and gives new Claude features on release.
-2. **Codex integration is open: ACP or a native Codex interface, whichever is simpler.** OpenAI's [Codex app-server](https://developers.openai.com/codex/app-server) is intended for rich clients and exposes conversation history, approvals and streamed events. Compare it with ACP in a small spike before choosing.
+2. **Codex is integrated through its native app-server** (`codex app-server`, JSON-RPC over stdio), not ACP. The current `codex-acp` adapter is itself a translation layer over app-server, so ACP adds a layer and a separately pinned Codex version without adding any capability. The spike (November 2026) proved history, resume, approvals, interrupt and per-thread MCP natively; see [docs/codex-app-server.md](docs/codex-app-server.md).
 3. **The IDE has its own internal agent abstraction**, with one adapter per agent. The shared core (messages, tool calls, permission requests, file changes, session state) must look and behave the same for both agents: the same tab type and the same chat component. ACP's shapes are a useful reference, but the abstraction should follow the needs of both integrations. Agent-specific extras are allowed as optional additions; they must not lower the shared core to the least capable agent.
 4. **Authentication uses the user's own existing logins** for Claude Code and Codex. The IDE must never implement its own Claude.ai login or handle subscription credentials itself, and must never misreport what it is to Anthropic's API. See "Platform notes" for how authentication differs by machine.
 5. **Everything is a tab.** Agent sessions, files, terminals, process output, git views and SQL consoles all live as normal tabs in the main area. No bottom panel for terminals.
@@ -44,7 +44,7 @@ Check current versions and APIs against documentation when adding each one.
 | Layout | `react-resizable-panels`: `Workspace` for the tab area, panel groups for the file tree sidebar | `Workspace` provides tabsets in splits, drag-to-split, a serialisable layout model per project, custom tab rendering (for session state) and per-tab mount behaviour (keep terminals mounted). It is new (added in 4.17, November 2026) and changing fast: pin an exact version and keep it behind a thin wrapper of our own |
 | Chat UI | Our own components, started from AI Elements (`ai-elements` CLI) and adapted; `streamdown` for Markdown | AI Elements is copied source, not a dependency, and is presentational, so our agent abstraction stays the only message model. Replace its AI SDK types with ours. Streamdown renders incomplete Markdown correctly while it streams. assistant-ui was rejected: still 0.x, and its runtime would add a second message model between the abstraction and the UI |
 | Claude | `@anthropic-ai/claude-agent-sdk` | Decision 1. Provides `query()` with `resume`, plus `listSessions()` and `getSessionMessages()` for finding and displaying past sessions |
-| Codex | Native `codex app-server`, or `@agentclientprotocol/sdk` talking to `@agentclientprotocol/codex-acp` | Choose after a small integration spike; decision 2 |
+| Codex | Native `codex app-server`, using the user's installed `codex` binary | Decision 2. Generate protocol types with `codex app-server generate-ts` against the installed version |
 | Agent access to the IDE | `@modelcontextprotocol/sdk`: one MCP server over HTTP, bound to 127.0.0.1, token-protected | Both agents accept MCP servers, so the supervisor and IDE context tools are identical for Claude and Codex |
 | Terminal | `@xterm/xterm`, `@xterm/addon-serialize`, `node-pty` | Interactive terminals, with serialised scrollback for restore |
 | Config editing and diffs | CodeMirror 6, `@codemirror/merge` | Syntax highlighting and diffs without Monaco's weight; a full editor is a non-goal |
@@ -192,16 +192,16 @@ Docker Compose services are not needed for v1. Don't design them out.
 
 ## Suggested approach for the builder
 
-- The tech stack is agreed except for the Codex integration choice. Propose the broad internal architecture (process boundaries, the agent abstraction, IPC between main and renderer) before building. Leave detailed edge cases to implementation and feedback.
+- The tech stack is agreed. Propose the broad internal architecture (process boundaries, the agent abstraction, IPC between main and renderer) before building. Leave detailed edge cases to implementation and feedback.
 - Build in thin vertical slices that the user can try early. Suggested priority, highest first:
   1. Window with projects and tabs.
   2. Claude session tab: start with send, streaming output, tools, questions/permissions and interrupt; then add history and resume. Explicit closing is enough initially. Then set up the RHEL build on GitHub Actions, since this is the first slice worth trying at work.
   3. File tree and config editing. `@parcel/watcher` is the first native module, so this is where the EL8 native build toolchain is proven.
   4. Terminal tabs and process supervision, with agent access to the supervisor.
   5. Git overview.
-  6. Codex using the integration selected in the spike.
+  6. Codex through app-server.
   7. SQL query files.
 - These are starting priorities, not fixed release gates. Try each increment and let actual use determine the next improvement; automatic reaping and an inbox can wait.
-- Before freezing the agent abstraction's types in slice 2, run a small Codex spike comparing native app-server and ACP. Check history loading, resume, permissions, interruption and MCP access against the shared UI's needs.
+- Before freezing the agent abstraction's types in slice 2, check them against the Codex event model in [docs/codex-app-server.md](docs/codex-app-server.md) as well as the Claude Agent SDK's.
 - Check details of the agent integrations against current documentation rather than memory; they are evolving quickly.
 - From slice 2 onwards, try each slice on RHEL 8 as well as macOS, using the GitHub-built release. Native modules and the Claude Code binary are where platform problems will show up.
