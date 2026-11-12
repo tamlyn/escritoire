@@ -15,7 +15,7 @@ jobs:
     # Build on EL8 so the app and its native modules link against RHEL 8's glibc 2.28.
     container: almalinux:8
     steps:
-      - run: dnf install -y git tar gzip which
+      - run: dnf install -y git tar gzip which libatomic
 
       - uses: actions/checkout@v4
 
