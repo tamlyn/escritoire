@@ -6,6 +6,7 @@ import { completeDirectory } from './paths'
 import { ProjectStore } from './project-store'
 import { SessionManager } from './session-manager'
 import { SessionStore } from './session-store'
+import { loadShellEnv } from './shell-env'
 
 function createApi(projects: ProjectStore, sessions: SessionManager, sessionStore: SessionStore): Api {
   return {
@@ -78,12 +79,17 @@ function createWindow(): void {
 
 app.on('window-all-closed', () => app.quit())
 
+// Started before `ready` so the shell runs while Electron starts up. Agents and
+// their settings lookups read the environment, so the API waits for it.
+const shellEnv = loadShellEnv()
+
 // Not top-level await: Electron doesn't emit `ready` until an ES module main
 // script has finished evaluating, so awaiting it here would deadlock.
 void app.whenReady().then(async () => {
   const dataDir = app.getPath('userData')
   const projects = await ProjectStore.load(dataDir)
   const sessionStore = new SessionStore(dataDir)
+  await shellEnv
   const sessions = new SessionManager({
     adapters: { claude: claudeAdapter },
     store: sessionStore,

@@ -14,6 +14,7 @@ Agentic IDE built with Electron. `PLAN.md` holds the direction, decisions and sl
 
 - Only packages the main process loads at runtime belong in `dependencies`; everything the renderer uses is bundled by Vite and goes in `devDependencies`, so it isn't shipped twice.
 - `asar` is off so bundled binaries (Claude Code, later native modules) can be executed and loaded.
+- At startup main adopts the environment of an interactive login shell (`src/main/shell-env.ts`), so an app launched from Finder or a desktop launcher gives agents the same PATH and variables as a terminal. The IPC API isn't registered until that has loaded.
 - `ESCRITOIRE_CLAUDE_CODE_PATH` overrides the Claude Code binary the SDK bundles, for pinning a known-good version on RHEL 8.
 
 ## Structure
