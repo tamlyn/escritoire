@@ -43,6 +43,13 @@ jobs:
       - name: Check the packaged file watcher loads on EL8
         run: node -e "require('./dist/linux-unpacked/resources/app/node_modules/@parcel/watcher')"
 
+      - name: Check the packaged pty spawns a shell on EL8
+        run: >-
+          node -e "const pty = require('./dist/linux-unpacked/resources/app/node_modules/node-pty');
+          const p = pty.spawn('/bin/sh', ['-c', 'echo pty-ok'], {});
+          let out = ''; p.onData((d) => (out += d));
+          p.onExit(() => process.exit(out.includes('pty-ok') ? 0 : 1))"
+
       - uses: actions/upload-artifact@v4
         with:
           name: escritoire-linux-x64

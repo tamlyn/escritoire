@@ -16,7 +16,7 @@ import {
   usePanelRef,
   useWorkspaceRef,
 } from 'react-resizable-panels'
-import type { SessionPointer, SessionSummary } from '../../shared/agent'
+import type { SessionSummary } from '../../shared/agent'
 import type { Project } from '../../shared/api'
 import { api } from './api'
 import { FileTree } from './FileTree'
@@ -38,7 +38,7 @@ const emptyModel: WorkspaceModelInput<TabData> = {
 export function ProjectWorkspace({ project }: { project: Project }) {
   const [model, setModel] = useState<WorkspaceModelInput<TabData> | null>(null)
   const workspaceRef = useWorkspaceRef<TabData>()
-  const openSessions = useRef(new Map<string, SessionPointer>())
+  const openTabs = useRef(new Map<string, TabData>())
   const sidebarRef = usePanelRef()
   // The sidebar's width is shared by all projects.
   const sidebarLayout = useDefaultLayout({ id: 'sidebar', storage: localStorage })
@@ -48,7 +48,7 @@ export function ProjectWorkspace({ project }: { project: Project }) {
     void api.loadLayout(project.id).then((saved) => {
       if (cancelled) return
       const normalized = normalizeWorkspaceModel<TabData>(saved)
-      openSessions.current = normalized ? sessionsIn(normalized) : new Map()
+      openTabs.current = normalized ? tabsIn(normalized) : new Map()
       setModel(normalized ?? emptyModel)
     })
     return () => {
@@ -93,13 +93,13 @@ export function ProjectWorkspace({ project }: { project: Project }) {
             workspaceRef={workspaceRef}
             onModelChanged={(changed) => {
               void api.saveLayout(project.id, changed)
-              // Closing a session's tab stops its agent. Unmounting isn't the signal,
+              // Closing a tab releases what it runs. Unmounting isn't the signal,
               // since switching projects unmounts every tab.
-              const sessions = sessionsIn(changed)
-              for (const [id, pointer] of openSessions.current) {
-                if (!sessions.has(id)) void api.closeSession(pointer)
+              const tabs = tabsIn(changed)
+              for (const [id, data] of openTabs.current) {
+                if (!tabs.has(id)) release(project.id, id, data)
               }
-              openSessions.current = sessions
+              openTabs.current = tabs
             }}
             renderTabContent={renderTabContent}
             renderTab={renderTab}
@@ -114,22 +114,20 @@ export function ProjectWorkspace({ project }: { project: Project }) {
   )
 }
 
-function sessionsIn(model: WorkspaceModel<TabData>): Map<string, SessionPointer> {
-  const sessions = new Map<string, SessionPointer>()
+function tabsIn(model: WorkspaceModel<TabData>): Map<string, TabData> {
+  const tabs = new Map<string, TabData>()
   const visit = (node: WorkspaceNode<TabData>) => {
-    if (node.type === 'split') {
-      node.children.forEach(visit)
-      return
-    }
-    for (const { data } of node.tabs) {
-      if (data.kind === 'session') {
-        sessions.set(data.agentSessionId, { agent: data.agent, agentSessionId: data.agentSessionId })
-      }
-    }
+    if (node.type === 'split') node.children.forEach(visit)
+    else for (const tab of node.tabs) tabs.set(tab.id, tab.data)
   }
   visit(model.root)
   model.floating?.forEach(visit)
-  return sessions
+  return tabs
+}
+
+function release(projectId: string, tabId: string, data: TabData): void {
+  if (data.kind === 'session') void api.closeSession({ agent: data.agent, agentSessionId: data.agentSessionId })
+  else if (data.kind === 'terminal') void api.closeTerminal(projectId, tabId)
 }
 
 const classNames: WorkspaceClassNames = {

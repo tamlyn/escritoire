@@ -21,6 +21,7 @@ import type {
   SessionSummary,
 } from './agent'
 import type { DirectoryEntry, FileContent, FilesChanged, WriteResult } from './files'
+import type { TerminalOutput, TerminalSize, TerminalSnapshot } from './terminal'
 
 /**
  * Everything the renderer can ask of the main process. Each method is one
@@ -60,6 +61,14 @@ export type Api = {
   readFile(projectId: string, path: string): Promise<FileContent>
   /** Overwrites the file; `missing` if it no longer exists, since the IDE never creates files. */
   writeFile(projectId: string, path: string, text: string): Promise<WriteResult>
+
+  /** Starts the terminal's shell if needed and sends its `terminalOutput` until detached. */
+  attachTerminal(projectId: string, terminalId: string, size: TerminalSize): Promise<TerminalSnapshot>
+  detachTerminal(terminalId: string): Promise<void>
+  writeTerminal(terminalId: string, data: string): Promise<void>
+  resizeTerminal(terminalId: string, size: TerminalSize): Promise<void>
+  /** Stops the shell and discards the terminal's saved scrollback. */
+  closeTerminal(projectId: string, terminalId: string): Promise<void>
 }
 
 // A record rather than an array so the compiler rejects a missing or misspelt method.
@@ -86,6 +95,11 @@ const apiMethodSet: Record<keyof Api, true> = {
   listDirectory: true,
   readFile: true,
   writeFile: true,
+  attachTerminal: true,
+  detachTerminal: true,
+  writeTerminal: true,
+  resizeTerminal: true,
+  closeTerminal: true,
 }
 
 export const apiMethods = Object.keys(apiMethodSet) as (keyof Api)[]
@@ -96,12 +110,14 @@ export type Events = {
   sessionEvent: SessionEvent
   /** Only for the active project, which is the only one watched. */
   filesChanged: FilesChanged
+  terminalOutput: TerminalOutput
 }
 
 const eventNameSet: Record<keyof Events, true> = {
   sessionsChanged: true,
   sessionEvent: true,
   filesChanged: true,
+  terminalOutput: true,
 }
 
 export const eventNames = Object.keys(eventNameSet) as (keyof Events)[]

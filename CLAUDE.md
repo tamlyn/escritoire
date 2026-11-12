@@ -15,7 +15,7 @@ Agentic IDE built with Electron. `PLAN.md` holds the direction, decisions and sl
 - Only packages the main process loads at runtime belong in `dependencies`; everything the renderer uses is bundled by Vite and goes in `devDependencies`, so it isn't shipped twice.
 - `asar` is off so bundled binaries (Claude Code, later native modules) can be executed and loaded.
 - At startup main adopts the environment of an interactive login shell (`src/main/shell-env.ts`), so an app launched from Finder or a desktop launcher gives agents the same PATH and variables as a terminal. The IPC API isn't registered until that has loaded.
-- `npmRebuild` is off: `@parcel/watcher` ships N-API prebuilds as per-platform packages (its install script is denied in `pnpm-workspace.yaml`). CI checks the packaged copy loads on EL8.
+- `npmRebuild` is off: the native modules ship N-API prebuilds, so nothing is compiled (their install scripts are denied in `pnpm-workspace.yaml`). `@parcel/watcher` has per-platform packages; `node-pty` is pinned to a 1.2 beta because 1.1.0 lacks Linux prebuilds and its macOS `spawn-helper` isn't executable. CI checks both load on EL8.
 - `ESCRITOIRE_CLAUDE_CODE_PATH` overrides the Claude Code binary the SDK bundles, for pinning a known-good version on RHEL 8.
 
 ## Structure
@@ -24,6 +24,7 @@ Agentic IDE built with Electron. `PLAN.md` holds the direction, decisions and sl
 - `src/preload`: exposes `window.api` and nothing else. Must stay CommonJS (sandboxed preload).
 - `src/main/agents`: one adapter per agent, translating its stream into the shared session model in `src/shared/agent.ts`. Read `docs/agent-abstraction.md` before changing either.
 - `src/main/project-files.ts`: file listing, reading and writing, confined to the project, plus one `@parcel/watcher` subscription on the active project. It drops events for the IDE's own writes (by comparing content), so `filesChanged` means someone else, usually an agent, changed the file; the renderer marks those files for a while.
+- `src/main/terminals.ts`: one shell per terminal tab, keyed by tab id. Main keeps each screen in a headless xterm, so tabs can unmount and redraw from a snapshot, and saves scrollback and working directory when a project closes or the app quits.
 - `src/shared/api.ts`: the renderer ↔ main contract. Add a method to the `Api` type and the method record, implement it in `src/main/index.ts`, and it becomes `window.api.<method>` over `ipcRenderer.invoke`. Pushes from main go the other way through the `Events` map: main calls `send(name, payload)`, the renderer `subscribe(name, listener)`.
 - `src/renderer`: React UI. `ProjectWorkspace` is our wrapper around `react-resizable-panels`' `Workspace`: render `Workspace` and its layout model only there. Tab content may use the library's `useParent*` hooks. `components/ui` is shadcn source we own. `components/ai-elements` is AI Elements source adapted to our session model: it must not import the `ai` package. Add further components selectively (AI Elements is moving into the shadcn registry) and fix their imports the same way.
 

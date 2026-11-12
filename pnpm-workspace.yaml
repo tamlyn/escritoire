@@ -1,5 +1,7 @@
 allowBuilds:
   electron: true
   electron-winstaller: false
-  # Only compiles when asked to build from source; the prebuilt binaries are platform packages.
+  # Only compile when asked to build from source; the prebuilt binaries are platform packages.
   '@parcel/watcher': false
+  # Ships N-API prebuilds for macOS and Linux (glibc 2.28); the script only checks for them.
+  node-pty: false

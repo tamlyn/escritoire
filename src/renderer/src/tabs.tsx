@@ -4,6 +4,7 @@ import { baseName } from '../../shared/files'
 import { FileTab } from './file/FileTab'
 import { NewTabPage } from './NewTabPage'
 import { SessionTab } from './session/SessionTab'
+import { TerminalTab } from './terminal/TerminalTab'
 
 /**
  * What a tab shows. Saved in the project's layout, so must stay JSON-serialisable
@@ -14,6 +15,8 @@ export type TabData =
   | ({ kind: 'session' } & SessionPointer)
   /** `scrollPos` is the document position of the top line. */
   | { kind: 'file'; path: string; scrollPos?: number }
+  /** The tab's id identifies its shell in main. */
+  | { kind: 'terminal' }
 
 export type Tab = TabNode<TabData>
 
@@ -35,6 +38,10 @@ export function createFileTab(path: string): Tab {
   return { id: `file:${path}`, title: baseName(path), data: { kind: 'file', path } }
 }
 
+export function createTerminalTab(): Tab {
+  return { id: `terminal:${crypto.randomUUID()}`, title: 'Terminal', data: { kind: 'terminal' } }
+}
+
 export function TabContent({ tab }: { tab: Tab }) {
   const data = tab.data
   switch (data.kind) {
@@ -44,6 +51,8 @@ export function TabContent({ tab }: { tab: Tab }) {
       return <SessionTab tab={tab} pointer={{ agent: data.agent, agentSessionId: data.agentSessionId }} />
     case 'file':
       return <FileTab tab={tab} path={data.path} scrollPos={data.scrollPos} />
+    case 'terminal':
+      return <TerminalTab tab={tab} />
     default:
       return <Centred>This version can't show “{(data as { kind: string }).kind}” tabs.</Centred>
   }

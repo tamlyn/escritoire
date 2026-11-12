@@ -8,8 +8,9 @@ files:
 # real files to be executed or loaded, so skip the archive rather than unpacking
 # each one.
 asar: false
-# Native modules so far ship N-API prebuilds, which load in any Electron. Turn
-# this on when one (node-pty) needs compiling against Electron's ABI.
+# The native modules (@parcel/watcher, node-pty) ship N-API prebuilds, which
+# load in any Electron. Turn this on if one ever needs compiling against
+# Electron's ABI.
 npmRebuild: false
 mac:
   target: dir

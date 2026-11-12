@@ -8,26 +8,29 @@ import { ProjectStore } from './project-store'
 import { SessionManager } from './session-manager'
 import { SessionStore } from './session-store'
 import { loadShellEnv } from './shell-env'
+import { Terminals } from './terminals'
 
 type Services = {
   projects: ProjectStore
   sessions: SessionManager
   sessionStore: SessionStore
   files: ProjectFiles
+  terminals: Terminals
 }
 
-function createApi({ projects, sessions, sessionStore, files }: Services): Api {
+function createApi({ projects, sessions, sessionStore, files, terminals }: Services): Api {
   return {
     getState: async () => projects.getState(),
     openProject: (path) => projects.openProject(path),
     activateProject: (id) => projects.activateProject(id),
     closeProject: async (id) => {
       sessions.closeProject(id)
+      await terminals.closeProject(id)
       return projects.closeProject(id)
     },
     removeProject: async (id) => {
       sessions.closeProject(id)
-      await sessionStore.deleteProject(id)
+      await Promise.all([sessionStore.deleteProject(id), terminals.deleteProject(id)])
       return projects.removeProject(id)
     },
     loadLayout: (projectId) => projects.loadLayout(projectId),
@@ -47,6 +50,11 @@ function createApi({ projects, sessions, sessionStore, files }: Services): Api {
     listDirectory: (projectId, path) => files.listDirectory(projectId, path),
     readFile: (projectId, path) => files.readFile(projectId, path),
     writeFile: (projectId, path, text) => files.writeFile(projectId, path, text),
+    attachTerminal: (projectId, terminalId, size) => terminals.attach(projectId, terminalId, size),
+    detachTerminal: async (terminalId) => terminals.detach(terminalId),
+    writeTerminal: async (terminalId, data) => terminals.write(terminalId, data),
+    resizeTerminal: async (terminalId, size) => terminals.resize(terminalId, size),
+    closeTerminal: (projectId, terminalId) => terminals.close(projectId, terminalId),
   }
 }
 
@@ -111,12 +119,26 @@ void app.whenReady().then(async () => {
     projectPath: (projectId) => projects.getProject(projectId).path,
     send: (payload) => send('filesChanged', payload),
   })
+  const terminals = new Terminals({
+    dataDir,
+    projectPath: (projectId) => projects.getProject(projectId).path,
+    send: (output) => send('terminalOutput', output),
+  })
   // Only the active project is watched.
   projects.onActiveChanged((projectId) => files.watch(projectId))
-  app.on('before-quit', () => {
+
+  // Quitting waits while terminals save their scrollback.
+  let shutDown = false
+  app.on('before-quit', (event) => {
+    if (shutDown) return
+    event.preventDefault()
     sessions.closeAll()
-    void files.unwatch()
+    void Promise.allSettled([files.unwatch(), terminals.closeAll()]).then((results) => {
+      for (const result of results) if (result.status === 'rejected') console.error(result.reason)
+      shutDown = true
+      app.quit()
+    })
   })
-  registerApi(createApi({ projects, sessions, sessionStore, files }))
+  registerApi(createApi({ projects, sessions, sessionStore, files, terminals }))
   createWindow()
 })
