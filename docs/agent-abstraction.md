@@ -23,7 +23,7 @@ A session is a **transcript of items**, a list of **pending requests** and a **s
 
 ## Claude adapter
 
-- One long-lived `query()` per session with an `AsyncIterable` prompt; `send` feeds it, and messages sent during a turn queue. The run is started by the first message, not by opening the tab.
+- One long-lived `query()` per session with an `AsyncIterable` prompt; `send` feeds it, and messages sent during a turn queue. The run is started by the first message, not by opening the tab. Claude Code may pick a queued message up after the current turn's result, so any activity after a result sets `working` again.
 - Behaves like ordinary Claude Code: the `claude_code` system prompt preset and all settings sources, so the user's permission mode, hooks and MCP servers apply.
 - **Item ids.** The SDK delivers each content block of an API message as its own message, in order, so a block's id is the API message id plus its position. Streamed deltas carry the same position as their block index, so the final message replaces the streamed item. Verified live.
 - **History** comes from `getSessionMessages`, which has the same message shapes but no structured tool results, so tool views are built from the `tool_use` input and the text result, which both paths have. Verified live: history, live output and resume agree.
@@ -32,11 +32,11 @@ A session is a **transcript of items**, a list of **pending requests** and a **s
 
 ## Sessions in main
 
-- **Identity is the agent's.** Claude's `query()` accepts a `sessionId`, so the IDE generates it when the tab is created; Codex's `thread/start` returns `thread.id` immediately. Everything is keyed by `(agent, agentSessionId)`. An id with no transcript yet starts with `sessionId` rather than `resume`.
+- **Identity is the agent's.** Claude's `query()` accepts a `sessionId`, so the IDE generates it when the tab is created; Codex's `thread/start` returns `thread.id` immediately. Everything is keyed by `(agent, agentSessionId)`. Each run asks Claude Code for the transcript first and resumes only if there is one, since a first run can fail before writing it; otherwise it starts with `sessionId`.
 - **A small session store, not a transcript store.** `sessions/<projectId>.json` holds what the agents can't give back: title, draft, `lastSeenAt` and `lastTurnEndedAt`. A session tab's layout data is just the pointer. Per-session settings (model, permission mode) join the store when the UI can change them.
 - **Titles.** A new session takes its first message's first line. A session started elsewhere keeps the title its agent gave it.
 - **Past sessions** are the agent's own list for the project, including sessions started outside the IDE.
-- **Lifecycle.** Opening a session tab loads history. Closing the tab or project stops the run; the session stays in the agent's list for resuming. A crashed run sets `errored`, and the next message starts a fresh run that resumes. Session tabs have the id `session:<agentSessionId>`, so opening one that is already open selects it.
+- **Lifecycle.** Opening a session tab loads history. Closing the tab or project stops the run; the session stays in the agent's list for resuming. A run that fails or whose Claude Code process exits denies its pending requests, sets `errored` and ends itself; the next message starts a fresh run. A closed run emits nothing. Session tabs have the id `session:<agentSessionId>`, so opening one that is already open selects it.
 - **Attention** is derived in main, so it works for background projects: `waiting` if a request is pending, `unread` if a turn ended after the session was last seen, which survives restarts. The renderer reports when a session is visible (tab shown and window focused), which marks it seen.
 
 ## Main → renderer events

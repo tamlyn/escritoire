@@ -21,8 +21,8 @@ type Session = {
   record: SessionRecord
   view: SessionView
   seq: number
-  /** Whether the agent has a transcript to resume rather than starting fresh. */
-  hasHistory: boolean
+  /** Whether the agent had a transcript when the session was loaded. */
+  hadHistory: boolean
   run?: AgentRun
   /** The renderer has the session open and wants its events. */
   subscribed: boolean
@@ -105,14 +105,11 @@ export class SessionManager {
   sendMessage(pointer: SessionPointer, text: string): void {
     const session = this.get(pointer)
     // Sessions resumed from elsewhere keep the title the agent gave them.
-    if (!session.record.title && !session.hasHistory) session.record.title = titleFrom(text)
-    if (!session.run) {
-      session.run = this.deps.adapters[pointer.agent].start(
-        { cwd: session.cwd, agentSessionId: pointer.agentSessionId, resume: session.hasHistory },
-        (event) => this.apply(session, event),
-      )
-      session.hasHistory = true
-    }
+    if (!session.record.title && !session.hadHistory) session.record.title = titleFrom(text)
+    session.run ??= this.deps.adapters[pointer.agent].start(
+      { cwd: session.cwd, agentSessionId: pointer.agentSessionId },
+      (event) => this.apply(session, event),
+    )
     session.record.draft = ''
     this.save(session)
     session.run.send(text)
@@ -175,7 +172,7 @@ export class SessionManager {
         if (session.visible) session.record.lastSeenAt = session.record.lastTurnEndedAt
         this.save(session)
       }
-      // A failed run can't be reused; the next message starts a new one that resumes.
+      // A failed run has ended itself; the next message starts a new one.
       if (event.status === 'errored') session.run = undefined
     }
     if (event.type !== 'itemUpserted' && event.type !== 'textAppended') this.broadcastSummaries()
@@ -221,7 +218,7 @@ export class SessionManager {
       record,
       view,
       seq: 0,
-      hasHistory: view.items.some((item) => item.kind !== 'notice'),
+      hadHistory: view.items.some((item) => item.kind !== 'notice'),
       subscribed: false,
       visible: false,
     }

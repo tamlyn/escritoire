@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, ipcMain } from 'electron'
-import { type Api, type AppState, apiMethods, type Events } from '../shared/api'
+import { type Api, apiMethods, type Events } from '../shared/api'
 import { claudeAdapter } from './agents/claude'
 import { completeDirectory } from './paths'
 import { ProjectFiles } from './project-files'
@@ -17,25 +17,18 @@ type Services = {
 }
 
 function createApi({ projects, sessions, sessionStore, files }: Services): Api {
-  // Only the active project is watched, so follow it whenever it may change.
-  const watchActive = async (state: Promise<AppState>) => {
-    const changed = await state
-    files.watch(changed.activeProjectId)
-    return changed
-  }
-
   return {
     getState: async () => projects.getState(),
-    openProject: (path) => watchActive(projects.openProject(path)),
-    activateProject: (id) => watchActive(projects.activateProject(id)),
+    openProject: (path) => projects.openProject(path),
+    activateProject: (id) => projects.activateProject(id),
     closeProject: async (id) => {
       sessions.closeProject(id)
-      return watchActive(projects.closeProject(id))
+      return projects.closeProject(id)
     },
     removeProject: async (id) => {
       sessions.closeProject(id)
       await sessionStore.deleteProject(id)
-      return watchActive(projects.removeProject(id))
+      return projects.removeProject(id)
     },
     loadLayout: (projectId) => projects.loadLayout(projectId),
     saveLayout: (projectId, layout) => projects.saveLayout(projectId, layout),
@@ -118,7 +111,8 @@ void app.whenReady().then(async () => {
     projectPath: (projectId) => projects.getProject(projectId).path,
     send: (payload) => send('filesChanged', payload),
   })
-  files.watch(projects.getState().activeProjectId)
+  // Only the active project is watched.
+  projects.onActiveChanged((projectId) => files.watch(projectId))
   app.on('before-quit', () => {
     sessions.closeAll()
     void files.unwatch()

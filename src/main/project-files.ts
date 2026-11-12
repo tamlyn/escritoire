@@ -1,12 +1,14 @@
-import { readdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { open, readdir, readFile, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import watcher, { type AsyncSubscription } from '@parcel/watcher'
-import type { DirectoryEntry, FileContent, FilesChanged } from '../shared/files'
+import type { DirectoryEntry, FileContent, FilesChanged, WriteResult } from '../shared/files'
 
 const hiddenNames = new Set(['.git', '.DS_Store'])
 // node_modules can hold tens of thousands of directories, which on Linux means
-// as many inotify watches. The tree still lists it; it just doesn't refresh live.
-const unwatchedNames = ['.git', 'node_modules']
+// as many inotify watches. The tree still lists them; they just don't refresh
+// live. Globs, because the watcher resolves plain names against the root only.
+const unwatched = ['**/.git/**', '**/node_modules/**']
+const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
 const maxFileSize = 5 * 1024 * 1024
 
 type Options = {
@@ -53,19 +55,43 @@ export class ProjectFiles {
       const buffer = await readFile(file)
       // Git's heuristic: a NUL byte near the start means binary.
       if (buffer.subarray(0, 8000).includes(0)) return { kind: 'binary' }
-      return { kind: 'text', text: buffer.toString('utf8') }
+      try {
+        // Other encodings would be corrupted by saving them back as UTF-8.
+        return { kind: 'text', text: utf8.decode(buffer) }
+      } catch {
+        return { kind: 'notUtf8' }
+      }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { kind: 'missing' }
       throw error
     }
   }
 
-  async writeFile(projectId: string, path: string, text: string): Promise<void> {
+  /**
+   * Overwrites an existing file. Never creates one, so a pending save can't
+   * bring back a file an agent has just deleted.
+   */
+  async writeFile(projectId: string, path: string, text: string): Promise<WriteResult> {
     const file = this.resolve(projectId, path)
-    this.ownWrites.set(file, text)
-    // In place rather than via a rename, so hard links, permissions and other
-    // programs' watches on the file survive.
-    await writeFile(file, text)
+    let handle
+    try {
+      // In place rather than via a rename, so hard links, permissions and other
+      // programs' watches on the file survive.
+      handle = await open(file, 'r+')
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'missing'
+      throw error
+    }
+    try {
+      // Keyed by the real path, which is what the watcher reports.
+      this.ownWrites.set(await realpath(file), text)
+      const data = Buffer.from(text)
+      await handle.write(data, 0, data.length, 0)
+      await handle.truncate(data.length)
+    } finally {
+      await handle.close()
+    }
+    return 'saved'
   }
 
   /** Watches the given project, replacing any previous watch. */
@@ -88,7 +114,7 @@ export class ProjectFiles {
           const paths = others.filter((path) => path !== null).map((path) => toProjectPath(root, path))
           if (paths.length > 0) this.options.send({ projectId, paths })
         },
-        { ignore: unwatchedNames },
+        { ignore: unwatched },
       )
       .catch((error: unknown) => {
         console.error(`Could not watch ${root}:`, error)
@@ -107,10 +133,10 @@ export class ProjectFiles {
   private async isOwnWrite(file: string): Promise<boolean> {
     const written = this.ownWrites.get(file)
     if (written === undefined) return false
+    // Kept after a mismatch: the watcher can report a write part-way through,
+    // and the finished write must still be recognised.
     const current = await readFile(file, 'utf8').catch(() => undefined)
-    if (current === written) return true
-    this.ownWrites.delete(file)
-    return false
+    return current === written
   }
 
   private resolve(projectId: string, path: string): string {

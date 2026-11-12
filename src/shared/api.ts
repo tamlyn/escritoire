@@ -20,7 +20,7 @@ import type {
   SessionPointer,
   SessionSummary,
 } from './agent'
-import type { DirectoryEntry, FileContent, FilesChanged } from './files'
+import type { DirectoryEntry, FileContent, FilesChanged, WriteResult } from './files'
 
 /**
  * Everything the renderer can ask of the main process. Each method is one
@@ -58,7 +58,8 @@ export type Api = {
 
   listDirectory(projectId: string, path: string): Promise<DirectoryEntry[]>
   readFile(projectId: string, path: string): Promise<FileContent>
-  writeFile(projectId: string, path: string, text: string): Promise<void>
+  /** Overwrites the file; `missing` if it no longer exists, since the IDE never creates files. */
+  writeFile(projectId: string, path: string, text: string): Promise<WriteResult>
 }
 
 // A record rather than an array so the compiler rejects a missing or misspelt method.

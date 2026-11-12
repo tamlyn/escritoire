@@ -1,6 +1,6 @@
 import { LanguageDescription, syntaxHighlighting } from '@codemirror/language'
 import { languages } from '@codemirror/language-data'
-import { type ChangeSpec, Compartment, type Extension } from '@codemirror/state'
+import type { Compartment, EditorState, Extension } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { classHighlighter } from '@lezer/highlight'
 
@@ -40,10 +40,19 @@ export function loadLanguage(view: EditorView, compartment: Compartment, fileNam
 }
 
 /**
- * The smallest single change that turns one text into the other, so a file
- * edited elsewhere updates without moving the cursor or scroll position.
+ * The smallest single change that turns the document into the text on disk,
+ * so a file edited elsewhere updates without moving the cursor or scroll
+ * position. Document offsets count each line break as one character, so the
+ * comparison is made with \n line breaks.
  */
-export function minimalChange(from: string, to: string): ChangeSpec {
+export function changeFromDisk(state: EditorState, text: string): { from: number; to: number; insert: string } {
+  const lineBreak = state.lineBreak
+  const crlf = lineBreak !== '\n'
+  const change = minimalChange(state.doc.toString(), crlf ? text.replaceAll(lineBreak, '\n') : text)
+  return crlf ? { ...change, insert: change.insert.replaceAll('\n', lineBreak) } : change
+}
+
+export function minimalChange(from: string, to: string): { from: number; to: number; insert: string } {
   let start = 0
   const shorter = Math.min(from.length, to.length)
   while (start < shorter && from[start] === to[start]) start++

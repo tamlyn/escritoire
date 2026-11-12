@@ -7,6 +7,8 @@ const recentForMs = 10_000
 type Recent = { projectId: string; paths: ReadonlySet<string> }
 
 let recent: Recent = { projectId: '', paths: new Set() }
+// When each path's mark lapses, so a path changed again keeps its mark.
+const expiries = new Map<string, number>()
 const recentListeners = new Set<() => void>()
 
 function setRecent(next: Recent) {
@@ -17,13 +19,15 @@ function setRecent(next: Recent) {
 // Changes reported by main are made by something other than the IDE, usually
 // an agent, so they're marked for a while to make them visible.
 subscribe('filesChanged', ({ projectId, paths }) => {
-  const kept = recent.projectId === projectId ? recent.paths : []
-  setRecent({ projectId, paths: new Set([...kept, ...paths]) })
+  if (recent.projectId !== projectId) expiries.clear()
+  const expiresAt = Date.now() + recentForMs
+  for (const path of paths) expiries.set(path, expiresAt)
+  setRecent({ projectId, paths: new Set(expiries.keys()) })
   setTimeout(() => {
     if (recent.projectId !== projectId) return
-    const remaining = new Set(recent.paths)
-    for (const path of paths) remaining.delete(path)
-    setRecent({ projectId, paths: remaining })
+    const now = Date.now()
+    for (const [path, expiry] of expiries) if (expiry <= now) expiries.delete(path)
+    setRecent({ projectId, paths: new Set(expiries.keys()) })
   }, recentForMs)
 })
 

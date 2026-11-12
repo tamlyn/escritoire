@@ -55,40 +55,30 @@ type Pending = {
   resolve: (result: PermissionResult) => void
 }
 
+/**
+ * One Claude Code process for a session. It ends for good when closed, when it
+ * fails or when Claude Code exits; the session starts a new run to continue.
+ */
 class ClaudeRun implements AgentRun {
   private readonly input = new AsyncQueue<SDKUserMessage>()
-  private readonly query: Query
+  private query: Query | undefined
   private readonly transcript: ClaudeTranscript
   private readonly pending = new Map<string, Pending>()
   private interrupted = false
+  private working = false
+  private ended = false
 
   constructor(
     private readonly options: StartOptions,
-    private readonly emit: (event: AgentEvent) => void,
+    private readonly output: (event: AgentEvent) => void,
   ) {
     this.transcript = new ClaudeTranscript(options.cwd)
-    this.query = query({
-      prompt: this.input,
-      options: {
-        cwd: options.cwd,
-        ...(options.resume
-          ? { resume: options.agentSessionId }
-          : { sessionId: options.agentSessionId }),
-        includePartialMessages: true,
-        // Behave like ordinary Claude Code: its system prompt, CLAUDE.md and the user's settings.
-        systemPrompt: { type: 'preset', preset: 'claude_code' },
-        settingSources: ['user', 'project', 'local'],
-        canUseTool: this.canUseTool,
-        // Lets a machine pin a known-good Claude Code binary instead of the one the SDK bundles.
-        pathToClaudeCodeExecutable: process.env.ESCRITOIRE_CLAUDE_CODE_PATH || undefined,
-      },
-    })
-    void this.consume()
+    void this.run()
   }
 
   send(text: string): void {
     this.emit({ type: 'itemUpserted', item: { kind: 'userMessage', id: randomUUID(), text } })
-    this.emit({ type: 'statusChanged', status: 'working' })
+    this.setWorking(true)
     this.input.push({
       type: 'user',
       message: { role: 'user', content: text },
@@ -98,7 +88,7 @@ class ClaudeRun implements AgentRun {
 
   async interrupt(): Promise<void> {
     this.interrupted = true
-    await this.query.interrupt()
+    await this.query?.interrupt()
   }
 
   respond(requestId: string, response: RequestResponse): void {
@@ -108,22 +98,71 @@ class ClaudeRun implements AgentRun {
   }
 
   close(): void {
+    // Closed by the session, which no longer wants its events.
+    this.end()
+  }
+
+  private async run(): Promise<void> {
+    try {
+      // Resume only once Claude Code has a transcript: a first run can fail
+      // before writing one, and resuming an id it has never seen fails forever.
+      const history = await getSessionMessages(this.options.agentSessionId, { dir: this.options.cwd }).catch(() => [])
+      if (this.ended) return
+      this.query = query({
+        prompt: this.input,
+        options: {
+          cwd: this.options.cwd,
+          ...(history.length > 0
+            ? { resume: this.options.agentSessionId }
+            : { sessionId: this.options.agentSessionId }),
+          includePartialMessages: true,
+          // Behave like ordinary Claude Code: its system prompt, CLAUDE.md and the user's settings.
+          systemPrompt: { type: 'preset', preset: 'claude_code' },
+          settingSources: ['user', 'project', 'local'],
+          canUseTool: this.canUseTool,
+          // Lets a machine pin a known-good Claude Code binary instead of the one the SDK bundles.
+          pathToClaudeCodeExecutable: process.env.ESCRITOIRE_CLAUDE_CODE_PATH || undefined,
+        },
+      })
+      for await (const message of this.query) {
+        // A message queued during a turn becomes a turn of its own after the result.
+        if (activityTypes.has(message.type)) this.setWorking(true)
+        for (const event of this.transcript.map(message)) this.emit(event)
+        if (message.type === 'result') this.endTurn(message)
+      }
+      this.fail('Claude Code exited.')
+    } catch (error) {
+      this.fail(errorMessage(error))
+    }
+  }
+
+  private fail(error: string): void {
+    if (this.ended) return
+    for (const [id, pending] of this.pending) {
+      this.settle(id, pending, { behavior: 'deny', message: 'Claude Code stopped.' })
+    }
+    this.emit({ type: 'statusChanged', status: 'errored', error })
+    this.end()
+  }
+
+  private end(): void {
+    if (this.ended) return
+    this.ended = true
     for (const [id, pending] of this.pending) {
       this.settle(id, pending, { behavior: 'deny', message: 'The session was closed.' })
     }
     this.input.end()
-    this.query.close()
+    this.query?.close()
   }
 
-  private async consume(): Promise<void> {
-    try {
-      for await (const message of this.query) {
-        for (const event of this.transcript.map(message)) this.emit(event)
-        if (message.type === 'result') this.endTurn(message)
-      }
-    } catch (error) {
-      this.emit({ type: 'statusChanged', status: 'errored', error: errorMessage(error) })
-    }
+  private emit(event: AgentEvent): void {
+    if (!this.ended) this.output(event)
+  }
+
+  private setWorking(working: boolean): void {
+    if (this.working === working) return
+    this.working = working
+    this.emit({ type: 'statusChanged', status: working ? 'working' : 'idle' })
   }
 
   private endTurn(result: Extract<SDKMessage, { type: 'result' }>): void {
@@ -136,7 +175,7 @@ class ClaudeRun implements AgentRun {
       }
     }
     this.interrupted = false
-    this.emit({ type: 'statusChanged', status: 'idle' })
+    this.setWorking(false)
   }
 
   private canUseTool: CanUseTool = (toolName, toolInput, { signal, suggestions, toolUseID, title }) =>
@@ -175,6 +214,8 @@ class ClaudeRun implements AgentRun {
     pending.resolve(result)
   }
 }
+
+const activityTypes = new Set(['assistant', 'user', 'stream_event'])
 
 function toPermissionResult(pending: Pending, response: RequestResponse): PermissionResult {
   if (response.kind === 'question') {

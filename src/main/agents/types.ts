@@ -10,13 +10,16 @@ export interface AgentAdapter {
   start(options: StartOptions, emit: (event: AgentEvent) => void): AgentRun
 }
 
+/** The run continues the session's transcript if the agent has one. */
 export type StartOptions = {
   cwd: string
   agentSessionId: string
-  /** Whether the agent already has a transcript to continue. */
-  resume: boolean
 }
 
+/**
+ * A running agent process. A run that fails or exits emits `errored` and then
+ * nothing more; a closed run emits nothing.
+ */
 export interface AgentRun {
   /** During a turn the message is queued for the agent to pick up. */
   send(text: string): void

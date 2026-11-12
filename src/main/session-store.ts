@@ -17,6 +17,9 @@ type ProjectSessions = Record<string, SessionRecord>
 /** One file per project, keyed by the agent's session id. */
 export class SessionStore {
   private readonly projects = new Map<string, Promise<ProjectSessions>>()
+  // A session can still finish saving after its project is removed; ids are
+  // never reused, so dropping writes to removed projects is safe.
+  private readonly removed = new Set<string>()
 
   constructor(private readonly dataDir: string) {}
 
@@ -25,12 +28,15 @@ export class SessionStore {
   }
 
   async put(projectId: string, agentSessionId: string, record: SessionRecord): Promise<void> {
+    if (this.removed.has(projectId)) return
     const sessions = await this.load(projectId)
+    if (this.removed.has(projectId)) return
     sessions[agentSessionId] = record
     await writeJson(this.path(projectId), sessions)
   }
 
   async deleteProject(projectId: string): Promise<void> {
+    this.removed.add(projectId)
     this.projects.delete(projectId)
     await deleteJson(this.path(projectId))
   }

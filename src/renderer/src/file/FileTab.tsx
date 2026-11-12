@@ -1,17 +1,18 @@
 import { Annotation, Compartment, EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { basicSetup } from 'codemirror'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParentWorkspace } from 'react-resizable-panels'
 import { baseName } from '../../../shared/files'
 import { api } from '../api'
 import { useFileContent } from '../files'
 import { useProject } from '../project-context'
 import { Centred, type Tab, type TabData } from '../tabs'
-import { editorTheme, loadLanguage, minimalChange } from './editor'
+import { changeFromDisk, editorTheme, loadLanguage } from './editor'
 
 const saveDelayMs = 500
-const scrollSaveDelayMs = 500
+// The scroll position lives in the project layout, which is rewritten on every save.
+const scrollSaveDelayMs = 1500
 
 export function FileTab({ tab, path, scrollPos }: { tab: Tab; path: string; scrollPos?: number }) {
   const project = useProject()
@@ -24,6 +25,8 @@ export function FileTab({ tab, path, scrollPos }: { tab: Tab; path: string; scro
       return <Centred>{path} doesn't exist.</Centred>
     case 'binary':
       return <Centred>{path} is a binary file.</Centred>
+    case 'notUtf8':
+      return <Centred>{path} isn't UTF-8 text, so it can't be edited here.</Centred>
     case 'tooLarge':
       return <Centred>{path} is too large to open ({(content.size / 1024 / 1024).toFixed(1)} MB).</Centred>
     case 'text':
@@ -53,13 +56,15 @@ type EditorProps = {
 
 /**
  * Edits autosave shortly after typing stops, on blur and on close; there's no
- * manual save. Changes made on disk apply in place unless an edit is about to
- * be saved, in which case the edit wins.
+ * manual save. Changes made on disk apply in place unless an edit is waiting
+ * to be saved or is being saved, in which case the edit wins.
  */
 function Editor({ projectId, path, content, initialScrollPos, onScrolled }: EditorProps) {
   const parentRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView>(null)
   const unsaved = useRef<string | null>(null)
+  const writing = useRef(0)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const onScrolledRef = useRef(onScrolled)
   onScrolledRef.current = onScrolled
 
@@ -69,10 +74,19 @@ function Editor({ projectId, path, content, initialScrollPos, onScrolled }: Edit
 
     const save = () => {
       clearTimeout(saveTimer)
-      if (unsaved.current === null) return
       const text = unsaved.current
+      if (text === null) return
       unsaved.current = null
-      void api.writeFile(projectId, path, text)
+      writing.current++
+      // 'missing' needs nothing: the file was deleted and the tab will say so.
+      void api.writeFile(projectId, path, text).then(
+        () => setSaveError(null),
+        (error: unknown) => {
+          // Keep the edit so the next change or blur tries again.
+          unsaved.current ??= text
+          setSaveError(error instanceof Error ? error.message : String(error))
+        },
+      ).finally(() => writing.current--)
     }
 
     const language = new Compartment()
@@ -81,12 +95,16 @@ function Editor({ projectId, path, content, initialScrollPos, onScrolled }: Edit
       state: EditorState.create({
         doc: content.text,
         extensions: [
+          // CodeMirror splits on any line ending and joins with \n unless told
+          // otherwise, which would rewrite every line of a CRLF file on save.
+          content.text.includes('\r\n') ? EditorState.lineSeparator.of('\r\n') : [],
           basicSetup,
           language.of([]),
           editorTheme(),
           EditorView.updateListener.of((update) => {
             if (!update.docChanged || update.transactions.every((tr) => tr.annotation(fromDisk))) return
-            unsaved.current = update.state.doc.toString()
+            // sliceDoc rather than doc.toString, which always joins lines with \n.
+            unsaved.current = update.state.sliceDoc()
             clearTimeout(saveTimer)
             saveTimer = setTimeout(save, saveDelayMs)
           }),
@@ -121,11 +139,19 @@ function Editor({ projectId, path, content, initialScrollPos, onScrolled }: Edit
 
   useEffect(() => {
     const view = viewRef.current
-    if (!view || unsaved.current !== null) return
-    const current = view.state.doc.toString()
-    if (current === content.text) return
-    view.dispatch({ changes: minimalChange(current, content.text), annotations: fromDisk.of(true) })
+    if (!view || unsaved.current !== null || writing.current > 0) return
+    if (view.state.sliceDoc() === content.text) return
+    view.dispatch({ changes: changeFromDisk(view.state, content.text), annotations: fromDisk.of(true) })
   }, [content])
 
-  return <div ref={parentRef} className="h-full" />
+  return (
+    <div className="flex h-full flex-col">
+      {saveError && (
+        <div role="alert" className="bg-destructive/10 text-destructive shrink-0 px-3 py-1.5 text-sm">
+          Couldn't save: {saveError}
+        </div>
+      )}
+      <div ref={parentRef} className="min-h-0 flex-1" />
+    </div>
+  )
 }

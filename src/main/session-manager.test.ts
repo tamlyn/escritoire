@@ -53,20 +53,20 @@ describe('SessionManager', () => {
     await manager.openSession('p1', pointer)
     manager.sendMessage(pointer, 'Fix the login bug\nIt fails on Safari')
 
-    expect(runs[0]!.options).toEqual({ cwd: '/work/project', agentSessionId: 'session-1', resume: false })
+    expect(runs[0]!.options).toEqual({ cwd: '/work/project', agentSessionId: 'session-1' })
     expect(manager.summaries()).toEqual([
       { ...pointer, projectId: 'p1', title: 'Fix the login bug', status: 'working', attention: null },
     ])
   })
 
-  it('resumes a session that has history, keeping its own title', async () => {
+  it('keeps the title of a session started elsewhere', async () => {
     const { manager, runs } = await setup([{ kind: 'userMessage', id: 'u1', text: 'Earlier' }])
     const pointer = { agent: 'claude' as const, agentSessionId: 'external' }
     const opened = await manager.openSession('p1', pointer)
     manager.sendMessage(pointer, 'Carry on')
 
     expect(opened.view.items).toHaveLength(1)
-    expect(runs[0]!.options.resume).toBe(true)
+    expect(runs).toHaveLength(1)
     expect(manager.summaries()[0]!.title).toBe('')
   })
 
@@ -103,6 +103,18 @@ describe('SessionManager', () => {
     manager.sendMessage(pointer, 'Hi')
     runs[0]!.emit({ type: 'requestAdded', request: { kind: 'question', id: 'r1', questions: [] } })
     expect(manager.summaries()[0]!.attention).toBe('waiting')
+  })
+
+  it('starts a new run after one fails', async () => {
+    const { manager, runs } = await setup()
+    const pointer = await manager.createSession('p1', 'claude')
+    await manager.openSession('p1', pointer)
+    manager.sendMessage(pointer, 'Hi')
+    runs[0]!.emit({ type: 'statusChanged', status: 'errored', error: 'Claude Code exited.' })
+    manager.sendMessage(pointer, 'Again')
+
+    expect(runs).toHaveLength(2)
+    expect(runs[1]!.sent).toEqual(['Again'])
   })
 
   it('remembers drafts and read state across restarts', async () => {
