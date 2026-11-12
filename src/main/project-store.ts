@@ -21,6 +21,10 @@ export class ProjectStore {
     return structuredClone(this.state)
   }
 
+  getProject(id: string): Project {
+    return structuredClone(this.find(id))
+  }
+
   async openProject(inputPath: string): Promise<AppState> {
     const path = await realpath(expandHome(inputPath.trim()))
     if (!(await stat(path)).isDirectory()) throw new Error(`Not a directory: ${path}`)

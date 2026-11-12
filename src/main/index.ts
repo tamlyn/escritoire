@@ -1,19 +1,40 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, ipcMain } from 'electron'
-import { type Api, apiMethods } from '../shared/api'
+import { type Api, apiMethods, type Events } from '../shared/api'
+import { claudeAdapter } from './agents/claude'
 import { completeDirectory } from './paths'
 import { ProjectStore } from './project-store'
+import { SessionManager } from './session-manager'
+import { SessionStore } from './session-store'
 
-function createApi(store: ProjectStore): Api {
+function createApi(projects: ProjectStore, sessions: SessionManager, sessionStore: SessionStore): Api {
   return {
-    getState: async () => store.getState(),
-    openProject: (path) => store.openProject(path),
-    activateProject: (id) => store.activateProject(id),
-    closeProject: (id) => store.closeProject(id),
-    removeProject: (id) => store.removeProject(id),
-    loadLayout: (projectId) => store.loadLayout(projectId),
-    saveLayout: (projectId, layout) => store.saveLayout(projectId, layout),
+    getState: async () => projects.getState(),
+    openProject: (path) => projects.openProject(path),
+    activateProject: (id) => projects.activateProject(id),
+    closeProject: async (id) => {
+      sessions.closeProject(id)
+      return projects.closeProject(id)
+    },
+    removeProject: async (id) => {
+      sessions.closeProject(id)
+      await sessionStore.deleteProject(id)
+      return projects.removeProject(id)
+    },
+    loadLayout: (projectId) => projects.loadLayout(projectId),
+    saveLayout: (projectId, layout) => projects.saveLayout(projectId, layout),
     completeDirectory,
+    getSessionSummaries: async () => sessions.summaries(),
+    listPastSessions: (projectId) => sessions.listPastSessions(projectId),
+    createSession: (projectId, agent) => sessions.createSession(projectId, agent),
+    openSession: (projectId, session) => sessions.openSession(projectId, session),
+    closeSessionView: async (session) => sessions.closeSessionView(session),
+    sendMessage: async (session, text) => sessions.sendMessage(session, text),
+    interrupt: (session) => sessions.interrupt(session),
+    respond: async (session, requestId, response) => sessions.respond(session, requestId, response),
+    saveDraft: async (session, draft) => sessions.saveDraft(session, draft),
+    setSessionVisible: async (session, visible) => sessions.setVisible(session, visible),
+    closeSession: async (session) => sessions.closeSession(session),
   }
 }
 
@@ -22,6 +43,10 @@ function registerApi(api: Api): void {
     const handler = api[method] as (...args: unknown[]) => Promise<unknown>
     ipcMain.handle(method, (_event, ...args) => handler(...args))
   }
+}
+
+function send<K extends keyof Events>(name: K, payload: Events[K]): void {
+  for (const window of BrowserWindow.getAllWindows()) window.webContents.send(name, payload)
 }
 
 function createWindow(): void {
@@ -56,6 +81,16 @@ app.on('window-all-closed', () => app.quit())
 // Not top-level await: Electron doesn't emit `ready` until an ES module main
 // script has finished evaluating, so awaiting it here would deadlock.
 void app.whenReady().then(async () => {
-  registerApi(createApi(await ProjectStore.load(app.getPath('userData'))))
+  const dataDir = app.getPath('userData')
+  const projects = await ProjectStore.load(dataDir)
+  const sessionStore = new SessionStore(dataDir)
+  const sessions = new SessionManager({
+    adapters: { claude: claudeAdapter },
+    store: sessionStore,
+    projectPath: (projectId) => projects.getProject(projectId).path,
+    send,
+  })
+  app.on('before-quit', () => sessions.closeAll())
+  registerApi(createApi(projects, sessions, sessionStore))
   createWindow()
 })

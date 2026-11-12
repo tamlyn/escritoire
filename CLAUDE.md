@@ -13,7 +13,8 @@ Agentic IDE built with Electron. `PLAN.md` holds the direction, decisions and sl
 
 - `src/main`: Electron main process. Owns all state and side effects (files, persistence, later agents and processes). Keep logic in plain Node modules that can be unit-tested without Electron.
 - `src/preload`: exposes `window.api` and nothing else. Must stay CommonJS (sandboxed preload).
-- `src/shared/api.ts`: the renderer ↔ main contract. Add a method to the `Api` type and the method record, implement it in `src/main/index.ts`, and it becomes `window.api.<method>` over `ipcRenderer.invoke`.
+- `src/main/agents`: one adapter per agent, translating its stream into the shared session model in `src/shared/agent.ts`. Read `docs/agent-abstraction.md` before changing either.
+- `src/shared/api.ts`: the renderer ↔ main contract. Add a method to the `Api` type and the method record, implement it in `src/main/index.ts`, and it becomes `window.api.<method>` over `ipcRenderer.invoke`. Pushes from main go the other way through the `Events` map: main calls `send(name, payload)`, the renderer `subscribe(name, listener)`.
 - `src/renderer`: React UI. `ProjectWorkspace` is our wrapper around `react-resizable-panels`' `Workspace`; keep direct use of that library inside it. `components/ui` is shadcn source we own.
 
 ## Gotchas
