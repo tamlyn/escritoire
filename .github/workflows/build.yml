@@ -19,12 +19,12 @@ jobs:
 
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-
+      # Node first: pnpm 12's installer runs a script with it.
       - uses: actions/setup-node@v4
         with:
           node-version-file: .tool-versions
-          cache: pnpm
+
+      - uses: pnpm/action-setup@v4
 
       - run: pnpm install --frozen-lockfile
 
