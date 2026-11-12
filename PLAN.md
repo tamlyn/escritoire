@@ -16,7 +16,7 @@ This document gives requirements and decisions. Implementation choices not liste
 
 - Single user, personal tool. Not a product for distribution (yet). Avoid decisions that would make later distribution impossible, but don't build for it.
 - Several projects open at once, usually each with one or more agent sessions.
-- Operating system: **to confirm with the user** before choosing anything platform-specific.
+- Operating systems: **macOS** (personal machine) and **RHEL 8.10** (work machine). RHEL 8 is the constraining platform: glibc 2.28, old system libraries. Claude Code's TUI, VS Code and WebStorm all run on it today.
 
 ## Decisions made
 
@@ -25,18 +25,63 @@ This document gives requirements and decisions. Implementation choices not liste
 3. **The IDE has its own internal agent abstraction**, with one adapter per agent. The shared core (messages, tool calls, permission requests, file changes, session state) must look and behave the same for both agents. Agent-specific extras are allowed as optional additions; they must not lower the shared core to the least capable agent, nor force Claude down to what ACP supports.
 4. **Authentication uses the user's own existing logins** for Claude Code and Codex. The IDE must never implement its own Claude.ai login or handle subscription credentials itself.
 5. **Everything is a tab.** Agent sessions, files, terminals, process output, git views and SQL consoles all live as normal tabs in the main area. No bottom panel for terminals.
-6. **The file tree is the one possible exception.** It may be a persistent side element rather than a tab. Treat this as a provisional decision to validate with the user.
-7. **Multiple projects in one window**, grouped so it is always clear which project a tab belongs to.
+6. **The file tree is the one exception.** It is a side panel, not a tab, and can be collapsed.
+7. **Multiple projects in one window, one project in view at a time.** The window shows only the active project's tabs and file tree; tabs never mix across projects. There is no distinction between "open" and "recent" projects (see "Projects and workspace").
 8. **The IDE owns project processes** (see "Process supervision"). The design learns from the user's colleague's project, [The Running Man](https://github.com/elbeanio/the_running_man), but does not depend on it.
 9. **No proprietary code is copied** from the Claude Code VS Code extension or any other closed-source tool.
+10. **Electron, not Tauri.** Tauri v2 needs WebKitGTK 4.1 (libsoup 3), which RHEL 8 doesn't ship (Red Hat only adds it in RHEL 10), and WebKitGTK has known rendering and performance problems on Linux. Electron bundles Chromium, so it doesn't depend on the system web engine; VS Code proves it on RHEL 8. The extra baseline memory (roughly 150–300 MB) is acceptable: agent processes dominate memory, which is what session reaping addresses.
+11. **TypeScript throughout**, main process and renderer. The TypeScript Agent SDK is the one that bundles the Claude Code binary, and ACP has an official TypeScript SDK. One language keeps the codebase easy for agents to work in.
+
+## Tech stack
+
+Check current versions and APIs against documentation when adding each one.
+
+| Concern | Choice | Reason |
+|---|---|---|
+| Shell and build | Electron with `electron-vite` | See decision 10 |
+| UI | React | The chat UI is the hardest part; agents are most fluent in React |
+| Claude | `@anthropic-ai/claude-agent-sdk` | Decision 1. Provides `query()` with `resume`, plus `listSessions()` and `getSessionMessages()` for finding past sessions and rendering reaped tabs |
+| Codex | `@agentclientprotocol/sdk` (client side) talking to `@agentclientprotocol/codex-acp` | Decision 2 |
+| Agent access to the IDE | `@modelcontextprotocol/sdk`: one MCP server over HTTP, bound to 127.0.0.1, token-protected | Both agents accept MCP servers, so the supervisor and IDE context tools are identical for Claude and Codex |
+| Terminal | `@xterm/xterm`, `@xterm/addon-serialize`, `node-pty` | node-pty reports the foreground process (for reaping); the serialise addon saves scrollback (for restore) |
+| Config editing and diffs | CodeMirror 6, `@codemirror/merge` | Syntax highlighting and diffs without Monaco's weight; a full editor is a non-goal |
+| File watching | `@parcel/watcher` | Native, scales to large repos (VS Code uses it). Only the active project is watched |
+| Git | The `git` CLI (`status --porcelain=v2 -z`, `log`, `diff --numstat`) | A summary needs no library |
+| Persistence | JSON files in the app data directory | Workspace layouts and attention state are small. Add SQLite only if a real need appears |
+| Process logs | Bounded in-memory ring buffers per process | Meets bounded retention with no storage |
+| SQL | `better-sqlite3` for SQLite, `pg` for Postgres | Both widely used from Node. `better-sqlite3` is native, so it gets the same rebuild treatment as `node-pty` |
+| Tests | Vitest; Playwright driving Electron for end-to-end | Lets agents verify their own UI work |
+| Package manager | pnpm | |
+| Node | Managed with `asdf` | Official Node builds need glibc 2.28, which RHEL 8 has |
+
+### Platform notes
+
+- **Build from source on each machine.** Distribution is a non-goal, and building on the RHEL box itself sidesteps glibc mismatches in native modules (`node-pty`, `@parcel/watcher`), which must be rebuilt against Electron's Node ABI.
+- **Claude Code on RHEL 8 is not officially supported** and has had RHEL 8-specific regressions (v2.0.43 exited on start; v2.1.77 crashed with "Illegal instruction"). The IDE depends on the binary the SDK bundles, so a bad release could break the IDE at work. Make the Claude Code executable configurable (the SDK's `pathToClaudeCodeExecutable`) so a known-good binary can be pinned on that machine.
 
 ## Functional requirements
 
 ### Projects and workspace
 
-- Open, close and switch between several projects in one window.
-- Clearly group tabs by project.
-- Restore the workspace (projects, tabs, layout) across restarts.
+- One project is active at a time. Switching projects swaps the whole set of tabs and the file tree.
+- Each project remembers its own tabs and layout, across switches and across restarts.
+- **No open/closed state.** There is one list of projects, ordered by recency. A project the user hasn't visited for a while simply holds no live resources; nothing explicitly "unloads" it. This falls out of each resource releasing itself:
+  - Only the active project's UI is rendered. Other projects are just saved layouts.
+  - Agent sessions are reaped and resumed per "Session reaping and resume".
+  - Idle terminals are reaped and restored per "Terminal".
+  - File watchers and git status polling run only for the active project, and refresh on switching in. Agent edits in background projects are known from the agent's own tool calls.
+  - Supervised processes are **never** stopped by switching away or by inactivity. Only the user (or an agent, via the supervisor) stops them.
+- A user can remove a project from the list. This stops its processes and forgets its layout.
+
+### Switching and attention
+
+The user must be able to tell when another project needs them, without a persistent list of projects on screen.
+
+- **Attention means unseen, not merely waiting.** A session needs attention when it has changed state since the user last viewed its tab, like unread mail. Viewing the tab clears it. Otherwise sessions left idle for days would keep every project permanently flagged.
+- Two levels: a **permission request** (blocks work, strongest signal) and a **finished turn** (weaker). A crashed process is a secondary signal.
+- **One small persistent indicator:** a count of other projects needing attention, beside the active project's name. When the window is unfocused, also a dock badge and an OS notification.
+- **Project switcher:** a keyboard-driven palette. Projects needing attention first, then the rest by recency. Each row shows state at a glance: agents working or waiting, processes running or crashed. Typing a path or fuzzy name in the same palette opens a new project; there is no separate "open project" UI.
+- **Jump to next waiting:** one shortcut that switches to the project and focuses the tab that needs attention.
 
 ### Agent sessions
 
@@ -46,7 +91,7 @@ This document gives requirements and decisions. Implementation choices not liste
 - **Permission requests:** when an agent wants to run a command or edit a file, show the request in the UI and send the user's answer back.
 - Several concurrent sessions per project, and across projects.
 - Show each session's state at a glance: working, waiting for the user, waiting for permission, idle, or errored.
-- Find and resume past sessions.
+- Find and resume past sessions. This naturally includes sessions started outside the IDE (e.g. `claude` in a separate terminal), since they live in the same on-disk store. Attaching to one that is still running elsewhere is out of scope.
 
 ### Session reaping and resume
 
@@ -54,7 +99,7 @@ The user often leaves many sessions open for days. Each one holds memory.
 
 - Release the resources of idle sessions, then resume them transparently when the user returns.
 - **Only reap a session that is waiting for user input.** Never reap one that is mid-turn, running a subagent or waiting on a permission prompt.
-- The default threshold must be longer than the prompt-cache lifetime. After that point, resuming costs nothing extra compared with keeping the process alive. The threshold should be configurable.
+- The threshold must be longer than the prompt-cache lifetime (up to an hour). After that point, resuming costs nothing extra in tokens compared with keeping the process alive; the only cost is a short resume delay. **Default: 90 minutes**, configurable.
 - A reaped session's tab still shows its full history and looks normal. Resuming happens when the user interacts with it, with minimal delay.
 - Resume must restore the session's original settings: model, permission mode, working directories and any other launch options.
 - The tab-to-session mapping must stay stable across reap and resume.
@@ -83,7 +128,7 @@ Learnings from The Running Man to carry over:
 - **Local only:** the control interface must not be exposed on the network.
 - **Bounded log retention.**
 
-Open question: whether Docker Compose services are in scope for v1.
+Docker Compose services are not needed for v1. Don't design them out.
 
 ### IDE context for agents
 
@@ -96,6 +141,7 @@ Open question: whether Docker Compose services are in scope for v1.
 - File tree for each project.
 - View files, and edit config files (JSON, YAML, TOML, env and similar) with syntax highlighting. A full code-editing experience is not required.
 - Make it obvious when a file is being changed by an agent.
+- File tabs persist as path and scroll position. An unsaved edit keeps its buffer in memory; don't build draft persistence until it is needed.
 
 ### Git
 
@@ -107,12 +153,17 @@ Open question: whether Docker Compose services are in scope for v1.
 ### Terminal
 
 - Ordinary interactive terminals, as tabs, opened in a project's directory.
+- **Reaping:** a shell can't be resumed like an agent session, so restore is deliberately lossy and honest about it.
+  - Only reap a shell that is idle at its prompt, i.e. the pty's foreground process group is the shell itself. Never reap one with a foreground job (an editor, `psql`, a stray dev server).
+  - On reap, save the scrollback and working directory. On return, start a fresh shell in that directory with the old scrollback shown above a visible "restored" marker.
+  - Lost on restore: shell variables and exports, activated virtualenvs and similar in-memory shell state.
+  - Same threshold mechanism as session reaping, configured separately. **Default: 24 hours.** An idle shell costs a few megabytes and restore is lossy, so reap much later than agent sessions.
 
 ### SQL
 
 - A basic SQL console tab: saved connections, run a query, see results in a grid.
+- SQLite and Postgres.
 - No autocomplete needed.
-- Open question: which database engines. Ask the user.
 
 ## Non-functional requirements
 
@@ -131,18 +182,9 @@ Open question: whether Docker Compose services are in scope for v1.
 - Multi-user or remote collaboration.
 - Distribution and packaging for other users.
 
-## Open questions for the user
-
-1. Which operating system or systems?
-2. Is the file tree a side panel or a tab? (Decision 6 is provisional.)
-3. Which SQL databases?
-4. Are Docker Compose services in scope for v1 process supervision?
-5. Default reaping threshold?
-6. Should sessions started outside the IDE (e.g. `claude` in a separate terminal) be visible and resumable from it?
-
 ## Suggested approach for the builder
 
-- Start by proposing the architecture and tech stack against these requirements, including the trade-offs considered. Get agreement before building.
+- The tech stack is agreed. Propose the internal architecture (process boundaries, the agent abstraction, IPC between main and renderer) before building, and get agreement.
 - Build in thin vertical slices that the user can try early. Suggested priority, highest first:
   1. Window with projects and tabs.
   2. Claude session tab.
@@ -153,3 +195,4 @@ Open question: whether Docker Compose services are in scope for v1.
   7. Codex via ACP.
   8. SQL console.
 - Check details of the Agent SDK and ACP against current documentation rather than memory; both are evolving quickly.
+- Try each slice on RHEL 8 as well as macOS, early. Native modules and the Claude Code binary are where platform problems will show up.
