@@ -79,6 +79,8 @@ class ClaudeRun implements AgentRun {
         systemPrompt: { type: 'preset', preset: 'claude_code' },
         settingSources: ['user', 'project', 'local'],
         canUseTool: this.canUseTool,
+        // Lets a machine pin a known-good Claude Code binary instead of the one the SDK bundles.
+        pathToClaudeCodeExecutable: process.env.ESCRITOIRE_CLAUDE_CODE_PATH || undefined,
       },
     })
     void this.consume()

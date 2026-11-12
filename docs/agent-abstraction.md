@@ -52,7 +52,6 @@ A session is a **transcript of items**, a list of **pending requests** and a **s
 
 - Passing the IDE's MCP server to sessions (with the supervisor, slice 4).
 - Model and permission mode switching, slash commands, @-mentions, images.
-- A configurable Claude Code executable for RHEL (`pathToClaudeCodeExecutable`).
 - The permission prompt has not been exercised live: the user's `auto` permission mode approved every tool in testing.
 
 ## Rejected alternatives

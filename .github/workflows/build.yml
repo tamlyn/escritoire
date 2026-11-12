@@ -1,0 +1,50 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    # Build on EL8 so the app and its native modules link against RHEL 8's glibc 2.28.
+    container: almalinux:8
+    steps:
+      - run: dnf install -y git tar gzip which
+
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .tool-versions
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm typecheck
+
+      - run: pnpm test
+
+      - run: pnpm exec electron-vite build
+
+      - run: pnpm exec electron-builder --linux --publish never
+
+      - name: Check the bundled Claude Code runs on EL8
+        run: dist/linux-unpacked/resources/app/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude --version
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: escritoire-linux-x64
+          path: dist/*.tar.gz
+
+      - if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.tar.gz

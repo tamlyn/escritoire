@@ -8,6 +8,13 @@ Agentic IDE built with Electron. `PLAN.md` holds the direction, decisions and sl
 - `pnpm typecheck`
 - `pnpm test`: Vitest unit tests (`src/**/*.test.ts`)
 - `pnpm test:e2e`: builds, then drives the real app with Playwright (`e2e/`). Use `launchApp()` from `e2e/app.ts`, which isolates the user data directory.
+- `pnpm dist`: packages the app for this machine into `dist/`. The RHEL 8 build comes from GitHub Actions (`.github/workflows/build.yml`), built in an EL8 container; tag `v*` to publish a release.
+
+## Packaging
+
+- Only packages the main process loads at runtime belong in `dependencies`; everything the renderer uses is bundled by Vite and goes in `devDependencies`, so it isn't shipped twice.
+- `asar` is off so bundled binaries (Claude Code, later native modules) can be executed and loaded.
+- `ESCRITOIRE_CLAUDE_CODE_PATH` overrides the Claude Code binary the SDK bundles, for pinning a known-good version on RHEL 8.
 
 ## Structure
 

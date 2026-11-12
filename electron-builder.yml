@@ -1,0 +1,20 @@
+appId: org.tamlyn.escritoire
+productName: Escritoire
+directories:
+  output: dist
+files:
+  - out/**/*
+# Agents' native binaries (Claude Code now, node-pty and others later) must be
+# real files to be executed or loaded, so skip the archive rather than unpacking
+# each one.
+asar: false
+mac:
+  target: dir
+  # Built locally for personal use, so not signed or notarised.
+  identity: null
+linux:
+  target:
+    - target: tar.gz
+      arch: x64
+  executableName: escritoire
+  category: Development
