@@ -39,6 +39,10 @@ jobs:
       - name: Check the bundled Claude Code runs on EL8
         run: dist/linux-unpacked/resources/app/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude --version
 
+      # N-API, so plain Node loading it proves the prebuild was packaged and links against glibc 2.28.
+      - name: Check the packaged file watcher loads on EL8
+        run: node -e "require('./dist/linux-unpacked/resources/app/node_modules/@parcel/watcher')"
+
       - uses: actions/upload-artifact@v4
         with:
           name: escritoire-linux-x64

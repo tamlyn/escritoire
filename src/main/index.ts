@@ -1,26 +1,41 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, ipcMain } from 'electron'
-import { type Api, apiMethods, type Events } from '../shared/api'
+import { type Api, type AppState, apiMethods, type Events } from '../shared/api'
 import { claudeAdapter } from './agents/claude'
 import { completeDirectory } from './paths'
+import { ProjectFiles } from './project-files'
 import { ProjectStore } from './project-store'
 import { SessionManager } from './session-manager'
 import { SessionStore } from './session-store'
 import { loadShellEnv } from './shell-env'
 
-function createApi(projects: ProjectStore, sessions: SessionManager, sessionStore: SessionStore): Api {
+type Services = {
+  projects: ProjectStore
+  sessions: SessionManager
+  sessionStore: SessionStore
+  files: ProjectFiles
+}
+
+function createApi({ projects, sessions, sessionStore, files }: Services): Api {
+  // Only the active project is watched, so follow it whenever it may change.
+  const watchActive = async (state: Promise<AppState>) => {
+    const changed = await state
+    files.watch(changed.activeProjectId)
+    return changed
+  }
+
   return {
     getState: async () => projects.getState(),
-    openProject: (path) => projects.openProject(path),
-    activateProject: (id) => projects.activateProject(id),
+    openProject: (path) => watchActive(projects.openProject(path)),
+    activateProject: (id) => watchActive(projects.activateProject(id)),
     closeProject: async (id) => {
       sessions.closeProject(id)
-      return projects.closeProject(id)
+      return watchActive(projects.closeProject(id))
     },
     removeProject: async (id) => {
       sessions.closeProject(id)
       await sessionStore.deleteProject(id)
-      return projects.removeProject(id)
+      return watchActive(projects.removeProject(id))
     },
     loadLayout: (projectId) => projects.loadLayout(projectId),
     saveLayout: (projectId, layout) => projects.saveLayout(projectId, layout),
@@ -36,6 +51,9 @@ function createApi(projects: ProjectStore, sessions: SessionManager, sessionStor
     saveDraft: async (session, draft) => sessions.saveDraft(session, draft),
     setSessionVisible: async (session, visible) => sessions.setVisible(session, visible),
     closeSession: async (session) => sessions.closeSession(session),
+    listDirectory: (projectId, path) => files.listDirectory(projectId, path),
+    readFile: (projectId, path) => files.readFile(projectId, path),
+    writeFile: (projectId, path, text) => files.writeFile(projectId, path, text),
   }
 }
 
@@ -96,7 +114,15 @@ void app.whenReady().then(async () => {
     projectPath: (projectId) => projects.getProject(projectId).path,
     send,
   })
-  app.on('before-quit', () => sessions.closeAll())
-  registerApi(createApi(projects, sessions, sessionStore))
+  const files = new ProjectFiles({
+    projectPath: (projectId) => projects.getProject(projectId).path,
+    send: (payload) => send('filesChanged', payload),
+  })
+  files.watch(projects.getState().activeProjectId)
+  app.on('before-quit', () => {
+    sessions.closeAll()
+    void files.unwatch()
+  })
+  registerApi(createApi({ projects, sessions, sessionStore, files }))
   createWindow()
 })

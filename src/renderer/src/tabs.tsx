@@ -1,5 +1,7 @@
 import type { TabNode } from 'react-resizable-panels'
 import type { SessionPointer } from '../../shared/agent'
+import { baseName } from '../../shared/files'
+import { FileTab } from './file/FileTab'
 import { NewTabPage } from './NewTabPage'
 import { SessionTab } from './session/SessionTab'
 
@@ -7,7 +9,11 @@ import { SessionTab } from './session/SessionTab'
  * What a tab shows. Saved in the project's layout, so must stay JSON-serialisable
  * and tolerate kinds written by newer versions.
  */
-export type TabData = { kind: 'empty' } | ({ kind: 'session' } & SessionPointer)
+export type TabData =
+  | { kind: 'empty' }
+  | ({ kind: 'session' } & SessionPointer)
+  /** `scrollPos` is the document position of the top line. */
+  | { kind: 'file'; path: string; scrollPos?: number }
 
 export type Tab = TabNode<TabData>
 
@@ -24,6 +30,11 @@ export function createSessionTab(pointer: SessionPointer, title: string): Tab {
   }
 }
 
+/** One tab per file, like sessions. */
+export function createFileTab(path: string): Tab {
+  return { id: `file:${path}`, title: baseName(path), data: { kind: 'file', path } }
+}
+
 export function TabContent({ tab }: { tab: Tab }) {
   const data = tab.data
   switch (data.kind) {
@@ -31,6 +42,8 @@ export function TabContent({ tab }: { tab: Tab }) {
       return <NewTabPage tab={tab} />
     case 'session':
       return <SessionTab tab={tab} pointer={{ agent: data.agent, agentSessionId: data.agentSessionId }} />
+    case 'file':
+      return <FileTab tab={tab} path={data.path} scrollPos={data.scrollPos} />
     default:
       return <Centred>This version can't show “{(data as { kind: string }).kind}” tabs.</Centred>
   }

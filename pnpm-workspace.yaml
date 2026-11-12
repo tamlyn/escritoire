@@ -1,3 +1,5 @@
 allowBuilds:
   electron: true
   electron-winstaller: false
+  # Only compiles when asked to build from source; the prebuilt binaries are platform packages.
+  '@parcel/watcher': false

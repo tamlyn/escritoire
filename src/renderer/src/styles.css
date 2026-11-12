@@ -26,6 +26,13 @@
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
   --chrome: oklch(0.97 0 0);
+  --syntax-keyword: oklch(0.5 0.17 300);
+  --syntax-string: oklch(0.5 0.13 150);
+  --syntax-number: oklch(0.55 0.15 50);
+  --syntax-property: oklch(0.48 0.13 250);
+  --syntax-type: oklch(0.52 0.12 200);
+  --syntax-comment: oklch(0.6 0 0);
+  --syntax-heading: oklch(0.45 0.15 250);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -49,6 +56,13 @@
     --input: oklch(1 0 0 / 12%);
     --ring: oklch(0.556 0 0);
     --chrome: oklch(0.15 0 0);
+    --syntax-keyword: oklch(0.75 0.12 300);
+    --syntax-string: oklch(0.78 0.12 150);
+    --syntax-number: oklch(0.8 0.11 60);
+    --syntax-property: oklch(0.76 0.1 245);
+    --syntax-type: oklch(0.8 0.09 200);
+    --syntax-comment: oklch(0.58 0 0);
+    --syntax-heading: oklch(0.78 0.11 245);
   }
 }
 
@@ -91,4 +105,54 @@
     @apply bg-background text-foreground overflow-hidden text-sm antialiased select-none;
     font-family: system-ui, sans-serif;
   }
+}
+
+/* CodeMirror syntax highlighting (`classHighlighter` from @lezer/highlight). */
+.tok-keyword,
+.tok-operator.tok-definition,
+.tok-modifier {
+  color: var(--syntax-keyword);
+}
+.tok-string,
+.tok-string2,
+.tok-inserted {
+  color: var(--syntax-string);
+}
+.tok-number,
+.tok-bool,
+.tok-atom,
+.tok-literal {
+  color: var(--syntax-number);
+}
+.tok-propertyName,
+.tok-attributeName,
+.tok-labelName {
+  color: var(--syntax-property);
+}
+.tok-typeName,
+.tok-className,
+.tok-namespace,
+.tok-tagName {
+  color: var(--syntax-type);
+}
+.tok-comment,
+.tok-meta {
+  color: var(--syntax-comment);
+}
+.tok-heading {
+  color: var(--syntax-heading);
+  font-weight: 600;
+}
+.tok-deleted,
+.tok-invalid {
+  color: var(--destructive);
+}
+.tok-emphasis {
+  font-style: italic;
+}
+.tok-strong {
+  font-weight: 600;
+}
+.tok-link {
+  text-decoration: underline;
 }

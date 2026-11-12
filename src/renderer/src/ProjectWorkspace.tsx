@@ -1,7 +1,9 @@
 import { LoaderCircleIcon, PlusIcon, XIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import {
+  Group,
   normalizeWorkspaceModel,
+  Panel,
   Separator,
   TabCloseButton,
   Workspace,
@@ -9,16 +11,20 @@ import {
   type WorkspaceModel,
   type WorkspaceModelInput,
   type WorkspaceNode,
+  useDefaultLayout,
   useParentTabset,
+  usePanelRef,
   useWorkspaceRef,
 } from 'react-resizable-panels'
 import type { SessionPointer, SessionSummary } from '../../shared/agent'
 import type { Project } from '../../shared/api'
 import { api } from './api'
-import { ProjectContext } from './project-context'
+import { FileTree } from './FileTree'
+import { useRecentlyChanged } from './files'
+import { ProjectContext, useProject } from './project-context'
 import { useSessionSummary } from './sessions'
 import { modifierLabel, useShortcut } from './shortcuts'
-import { createEmptyTab, type Tab, TabContent, type TabData } from './tabs'
+import { createEmptyTab, createFileTab, type Tab, TabContent, type TabData } from './tabs'
 
 const emptyModel: WorkspaceModelInput<TabData> = {
   version: 1,
@@ -26,13 +32,16 @@ const emptyModel: WorkspaceModelInput<TabData> = {
 }
 
 /**
- * The tab area of one project. Mounted only while its project is active; the
- * layout is loaded on mount and saved on every change.
+ * The file tree and tab area of one project. Mounted only while its project is
+ * active; the tab layout is loaded on mount and saved on every change.
  */
 export function ProjectWorkspace({ project }: { project: Project }) {
   const [model, setModel] = useState<WorkspaceModelInput<TabData> | null>(null)
   const workspaceRef = useWorkspaceRef<TabData>()
   const openSessions = useRef(new Map<string, SessionPointer>())
+  const sidebarRef = usePanelRef()
+  // The sidebar's width is shared by all projects.
+  const sidebarLayout = useDefaultLayout({ id: 'sidebar', storage: localStorage })
 
   useEffect(() => {
     let cancelled = false
@@ -48,33 +57,59 @@ export function ProjectWorkspace({ project }: { project: Project }) {
   }, [project.id])
 
   useShortcut('t', () => workspaceRef.current?.addTab(createEmptyTab()))
+  useShortcut('b', () => {
+    const sidebar = sidebarRef.current
+    if (sidebar?.isCollapsed()) sidebar.expand()
+    else sidebar?.collapse()
+  })
 
   if (!model) return null
 
   return (
     <ProjectContext.Provider value={project}>
-      <Workspace<TabData>
+      <Group
+        orientation="horizontal"
         className="h-full"
-        classNames={classNames}
-        defaultModel={model}
-        workspaceRef={workspaceRef}
-        onModelChanged={(changed) => {
-          void api.saveLayout(project.id, changed)
-          // Closing a session's tab stops its agent. Unmounting isn't the signal,
-          // since switching projects unmounts every tab.
-          const sessions = sessionsIn(changed)
-          for (const [id, pointer] of openSessions.current) {
-            if (!sessions.has(id)) void api.closeSession(pointer)
-          }
-          openSessions.current = sessions
-        }}
-        renderTabContent={renderTabContent}
-        renderTab={renderTab}
-        renderTabsetToolbar={renderToolbar}
-        renderSeparator={renderSeparator}
-        renderEmptyTabset={renderEmpty}
-        tabRemovalSelectionBehavior="recent"
-      />
+        defaultLayout={sidebarLayout.defaultLayout}
+        onLayoutChanged={sidebarLayout.onLayoutChanged}
+      >
+        <Panel
+          id="files"
+          panelRef={sidebarRef}
+          defaultSize={260}
+          minSize={160}
+          collapsible
+          groupResizeBehavior="preserve-pixel-size"
+          className="bg-chrome"
+        >
+          <FileTree onOpenFile={(path) => workspaceRef.current?.addTab(createFileTab(path))} />
+        </Panel>
+        {renderSeparator()}
+        <Panel id="tabs">
+          <Workspace<TabData>
+            className="h-full"
+            classNames={classNames}
+            defaultModel={model}
+            workspaceRef={workspaceRef}
+            onModelChanged={(changed) => {
+              void api.saveLayout(project.id, changed)
+              // Closing a session's tab stops its agent. Unmounting isn't the signal,
+              // since switching projects unmounts every tab.
+              const sessions = sessionsIn(changed)
+              for (const [id, pointer] of openSessions.current) {
+                if (!sessions.has(id)) void api.closeSession(pointer)
+              }
+              openSessions.current = sessions
+            }}
+            renderTabContent={renderTabContent}
+            renderTab={renderTab}
+            renderTabsetToolbar={renderToolbar}
+            renderSeparator={renderSeparator}
+            renderEmptyTabset={renderEmpty}
+            tabRemovalSelectionBehavior="recent"
+          />
+        </Panel>
+      </Group>
     </ProjectContext.Provider>
   )
 }
@@ -120,6 +155,8 @@ function renderTab(tab: Tab, props: React.HTMLAttributes<HTMLElement>) {
     >
       {tab.data.kind === 'session' ? (
         <SessionTabLabel tab={tab} agentSessionId={tab.data.agentSessionId} />
+      ) : tab.data.kind === 'file' ? (
+        <FileTabLabel tab={tab} path={tab.data.path} />
       ) : (
         <span className="truncate">{tab.title}</span>
       )}
@@ -136,6 +173,18 @@ function SessionTabLabel({ tab, agentSessionId }: { tab: Tab; agentSessionId: st
     <>
       <SessionIndicator summary={summary} />
       <span className="truncate">{summary?.title || tab.title}</span>
+    </>
+  )
+}
+
+function FileTabLabel({ tab, path }: { tab: Tab; path: string }) {
+  const changed = useRecentlyChanged(useProject().id, path)
+  return (
+    <>
+      {changed && <span role="img" aria-label="Changed just now" className="size-2 shrink-0 rounded-full bg-amber-500" />}
+      <span className="truncate" title={path}>
+        {tab.title}
+      </span>
     </>
   )
 }

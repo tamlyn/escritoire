@@ -20,6 +20,7 @@ import type {
   SessionPointer,
   SessionSummary,
 } from './agent'
+import type { DirectoryEntry, FileContent, FilesChanged } from './files'
 
 /**
  * Everything the renderer can ask of the main process. Each method is one
@@ -54,6 +55,10 @@ export type Api = {
   setSessionVisible(session: SessionPointer, visible: boolean): Promise<void>
   /** Stops the agent; the session stays available to resume. */
   closeSession(session: SessionPointer): Promise<void>
+
+  listDirectory(projectId: string, path: string): Promise<DirectoryEntry[]>
+  readFile(projectId: string, path: string): Promise<FileContent>
+  writeFile(projectId: string, path: string, text: string): Promise<void>
 }
 
 // A record rather than an array so the compiler rejects a missing or misspelt method.
@@ -77,6 +82,9 @@ const apiMethodSet: Record<keyof Api, true> = {
   saveDraft: true,
   setSessionVisible: true,
   closeSession: true,
+  listDirectory: true,
+  readFile: true,
+  writeFile: true,
 }
 
 export const apiMethods = Object.keys(apiMethodSet) as (keyof Api)[]
@@ -85,11 +93,14 @@ export const apiMethods = Object.keys(apiMethodSet) as (keyof Api)[]
 export type Events = {
   sessionsChanged: SessionSummary[]
   sessionEvent: SessionEvent
+  /** Only for the active project, which is the only one watched. */
+  filesChanged: FilesChanged
 }
 
 const eventNameSet: Record<keyof Events, true> = {
   sessionsChanged: true,
   sessionEvent: true,
+  filesChanged: true,
 }
 
 export const eventNames = Object.keys(eventNameSet) as (keyof Events)[]
