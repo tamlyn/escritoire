@@ -40,6 +40,9 @@ Check current versions and APIs against documentation when adding each one.
 |---|---|---|
 | Shell and build | Electron with `electron-vite` | See decision 10 |
 | UI | React | The chat UI is the hardest part; agents are most fluent in React |
+| Styling and UI components | Tailwind CSS 4, shadcn/ui | Components are copied into the repo, so we own them. AI Elements builds on this stack |
+| Layout | `react-resizable-panels`: `Workspace` for the tab area, panel groups for the file tree sidebar | `Workspace` provides tabsets in splits, drag-to-split, a serialisable layout model per project, custom tab rendering (for session state) and per-tab mount behaviour (keep terminals mounted). It is new (added in 4.17, November 2026) and changing fast: pin an exact version and keep it behind a thin wrapper of our own |
+| Chat UI | Our own components, started from AI Elements (`ai-elements` CLI) and adapted; `streamdown` for Markdown | AI Elements is copied source, not a dependency, and is presentational, so our agent abstraction stays the only message model. Replace its AI SDK types with ours. Streamdown renders incomplete Markdown correctly while it streams. assistant-ui was rejected: still 0.x, and its runtime would add a second message model between the abstraction and the UI |
 | Claude | `@anthropic-ai/claude-agent-sdk` | Decision 1. Provides `query()` with `resume`, plus `listSessions()` and `getSessionMessages()` for finding and displaying past sessions |
 | Codex | Native `codex app-server`, or `@agentclientprotocol/sdk` talking to `@agentclientprotocol/codex-acp` | Choose after a small integration spike; decision 2 |
 | Agent access to the IDE | `@modelcontextprotocol/sdk`: one MCP server over HTTP, bound to 127.0.0.1, token-protected | Both agents accept MCP servers, so the supervisor and IDE context tools are identical for Claude and Codex |
