@@ -22,8 +22,8 @@ This document gives requirements and decisions. Implementation choices not liste
 
 1. **Claude is integrated through the Claude Agent SDK**, not through ACP and not by embedding the terminal UI. Reason: it is first-party, ships alongside Claude Code, and gives new Claude features on release.
 2. **Codex is integrated through ACP** (Agent Client Protocol).
-3. **The IDE has its own internal agent abstraction**, with one adapter per agent. The shared core (messages, tool calls, permission requests, file changes, session state) must look and behave the same for both agents. Agent-specific extras are allowed as optional additions; they must not lower the shared core to the least capable agent, nor force Claude down to what ACP supports.
-4. **Authentication uses the user's own existing logins** for Claude Code and Codex. The IDE must never implement its own Claude.ai login or handle subscription credentials itself.
+3. **The IDE has its own internal agent abstraction**, with one adapter per agent. The shared core (messages, tool calls, permission requests, file changes, session state) must look and behave the same for both agents: the same tab type and the same chat component. The core is modelled on ACP's shapes (session updates, tool calls with status and diffs, permission requests with options), so the Codex adapter is close to a pass-through and the Claude adapter maps SDK messages into it. Agent-specific extras are allowed as optional additions; they must not lower the shared core to the least capable agent, nor force Claude down to what ACP supports.
+4. **Authentication uses the user's own existing logins** for Claude Code and Codex. The IDE must never implement its own Claude.ai login or handle subscription credentials itself, and must never misreport what it is to Anthropic's API. See "Platform notes" for how authentication differs by machine.
 5. **Everything is a tab.** Agent sessions, files, terminals, process output, git views and SQL consoles all live as normal tabs in the main area. No bottom panel for terminals.
 6. **The file tree is the one exception.** It is a side panel, not a tab, and can be collapsed.
 7. **Multiple projects in one window, one project in view at a time.** The window shows only the active project's tabs and file tree; tabs never mix across projects. There is no distinction between "open" and "recent" projects (see "Projects and workspace").
@@ -52,11 +52,13 @@ Check current versions and APIs against documentation when adding each one.
 | SQL | `better-sqlite3` for SQLite, `pg` for Postgres | Both widely used from Node. `better-sqlite3` is native, so it gets the same rebuild treatment as `node-pty` |
 | Tests | Vitest; Playwright driving Electron for end-to-end | Lets agents verify their own UI work |
 | Package manager | pnpm | |
-| Node | Managed with `asdf` | Official Node builds need glibc 2.28, which RHEL 8 has |
+| Node | Managed with `asdf` | Development happens on the Mac only |
 
 ### Platform notes
 
-- **Build from source on each machine.** Distribution is a non-goal, and building on the RHEL box itself sidesteps glibc mismatches in native modules (`node-pty`, `@parcel/watcher`), which must be rebuilt against Electron's Node ABI.
+- **Builds.** The Mac build is made locally, which avoids Gatekeeper quarantining an unsigned download. The RHEL build is made by GitHub Actions inside a Rocky or Alma Linux 8 container and downloaded as a release artefact; no development happens on the RHEL machine. Building in an EL8 container keeps native modules (`node-pty`, `@parcel/watcher`, `better-sqlite3`) linked against glibc 2.28. They must be rebuilt against Electron's Node ABI, which is expected to need a newer compiler than EL8's default GCC 8.5 (a `gcc-toolset`).
+- **Claude authentication differs by machine.** Work: Bedrock through a proxy, configured by environment, with no subscription involved. Mac: the user's Claude Code subscription login. **Unverified:** whether Anthropic's current terms allow subscription use through the Agent SDK for a personal tool, and how it is metered. Check before building the Claude session slice. An API key is the fallback and needs no design change, since authentication lives inside the Claude Code binary.
+- **Stock Claude Code behaviour is opt-in.** By default the SDK does not load Claude Code's system prompt, `CLAUDE.md` or the user's settings files. Enable the Claude Code preset and the settings sources so sessions behave like ordinary Claude Code.
 - **Claude Code on RHEL 8 is not officially supported** and has had RHEL 8-specific regressions (v2.0.43 exited on start; v2.1.77 crashed with "Illegal instruction"). The IDE depends on the binary the SDK bundles, so a bad release could break the IDE at work. Make the Claude Code executable configurable (the SDK's `pathToClaudeCodeExecutable`) so a known-good binary can be pinned on that machine.
 
 ## Functional requirements
@@ -70,7 +72,7 @@ Check current versions and APIs against documentation when adding each one.
   - Agent sessions are reaped and resumed per "Session reaping and resume".
   - Idle terminals are reaped and restored per "Terminal".
   - File watchers and git status polling run only for the active project, and refresh on switching in. Agent edits in background projects are known from the agent's own tool calls.
-  - Supervised processes are **never** stopped by switching away or by inactivity. Only the user (or an agent, via the supervisor) stops them.
+  - Supervised processes are **never** stopped by switching away or by inactivity. Only the user (or an agent, via the supervisor) stops them. Quitting the app stops them all.
 - A user can remove a project from the list. This stops its processes and forgets its layout.
 
 ### Switching and attention
@@ -85,9 +87,10 @@ The user must be able to tell when another project needs them, without a persist
 
 ### Agent sessions
 
-- Start a Claude or Codex session in a project as a tab.
-- A graphical chat interface, not a terminal UI. The Claude Code VS Code extension's chat panel is the reference for feel.
+- Start a Claude or Codex session in a project as a tab. One "new session" action with an agent picker; both agents open the same kind of tab. The agent is fixed once the session has messages, since transcripts aren't portable.
+- A graphical chat interface, not a terminal UI. The Claude Code VS Code extension's chat panel is the reference: when behaviour is in doubt, do what it does. That covers the input side too (slash commands, @-mentions, image paste, model and mode switching, interrupt, message queueing) and features such as plan mode, agent questions, subagents and compaction. Build these in the order they are missed, not all up front.
 - Show the agent's messages, tool calls and their results, and the changes it makes, in a readable form.
+- **Generic fallback rendering:** a message or tool type the UI doesn't recognise is still shown, in a plain generic form. New agent features must degrade visibly, never disappear.
 - **Permission requests:** when an agent wants to run a command or edit a file, show the request in the UI and send the user's answer back.
 - Several concurrent sessions per project, and across projects.
 - Show each session's state at a glance: working, waiting for the user, waiting for permission, idle, or errored.
@@ -98,6 +101,7 @@ The user must be able to tell when another project needs them, without a persist
 The user often leaves many sessions open for days. Each one holds memory.
 
 - Release the resources of idle sessions, then resume them transparently when the user returns.
+- **A session with no live process is the normal state, not a special one.** Restoring tabs after an app restart needs exactly this: render the tab from the on-disk transcript, and resume with the saved launch options on the next interaction. Reaping is then only a timer on top, so it is built with the session tab, not as a later feature.
 - **Only reap a session that is waiting for user input.** Never reap one that is mid-turn, running a subagent or waiting on a permission prompt.
 - The threshold must be longer than the prompt-cache lifetime (up to an hour). After that point, resuming costs nothing extra in tokens compared with keeping the process alive; the only cost is a short resume delay. **Default: 90 minutes**, configurable.
 - A reaped session's tab still shows its full history and looks normal. Resuming happens when the user interacts with it, with minimal delay.
@@ -109,22 +113,21 @@ The user often leaves many sessions open for days. Each one holds memory.
 
 Problem being solved: if the user runs a process from the IDE, agents can't see its output. If an agent runs it, the user can't easily see its status, and has to remember which session owns the backend.
 
-- **Discover runnable commands:** at minimum, `package.json` scripts and `mise.toml` tasks. Run one with a click.
-- **Two kinds of process:** long-running ones (dev servers, workers, watchers) and one-off ones (builds, tests, scripts).
+- **Run from the file:** when viewing `package.json` or `mise.toml`, each script or task has a run icon in the gutter, as in WebStorm. There is no discovery pass over unopened files and no per-process configuration.
+- Long-running and one-off processes are treated the same.
 - Each process's output is a tab. It can be restarted or stopped individually.
-- One copy of each process per project, owned by the IDE, not by any agent session.
+- One copy of each process per project, owned by the IDE, not by any agent session. A process is identified by its command and working directory.
+- **Quit and crash:** quitting the app stops every supervised process. Because a crashed app can't clean up, process group IDs are recorded on disk and any leftovers are killed on the next launch.
 - **Agents and the user share one interface.** An agent can list processes, check whether one is running, read recent or filtered output, see recent errors across all processes, and start, restart or stop processes. It does this through the same supervisor the user sees.
-- **Agents should naturally prefer the supervisor** over spawning their own copies. Provide whatever instructions or tools make that happen for both Claude and Codex.
+- **Agents use the supervisor for anything backgrounded.** Agents run ordinary foreground commands themselves, untouched. Starting a background process goes through the supervisor's "start a process" tool instead of the agent's built-in one. For Claude this is enforced: a Bash call with `run_in_background` is denied with a message pointing to the supervisor tool. For Codex, use instructions plus whatever enforcement ACP allows.
 
 Learnings from The Running Man to carry over:
 
 - The human and agent interfaces are the same data, not parallel systems.
 - "Is it already running?" must be cheap for an agent to answer before it starts anything.
-- Agents should be able to discover the supervisor from inside the project without configuration.
-- **Start order and readiness:** some processes depend on others being ready, e.g. the backend's port accepting connections.
+- Agents get the supervisor without configuration: the IDE passes its MCP server to every session it launches. Sessions started outside the IDE don't have it, which is accepted.
 - **Errors in one place:** an "errors anywhere in the stack, recently" view is high value.
 - **Readable errors:** multi-line output such as stack traces should be grouped as one entry, not fragmented.
-- **Optional auto-restart** on crash, per process.
 - **Local only:** the control interface must not be exposed on the network.
 - **Bounded log retention.**
 
@@ -157,11 +160,13 @@ Docker Compose services are not needed for v1. Don't design them out.
   - Only reap a shell that is idle at its prompt, i.e. the pty's foreground process group is the shell itself. Never reap one with a foreground job (an editor, `psql`, a stray dev server).
   - On reap, save the scrollback and working directory. On return, start a fresh shell in that directory with the old scrollback shown above a visible "restored" marker.
   - Lost on restore: shell variables and exports, activated virtualenvs and similar in-memory shell state.
-  - Same threshold mechanism as session reaping, configured separately. **Default: 24 hours.** An idle shell costs a few megabytes and restore is lossy, so reap much later than agent sessions.
+  - Same threshold mechanism as session reaping, configured separately. **Default: 3 days.** An idle shell costs a few megabytes and restore is lossy, so reap much later than agent sessions.
+  - Terminal tabs survive an app restart through the same restore path: scrollback and working directory are saved on quit.
 
 ### SQL
 
-- A basic SQL console tab: saved connections, run a query, see results in a grid.
+- Query files, not a console, as in DataGrip: a `.sql` file opens in an ordinary file tab with a saved connection attached.
+- Run the statement under the cursor, or a selection of several, and see results in a grid below.
 - SQLite and Postgres.
 - No autocomplete needed.
 
@@ -181,18 +186,20 @@ Docker Compose services are not needed for v1. Don't design them out.
 - Agents other than Claude and Codex. The design should allow adding them later.
 - Multi-user or remote collaboration.
 - Distribution and packaging for other users.
+- Process start order, readiness checks and auto-restart. All need per-process configuration, which the supervisor deliberately lacks.
+- Git worktree support.
 
 ## Suggested approach for the builder
 
 - The tech stack is agreed. Propose the internal architecture (process boundaries, the agent abstraction, IPC between main and renderer) before building, and get agreement.
 - Build in thin vertical slices that the user can try early. Suggested priority, highest first:
-  1. Window with projects and tabs.
-  2. Claude session tab.
+  1. Window with projects and tabs. Set up the RHEL build on GitHub Actions here, with a native module included, so toolchain problems surface first.
+  2. Claude session tab, including restore after restart, reaping and resume.
   3. File tree and config editing.
   4. Process supervision, with agent access.
   5. Git overview.
-  6. Session reaping and resume.
-  7. Codex via ACP.
-  8. SQL console.
+  6. Codex via ACP.
+  7. SQL query files.
+- Before freezing the agent abstraction's types in slice 2, spend a day on a throwaway Codex/ACP spike. An abstraction designed against one agent will be wrong.
 - Check details of the Agent SDK and ACP against current documentation rather than memory; both are evolving quickly.
-- Try each slice on RHEL 8 as well as macOS, early. Native modules and the Claude Code binary are where platform problems will show up.
+- Try each slice on RHEL 8 as well as macOS, early, using the GitHub-built release. Native modules and the Claude Code binary are where platform problems will show up.
