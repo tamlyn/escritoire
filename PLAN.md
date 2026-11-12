@@ -29,7 +29,7 @@ This document captures the direction and current decisions, not an exhaustive sp
 7. **Multiple projects in one window, one project in view at a time.** The window shows only the active project's tabs and file tree; tabs never mix across projects. Explicit opening and closing is a sufficient starting point; automatic resource reaping is an optional optimisation.
 8. **The IDE owns project processes** (see "Process supervision"). The design learns from the user's colleague's project, [The Running Man](https://github.com/elbeanio/the_running_man), but does not depend on it.
 9. **No proprietary code is copied** from the Claude Code VS Code extension or any other closed-source tool.
-10. **Electron, not Tauri.** Tauri v2 needs WebKitGTK 4.1 (libsoup 3), which RHEL 8 doesn't ship (Red Hat only adds it in RHEL 10), and WebKitGTK has known rendering and performance problems on Linux. Electron bundles Chromium, so it doesn't depend on the system web engine; VS Code proves it on RHEL 8. The extra baseline memory (roughly 150–300 MB) is acceptable: releasing unused agent sessions is the more useful starting point for reducing memory.
+10. **Electron, not Tauri.** Tauri v2 needs WebKitGTK 4.1 (libsoup 3), which RHEL 8 doesn't ship (Red Hat only adds it in RHEL 10), and WebKitGTK has known rendering and performance problems on Linux. Electron bundles Chromium, so it doesn't depend on the system web engine. Stock Electron 45 has been tested and runs on the work machine (RHEL 8.10, November 2026). The extra baseline memory (roughly 150–300 MB) is acceptable: releasing unused agent sessions is the more useful starting point for reducing memory.
 11. **TypeScript throughout**, main process and renderer. The TypeScript Agent SDK is the one that bundles the Claude Code binary, and ACP has an official TypeScript SDK. One language keeps the codebase easy for agents to work in.
 
 ## Tech stack
@@ -194,9 +194,9 @@ Docker Compose services are not needed for v1. Don't design them out.
 
 - The tech stack is agreed except for the Codex integration choice. Propose the broad internal architecture (process boundaries, the agent abstraction, IPC between main and renderer) before building. Leave detailed edge cases to implementation and feedback.
 - Build in thin vertical slices that the user can try early. Suggested priority, highest first:
-  1. Window with projects and tabs. Set up the RHEL build on GitHub Actions here, with a native module included, so toolchain problems surface first.
-  2. Claude session tab: start with send, streaming output, tools, questions/permissions and interrupt; then add history and resume. Explicit closing is enough initially.
-  3. File tree and config editing.
+  1. Window with projects and tabs.
+  2. Claude session tab: start with send, streaming output, tools, questions/permissions and interrupt; then add history and resume. Explicit closing is enough initially. Then set up the RHEL build on GitHub Actions, since this is the first slice worth trying at work.
+  3. File tree and config editing. `@parcel/watcher` is the first native module, so this is where the EL8 native build toolchain is proven.
   4. Terminal tabs and process supervision, with agent access to the supervisor.
   5. Git overview.
   6. Codex using the integration selected in the spike.
@@ -204,4 +204,4 @@ Docker Compose services are not needed for v1. Don't design them out.
 - These are starting priorities, not fixed release gates. Try each increment and let actual use determine the next improvement; automatic reaping and an inbox can wait.
 - Before freezing the agent abstraction's types in slice 2, run a small Codex spike comparing native app-server and ACP. Check history loading, resume, permissions, interruption and MCP access against the shared UI's needs.
 - Check details of the agent integrations against current documentation rather than memory; they are evolving quickly.
-- Try each slice on RHEL 8 as well as macOS, early, using the GitHub-built release. Native modules and the Claude Code binary are where platform problems will show up.
+- From slice 2 onwards, try each slice on RHEL 8 as well as macOS, using the GitHub-built release. Native modules and the Claude Code binary are where platform problems will show up.
