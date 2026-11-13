@@ -1,4 +1,4 @@
-import { mkdtemp, realpath, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
@@ -70,4 +70,14 @@ test('a key press after the shell exits starts a new one', async () => {
   terminals.write('t', 'x')
   terminals.write('t', 'echo again\r')
   await vi.waitFor(() => expect(received()).toMatch(/\r\nagain/))
+})
+
+test('an unreadable saved state costs only the scrollback', async () => {
+  await mkdir(join(root, 'data', 'terminals'), { recursive: true })
+  await writeFile(join(root, 'data', 'terminals', 'p.json'), '{ not json')
+  vi.spyOn(console, 'error').mockImplementation(() => {})
+  await terminals.attach('p', 't', size)
+  terminals.write('t', 'echo works\r')
+  await vi.waitFor(() => expect(received()).toMatch(/\r\nworks/))
+  await terminals.closeProject('p')
 })

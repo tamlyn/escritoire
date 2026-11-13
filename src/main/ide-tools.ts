@@ -32,14 +32,14 @@ export function registerSupervisorTools(server: McpServer, supervisor: Superviso
         'Start a long-running or background process (dev server, watcher, build) under the IDE, where the user can ' +
         'see and control it. Use this instead of running commands in the background. If the same command is already ' +
         'running in the same directory, returns that process instead of starting another. Give either `command` ' +
-        '(run with /bin/sh, `cwd` relative to the project root or absolute) or `task`, a script in a package.json or ' +
+        '(run with /bin/sh, `cwd` relative to the project root or absolute, and may be outside the project) or `task`, a script in a package.json or ' +
         'a task in a mise.toml, which runs as the same command the user gets from the run icon in that file.',
       inputSchema: {
         command: z.string().optional(),
         cwd: z.string().optional().describe('Directory to run `command` in; defaults to the project root.'),
         task: z
           .object({
-            file: z.string().describe('The package.json or mise.toml, relative to the project root.'),
+            file: z.string().describe('The package.json or mise.toml, relative to the project root or absolute.'),
             name: z.string().describe('The script or task name.'),
           })
           .optional(),

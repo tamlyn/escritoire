@@ -55,7 +55,9 @@ test('one process per directory and command, however the directory is written', 
   expect(supervisor.list('p')).toHaveLength(1)
   await vi.waitFor(() => expect(outputOf(first.id)).toContain(`in ${join(root, 'web')}`))
 
-  await expect(supervisor.start('p', { command, cwd: '..' })).rejects.toThrow('outside the project')
+  // Outside the project is allowed, and shown absolute.
+  const outside = await supervisor.start('p', { command: 'pwd; sleep 30', cwd: '..' })
+  expect(outside.process.cwd).toBe(join(root, '..'))
   expect(() => supervisor.output('other', first.id, 1)).toThrow('No process')
 })
 
@@ -85,6 +87,16 @@ test('records how a process ended, and restarts it in place', async () => {
   await vi.waitFor(() => expect(supervisor.list('p').find((p) => p.id === ok.id)).toMatchObject({ status: 'exited' }))
   supervisor.remove('p', ok.id)
   expect(supervisor.list('p').map((p) => p.id)).toEqual([failing.id])
+})
+
+test('a process that cannot start is shown as failed, not running', async () => {
+  const { process: info } = await supervisor.start('p', { command: 'true', cwd: 'web' })
+  await vi.waitFor(() => expect(supervisor.list('p')[0]).toMatchObject({ status: 'exited' }))
+  await rm(join(root, 'web'), { recursive: true })
+  await supervisor.restart('p', info.id)
+  await vi.waitFor(() => expect(supervisor.list('p')[0]).toMatchObject({ status: 'failed' }))
+  // node-pty may throw, or the child may fail to change directory and exit.
+  expect(outputOf(info.id).at(-1)).toMatch(/^── (Couldn't start|Exited with code)/)
 })
 
 test('a task and the command it runs are the same process', async () => {

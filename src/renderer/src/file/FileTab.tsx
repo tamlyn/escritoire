@@ -4,6 +4,7 @@ import { basicSetup } from 'codemirror'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParentWorkspace } from 'react-resizable-panels'
 import { baseName } from '../../../shared/files'
+import { isTaskFile } from '../../../shared/process'
 import { api } from '../api'
 import { useFileContent } from '../files'
 import { useProcesses } from '../processes'
@@ -11,7 +12,6 @@ import { useProject } from '../project-context'
 import { Centred, createProcessTab, type Tab, type TabData } from '../tabs'
 import { changeFromDisk, editorTheme, loadLanguage } from './editor'
 import { runGutter, setRunningTasks } from './run-gutter'
-import { isTaskFile } from './tasks'
 
 const saveDelayMs = 500
 // The scroll position lives in the project layout, which is rewritten on every save.

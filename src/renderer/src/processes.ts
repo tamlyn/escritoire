@@ -10,8 +10,13 @@ function setProcesses(next: ProcessInfo[]) {
   for (const listener of listeners) listener()
 }
 
-subscribe('processesChanged', setProcesses)
-void api.listProcesses().then(setProcesses)
+// The initial list mustn't overwrite a newer one pushed while it was loading.
+let pushed = false
+subscribe('processesChanged', (next) => {
+  pushed = true
+  setProcesses(next)
+})
+void api.listProcesses().then((initial) => pushed || setProcesses(initial))
 
 function useAllProcesses(): ProcessInfo[] {
   return useSyncExternalStore(

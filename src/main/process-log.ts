@@ -12,6 +12,7 @@ const maxErrorLines = 40
 
 // CSI, OSC (ended by BEL or ST) and the remaining two-character escapes.
 const escapeSequence = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]/g
+const incompleteEscape = /\x1b(?:\[[0-?]*[ -/]*|\][^\x07\x1b]*)?$/
 const errorStart = /\b(?:\w*error|exception|traceback|panic|panicked|fatal|uncaught)\b/i
 const continuation = /^\s+\S|^(?:Caused by|During handling|The above exception)/
 
@@ -22,9 +23,10 @@ export class ProcessLog {
   private openError: { entry: LogError; lines: number; traceback: boolean } | null = null
 
   append(chunk: string, now = Date.now()): void {
-    const pieces = (this.partial + chunk.replace(escapeSequence, '')).replaceAll('\r\n', '\n').split('\n')
+    // Escape sequences are only removed from complete lines: one can be split across chunks.
+    const pieces = (this.partial + chunk).split('\n')
     this.partial = pieces.pop()!
-    for (const piece of pieces) this.addLine({ at: now, text: visibleText(piece) })
+    for (const piece of pieces) this.addLine({ at: now, text: plainText(piece) })
   }
 
   /** A line the IDE adds, such as a restart marker; never an error. */
@@ -36,7 +38,7 @@ export class ProcessLog {
 
   /** The last `count` lines, optionally only those matching `pattern` (case-insensitive). */
   tail(count: number, pattern?: RegExp): LogLine[] {
-    const partial = visibleText(this.partial)
+    const partial = plainText(this.partial.replace(incompleteEscape, ''))
     const lines = partial ? [...this.lines, { at: Date.now(), text: partial }] : this.lines
     const matching = pattern ? lines.filter((line) => pattern.test(line.text)) : lines
     return matching.slice(-count)
@@ -47,7 +49,7 @@ export class ProcessLog {
   }
 
   private flushPartial(now: number): void {
-    if (this.partial) this.addLine({ at: now, text: visibleText(this.partial) })
+    if (this.partial) this.addLine({ at: now, text: plainText(this.partial.replace(incompleteEscape, '')) })
     this.partial = ''
   }
 
@@ -85,9 +87,9 @@ export class ProcessLog {
   }
 }
 
-/** What a terminal would show once carriage returns have redrawn the line. */
-function visibleText(line: string): string {
-  const segments = line.split('\r')
+/** What a terminal would show, without colours and once carriage returns have redrawn the line. */
+function plainText(line: string): string {
+  const segments = line.replace(escapeSequence, '').split('\r')
   for (let i = segments.length - 1; i >= 0; i--) if (segments[i]) return segments[i]!.trimEnd()
   return ''
 }

@@ -47,3 +47,13 @@ test('marks are never errors and end an open one', () => {
   log.append('  indented after restart\n')
   expect(log.errorsSince(0).map((e) => e.text)).toEqual(['Error: boom'])
 })
+
+test('removes escape sequences split across chunks', () => {
+  const log = new ProcessLog()
+  log.append('\x1b[3')
+  expect(texts(log)).toEqual([])
+  log.append('1mError: split\x1b[0m\r')
+  log.append('\n')
+  expect(texts(log)).toEqual(['Error: split'])
+  expect(log.errorsSince(0).map((e) => e.text)).toEqual(['Error: split'])
+})

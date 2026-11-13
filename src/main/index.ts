@@ -29,7 +29,8 @@ function createApi({ projects, sessions, sessionStore, files, terminals, supervi
     activateProject: (id) => projects.activateProject(id),
     closeProject: async (id) => {
       sessions.closeProject(id)
-      await Promise.all([terminals.closeProject(id), supervisor.closeProject(id)])
+      // Failing to save scrollback mustn't stop the project closing.
+      logFailures(await Promise.allSettled([terminals.closeProject(id), supervisor.closeProject(id)]))
       return projects.closeProject(id)
     },
     removeProject: async (id) => {
@@ -69,6 +70,10 @@ function createApi({ projects, sessions, sessionStore, files, terminals, supervi
     writeProcess: async (projectId, processId, data) => supervisor.write(projectId, processId, data),
     resizeProcess: async (projectId, processId, size) => supervisor.resize(projectId, processId, size),
   }
+}
+
+function logFailures(results: PromiseSettledResult<unknown>[]): void {
+  for (const result of results) if (result.status === 'rejected') console.error(result.reason)
 }
 
 function registerApi(api: Api): void {
@@ -157,7 +162,7 @@ void app.whenReady().then(async () => {
     event.preventDefault()
     sessions.closeAll()
     void Promise.allSettled([files.unwatch(), terminals.closeAll(), supervisor.closeAll(), ideServer.close()]).then((results) => {
-      for (const result of results) if (result.status === 'rejected') console.error(result.reason)
+      logFailures(results)
       shutDown = true
       app.quit()
     })

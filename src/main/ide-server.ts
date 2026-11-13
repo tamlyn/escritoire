@@ -54,7 +54,7 @@ export class IdeServer {
     response: ServerResponse,
     register: (server: McpServer, projectId: string) => void,
   ): Promise<void> {
-    if (!this.authorised(request.headers.authorization)) {
+    if (!this.authorized(request.headers.authorization)) {
       response.writeHead(401).end()
       return
     }
@@ -81,7 +81,7 @@ export class IdeServer {
     await transport.handleRequest(request, response)
   }
 
-  private authorised(header: string | undefined): boolean {
+  private authorized(header: string | undefined): boolean {
     const expected = Buffer.from(`Bearer ${this.token}`)
     const actual = Buffer.from(header ?? '')
     return actual.length === expected.length && timingSafeEqual(actual, expected)

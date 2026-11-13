@@ -1,11 +1,10 @@
 import { createHash } from 'node:crypto'
 import { realpath } from 'node:fs/promises'
 import { isAbsolute, relative, resolve } from 'node:path'
-import { type IPty, spawn } from 'node-pty'
 import type { ProcessInfo, ProcessSpec, TaskRef } from '../shared/process'
 import type { ScreenOutput, ScreenSize, ScreenSnapshot } from '../shared/screen'
 import { type LogError, type LogLine, ProcessLog } from './process-log'
-import { notice, ptyEnv, Screen } from './screen'
+import { notice, PtyScreen } from './screen'
 import { taskCommand } from './tasks'
 
 const stopGraceMs = 5000
@@ -80,7 +79,7 @@ export class Supervisor {
 
   attach(projectId: string, id: string, size: ScreenSize): Promise<ScreenSnapshot> {
     const supervised = this.get(projectId, id)
-    supervised.resize(size)
+    supervised.screen.resize(size)
     supervised.screen.attached = true
     return supervised.screen.snapshot()
   }
@@ -91,11 +90,11 @@ export class Supervisor {
   }
 
   write(projectId: string, id: string, data: string): void {
-    this.get(projectId, id).write(data)
+    this.get(projectId, id).screen.input(data)
   }
 
   resize(projectId: string, id: string, size: ScreenSize): void {
-    this.get(projectId, id).resize(size)
+    this.get(projectId, id).screen.resize(size)
   }
 
   output(projectId: string, id: string, count: number, pattern?: RegExp): LogLine[] {
@@ -137,16 +136,18 @@ export class Supervisor {
     let directory: string
     let task: TaskRef | null = null
     if ('task' in spec) {
-      const file = inside(root, await realpath(resolve(root, spec.task.file)))
-      task = { file: relative(root, file), name: spec.task.name }
+      const file = await realpath(resolve(root, spec.task.file))
+      task = { file: display(root, file), name: spec.task.name }
       ;({ command, cwd: directory } = await taskCommand(root, { file, name: task.name }))
     } else {
       command = spec.command.trim()
       if (!command) throw new Error('The command is empty.')
       directory = resolve(root, spec.cwd ?? '.')
     }
-    const absoluteCwd = inside(root, await realpath(directory))
-    return { command, cwd: relative(root, absoluteCwd), absoluteCwd, task }
+    // Processes may run anywhere (serving a scratch project in /tmp, say); they
+    // still belong to the project whose user or agent started them.
+    const absoluteCwd = await realpath(directory)
+    return { command, cwd: display(root, absoluteCwd), absoluteCwd, task }
   }
 
   private changed(): void {
@@ -154,12 +155,10 @@ export class Supervisor {
   }
 }
 
-function inside(root: string, path: string): string {
+/** Relative to the project when inside it, otherwise absolute. */
+function display(root: string, path: string): string {
   const relativePath = relative(root, path)
-  if (relativePath === '..' || relativePath.startsWith('../') || isAbsolute(relativePath)) {
-    throw new Error(`${path} is outside the project.`)
-  }
-  return path
+  return relativePath === '..' || relativePath.startsWith('../') || isAbsolute(relativePath) ? path : relativePath
 }
 
 /** Whitespace differences don't make a different process. */
@@ -169,9 +168,9 @@ function processId(projectId: string, cwd: string, command: string): string {
 }
 
 class SupervisedProcess {
-  readonly screen: Screen
+  readonly screen: PtyScreen
   readonly log = new ProcessLog()
-  private pty: IPty | null = null
+  private pid: number | null = null
   private stopRequested = false
   private exitWaiters: (() => void)[] = []
 
@@ -181,53 +180,34 @@ class SupervisedProcess {
     onOutput: (data: string, seq: number) => void,
     private readonly onChanged: () => void,
   ) {
-    this.screen = new Screen(defaultSize, onOutput)
+    this.screen = new PtyScreen(defaultSize, onOutput)
   }
 
   get running(): boolean {
-    return this.pty !== null
+    return this.screen.running
   }
 
   start(): void {
-    if (this.info.startedAt) {
-      this.screen.write(`${notice('Restarted')}\r\n`)
-      this.log.mark('── Restarted ──')
-    }
+    if (this.info.startedAt) this.note('Restarted', '\r\n')
     Object.assign(this.info, { status: 'running', exitCode: null, startedAt: Date.now(), endedAt: null })
     this.stopRequested = false
-    const pty = spawn('/bin/sh', ['-c', this.info.command], {
-      ...this.screen.currentSize,
-      cwd: this.absoluteCwd,
-      name: 'xterm-256color',
-      env: ptyEnv(),
-    })
-    pty.onData((data) => {
-      this.screen.write(data)
-      this.log.append(data)
-    })
-    pty.onExit(({ exitCode, signal }) => {
-      if (this.pty !== pty) return
-      this.pty = null
-      // The pty's process leads its group; take anything it left behind with it.
-      if (this.stopRequested) signalGroup(pty.pid, 'SIGKILL')
-      const status = this.stopRequested ? 'stopped' : exitCode === 0 && !signal ? 'exited' : 'failed'
-      Object.assign(this.info, { status, exitCode, endedAt: Date.now() })
-      const message = status === 'stopped' ? 'Stopped' : `Exited with code ${exitCode}`
-      this.screen.write(notice(message))
-      this.log.mark(`── ${message} ──`)
-      for (const resolve of this.exitWaiters.splice(0)) resolve()
-      this.onChanged()
-    })
-    this.pty = pty
+    try {
+      this.pid = this.screen.spawn('/bin/sh', ['-c', this.info.command], this.absoluteCwd, (data) => this.log.append(data), (exit) =>
+        this.exited(exit.exitCode, exit.signal),
+      )
+    } catch (error) {
+      Object.assign(this.info, { status: 'failed', endedAt: Date.now() })
+      this.note(`Couldn't start: ${error instanceof Error ? error.message : String(error)}`)
+    }
   }
 
   /** Asks the process group to terminate, killing it if it hasn't after a grace period. */
   stop(): Promise<void> {
-    const pty = this.pty
-    if (!pty) return Promise.resolve()
+    const pid = this.screen.pid
+    if (pid === undefined) return Promise.resolve()
     this.stopRequested = true
-    signalGroup(pty.pid, 'SIGTERM')
-    const timer = setTimeout(() => signalGroup(pty.pid, 'SIGKILL'), stopGraceMs)
+    signalGroup(pid, 'SIGTERM')
+    const timer = setTimeout(() => signalGroup(pid, 'SIGKILL'), stopGraceMs)
     return new Promise((resolve) => {
       this.exitWaiters.push(() => {
         clearTimeout(timer)
@@ -236,12 +216,19 @@ class SupervisedProcess {
     })
   }
 
-  write(data: string): void {
-    this.pty?.write(data)
+  private exited(exitCode: number, signal: number | undefined): void {
+    // The pty's process led its group; take anything it left behind with it.
+    if (this.stopRequested && this.pid !== null) signalGroup(this.pid, 'SIGKILL')
+    const status = this.stopRequested ? 'stopped' : exitCode === 0 && !signal ? 'exited' : 'failed'
+    Object.assign(this.info, { status, exitCode, endedAt: Date.now() })
+    this.note(status === 'stopped' ? 'Stopped' : `Exited with code ${exitCode}`)
+    for (const resolve of this.exitWaiters.splice(0)) resolve()
+    this.onChanged()
   }
 
-  resize(size: ScreenSize): void {
-    if (this.screen.resize(size)) this.pty?.resize(size.cols, size.rows)
+  private note(message: string, after = ''): void {
+    this.screen.write(notice(message) + after)
+    this.log.mark(`── ${message} ──`)
   }
 }
 

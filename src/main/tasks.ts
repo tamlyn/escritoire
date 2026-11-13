@@ -1,8 +1,6 @@
 import { readFile, stat } from 'node:fs/promises'
 import { basename, dirname, join, relative } from 'node:path'
-import type { TaskRef } from '../shared/process'
-
-export const taskFileNames = ['package.json', 'mise.toml', '.mise.toml']
+import { isTaskFile, type TaskRef } from '../shared/process'
 
 /**
  * The command a task runs as, so a task started from a run icon and the same
@@ -10,14 +8,13 @@ export const taskFileNames = ['package.json', 'mise.toml', '.mise.toml']
  */
 export async function taskCommand(projectPath: string, task: TaskRef): Promise<{ command: string; cwd: string }> {
   const cwd = dirname(task.file)
-  switch (basename(task.file)) {
+  const fileName = basename(task.file)
+  if (!isTaskFile(fileName)) throw new Error(`Not a task file: ${task.file}`)
+  switch (fileName) {
     case 'package.json':
       return { command: `${await packageManager(projectPath, cwd)} run ${shellQuote(task.name)}`, cwd }
-    case 'mise.toml':
-    case '.mise.toml':
-      return { command: `mise run ${shellQuote(task.name)}`, cwd }
     default:
-      throw new Error(`Not a task file: ${task.file}`)
+      return { command: `mise run ${shellQuote(task.name)}`, cwd }
   }
 }
 

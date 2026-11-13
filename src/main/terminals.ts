@@ -3,10 +3,9 @@ import { readlink } from 'node:fs/promises'
 import { userInfo } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { type IPty, spawn } from 'node-pty'
 import type { ScreenOutput, ScreenSize, ScreenSnapshot } from '../shared/screen'
 import { deleteJson, readJson, writeJson } from './json-file'
-import { notice, ptyEnv, Screen } from './screen'
+import { notice, PtyScreen } from './screen'
 
 /** What's kept of a terminal between a project closing and reopening. */
 type SavedTerminal = { cwd: string; scrollback: string }
@@ -46,7 +45,7 @@ export class Terminals {
         this.terminals.set(terminalId, terminal)
       }
     }
-    terminal.resize(size)
+    terminal.screen.resize(size)
     terminal.screen.attached = true
     return terminal.screen.snapshot()
   }
@@ -60,17 +59,17 @@ export class Terminals {
   write(terminalId: string, data: string): void {
     const terminal = this.terminals.get(terminalId)
     if (!terminal) return
-    if (terminal.exited) terminal.start(this.options.projectPath(terminal.projectId))
-    else terminal.write(data)
+    if (terminal.screen.running) terminal.screen.input(data)
+    else terminal.start(this.options.projectPath(terminal.projectId))
   }
 
   resize(terminalId: string, size: ScreenSize): void {
-    this.terminals.get(terminalId)?.resize(size)
+    this.terminals.get(terminalId)?.screen.resize(size)
   }
 
   /** Stops the shell and forgets the terminal, as when its tab is closed. */
   async close(projectId: string, terminalId: string): Promise<void> {
-    this.terminals.get(terminalId)?.kill()
+    this.terminals.get(terminalId)?.screen.dispose()
     this.terminals.delete(terminalId)
     await this.takeSaved(projectId, terminalId)
   }
@@ -83,7 +82,7 @@ export class Terminals {
     for (const [terminalId, terminal] of closing) {
       this.terminals.delete(terminalId)
       saved[terminalId] = await terminal.save(this.options.projectPath(projectId))
-      terminal.kill()
+      terminal.screen.dispose()
     }
     await writeJson(this.path(projectId), saved)
   }
@@ -91,7 +90,7 @@ export class Terminals {
   async deleteProject(projectId: string): Promise<void> {
     for (const [terminalId, terminal] of this.terminals) {
       if (terminal.projectId !== projectId) continue
-      terminal.kill()
+      terminal.screen.dispose()
       this.terminals.delete(terminalId)
     }
     this.saved.delete(projectId)
@@ -116,7 +115,14 @@ export class Terminals {
   private loadSaved(projectId: string): Promise<ProjectTerminals> {
     let saved = this.saved.get(projectId)
     if (!saved) {
-      saved = readJson(this.path(projectId)).then((value) => (value as ProjectTerminals) ?? {})
+      // Unreadable saved state only costs the scrollback, so it mustn't stop terminals working.
+      saved = readJson(this.path(projectId)).then(
+        (value) => (value as ProjectTerminals) ?? {},
+        (error: unknown) => {
+          console.error(error)
+          return {}
+        },
+      )
       this.saved.set(projectId, saved)
     }
     return saved
@@ -128,8 +134,7 @@ export class Terminals {
 }
 
 class ShellTerminal {
-  readonly screen: Screen
-  private pty: IPty | null = null
+  readonly screen: PtyScreen
 
   constructor(
     readonly projectId: string,
@@ -137,47 +142,24 @@ class ShellTerminal {
     restoredScrollback: string | undefined,
     onOutput: (data: string, seq: number) => void,
   ) {
-    this.screen = new Screen(size, onOutput)
+    this.screen = new PtyScreen(size, onOutput)
     if (restoredScrollback) {
       this.screen.write(restoredScrollback)
       this.screen.write(`${notice(`Restored ${new Date().toLocaleString()}`)}\r\n`)
     }
   }
 
-  get exited(): boolean {
-    return this.pty === null
-  }
-
   start(cwd: string): void {
     const shell = process.env.SHELL || userInfo().shell || '/bin/sh'
-    const pty = spawn(shell, [], { ...this.screen.currentSize, cwd, name: 'xterm-256color', env: ptyEnv() })
-    pty.onData((data) => this.screen.write(data))
-    pty.onExit(() => {
-      if (this.pty !== pty) return
-      this.pty = null
+    this.screen.spawn(shell, [], cwd, () => {}, () => {
       this.screen.write(notice('Shell exited. Press any key to start a new one.'))
     })
-    this.pty = pty
-  }
-
-  write(data: string): void {
-    this.pty?.write(data)
-  }
-
-  resize(size: ScreenSize): void {
-    if (this.screen.resize(size)) this.pty?.resize(size.cols, size.rows)
   }
 
   async save(fallbackCwd: string): Promise<SavedTerminal> {
-    const cwd = (this.pty && (await workingDirectory(this.pty.pid))) || fallbackCwd
+    const pid = this.screen.pid
+    const cwd = (pid && (await workingDirectory(pid))) || fallbackCwd
     return { cwd, scrollback: (await this.screen.snapshot()).data }
-  }
-
-  kill(): void {
-    const pty = this.pty
-    this.pty = null
-    pty?.kill()
-    this.screen.dispose()
   }
 }
 

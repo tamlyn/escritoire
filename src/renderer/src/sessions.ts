@@ -16,8 +16,13 @@ function setSummaries(next: SessionSummary[]) {
   for (const listener of summaryListeners) listener()
 }
 
-subscribe('sessionsChanged', setSummaries)
-void api.getSessionSummaries().then(setSummaries)
+// The initial list mustn't overwrite a newer one pushed while it was loading.
+let pushed = false
+subscribe('sessionsChanged', (next) => {
+  pushed = true
+  setSummaries(next)
+})
+void api.getSessionSummaries().then((initial) => pushed || setSummaries(initial))
 
 /** Live state of every loaded session, across all projects. */
 export function useSessionSummaries(): SessionSummary[] {

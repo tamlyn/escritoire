@@ -1,9 +1,7 @@
+import { isTaskFile } from '../../../shared/process'
+
 /** A task defined in the file, and the offset of the line it's defined on. */
 export type FoundTask = { name: string; offset: number }
-
-export function isTaskFile(fileName: string): boolean {
-  return fileName === 'package.json' || fileName === 'mise.toml' || fileName === '.mise.toml'
-}
 
 /** Scripts in a package.json, or tasks in a mise.toml; nothing for other files. */
 export function findTasks(fileName: string, text: string): FoundTask[] {
