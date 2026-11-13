@@ -24,7 +24,10 @@ import { useRecentlyChanged } from './files'
 import { ProjectContext, useProject } from './project-context'
 import { useSessionSummary } from './sessions'
 import { modifierLabel, useShortcut } from './shortcuts'
-import { createEmptyTab, createFileTab, type Tab, TabContent, type TabData } from './tabs'
+import { ProcessList } from './process/ProcessList'
+import { ProcessStatusDot } from './process/ProcessStatusDot'
+import { useProcess } from './processes'
+import { createEmptyTab, createFileTab, createProcessTab, type Tab, TabContent, type TabData } from './tabs'
 
 const emptyModel: WorkspaceModelInput<TabData> = {
   version: 1,
@@ -82,7 +85,12 @@ export function ProjectWorkspace({ project }: { project: Project }) {
           groupResizeBehavior="preserve-pixel-size"
           className="bg-chrome"
         >
-          <FileTree onOpenFile={(path) => workspaceRef.current?.addTab(createFileTab(path))} />
+          <div className="flex h-full flex-col">
+            <div className="min-h-0 flex-1">
+              <FileTree onOpenFile={(path) => workspaceRef.current?.addTab(createFileTab(path))} />
+            </div>
+            <ProcessList onOpen={(process) => workspaceRef.current?.addTab(createProcessTab(process))} />
+          </div>
         </Panel>
         {renderSeparator()}
         <Panel id="tabs">
@@ -155,6 +163,8 @@ function renderTab(tab: Tab, props: React.HTMLAttributes<HTMLElement>) {
         <SessionTabLabel tab={tab} agentSessionId={tab.data.agentSessionId} />
       ) : tab.data.kind === 'file' ? (
         <FileTabLabel tab={tab} path={tab.data.path} />
+      ) : tab.data.kind === 'process' ? (
+        <ProcessTabLabel tab={tab} processId={tab.data.processId} />
       ) : (
         <span className="truncate">{tab.title}</span>
       )}
@@ -183,6 +193,16 @@ function FileTabLabel({ tab, path }: { tab: Tab; path: string }) {
       <span className="truncate" title={path}>
         {tab.title}
       </span>
+    </>
+  )
+}
+
+function ProcessTabLabel({ tab, processId }: { tab: Tab; processId: string }) {
+  const process = useProcess(processId)
+  return (
+    <>
+      {process && <ProcessStatusDot process={process} />}
+      <span className="truncate font-mono text-xs">{tab.title}</span>
     </>
   )
 }

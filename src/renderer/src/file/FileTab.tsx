@@ -1,14 +1,17 @@
 import { Annotation, Compartment, EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { basicSetup } from 'codemirror'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParentWorkspace } from 'react-resizable-panels'
 import { baseName } from '../../../shared/files'
 import { api } from '../api'
 import { useFileContent } from '../files'
+import { useProcesses } from '../processes'
 import { useProject } from '../project-context'
-import { Centred, type Tab, type TabData } from '../tabs'
+import { Centred, createProcessTab, type Tab, type TabData } from '../tabs'
 import { changeFromDisk, editorTheme, loadLanguage } from './editor'
+import { runGutter, setRunningTasks } from './run-gutter'
+import { isTaskFile } from './tasks'
 
 const saveDelayMs = 500
 // The scroll position lives in the project layout, which is rewritten on every save.
@@ -18,6 +21,16 @@ export function FileTab({ tab, path, scrollPos }: { tab: Tab; path: string; scro
   const project = useProject()
   const content = useFileContent(project.id, path)
   const workspace = useParentWorkspace<TabData>()
+  const processes = useProcesses(project.id)
+  const runningTasks = useMemo(
+    () => processes.filter((p) => p.status === 'running' && p.task?.file === path).map((p) => p.task!.name),
+    [processes, path],
+  )
+
+  async function runTask(name: string) {
+    const process = await api.startProcess(project.id, { task: { file: path, name } })
+    workspace?.addTab(createProcessTab(process))
+  }
 
   if (!content) return null
   switch (content.kind) {
@@ -37,6 +50,8 @@ export function FileTab({ tab, path, scrollPos }: { tab: Tab; path: string; scro
           content={content}
           initialScrollPos={scrollPos}
           onScrolled={(pos) => workspace?.updateTab(tab.id, { data: { kind: 'file', path, scrollPos: pos } })}
+          onRunTask={(name) => void runTask(name)}
+          runningTasks={runningTasks}
         />
       )
   }
@@ -52,6 +67,8 @@ type EditorProps = {
   content: { text: string }
   initialScrollPos: number | undefined
   onScrolled: (pos: number) => void
+  onRunTask: (name: string) => void
+  runningTasks: string[]
 }
 
 /**
@@ -59,7 +76,7 @@ type EditorProps = {
  * manual save. Changes made on disk apply in place unless an edit is waiting
  * to be saved or is being saved, in which case the edit wins.
  */
-function Editor({ projectId, path, content, initialScrollPos, onScrolled }: EditorProps) {
+function Editor({ projectId, path, content, initialScrollPos, onScrolled, onRunTask, runningTasks }: EditorProps) {
   const parentRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView>(null)
   const unsaved = useRef<string | null>(null)
@@ -67,6 +84,8 @@ function Editor({ projectId, path, content, initialScrollPos, onScrolled }: Edit
   const [saveError, setSaveError] = useState<string | null>(null)
   const onScrolledRef = useRef(onScrolled)
   onScrolledRef.current = onScrolled
+  const onRunTaskRef = useRef(onRunTask)
+  onRunTaskRef.current = onRunTask
 
   useEffect(() => {
     let saveTimer: ReturnType<typeof setTimeout> | undefined
@@ -98,6 +117,7 @@ function Editor({ projectId, path, content, initialScrollPos, onScrolled }: Edit
           // CodeMirror splits on any line ending and joins with \n unless told
           // otherwise, which would rewrite every line of a CRLF file on save.
           content.text.includes('\r\n') ? EditorState.lineSeparator.of('\r\n') : [],
+          isTaskFile(baseName(path)) ? runGutter(baseName(path), (name) => onRunTaskRef.current(name)) : [],
           basicSetup,
           language.of([]),
           editorTheme(),
@@ -143,6 +163,11 @@ function Editor({ projectId, path, content, initialScrollPos, onScrolled }: Edit
     if (view.state.sliceDoc() === content.text) return
     view.dispatch({ changes: changeFromDisk(view.state, content.text), annotations: fromDisk.of(true) })
   }, [content])
+
+  const runningKey = runningTasks.join('\0')
+  useEffect(() => {
+    viewRef.current?.dispatch({ effects: setRunningTasks.of(new Set(runningTasks)) })
+  }, [runningKey])
 
   return (
     <div className="flex h-full flex-col">

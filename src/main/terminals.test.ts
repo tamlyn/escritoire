@@ -2,11 +2,11 @@ import { mkdtemp, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import type { TerminalOutput } from '../shared/terminal'
+import type { ScreenOutput } from '../shared/screen'
 import { Terminals } from './terminals'
 
 let root: string
-let output: TerminalOutput[]
+let output: ScreenOutput[]
 let terminals: Terminals
 const size = { cols: 80, rows: 24 }
 

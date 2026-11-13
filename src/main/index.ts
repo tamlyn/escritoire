@@ -8,6 +8,7 @@ import { ProjectStore } from './project-store'
 import { SessionManager } from './session-manager'
 import { SessionStore } from './session-store'
 import { loadShellEnv } from './shell-env'
+import { Supervisor } from './supervisor'
 import { Terminals } from './terminals'
 
 type Services = {
@@ -16,21 +17,22 @@ type Services = {
   sessionStore: SessionStore
   files: ProjectFiles
   terminals: Terminals
+  supervisor: Supervisor
 }
 
-function createApi({ projects, sessions, sessionStore, files, terminals }: Services): Api {
+function createApi({ projects, sessions, sessionStore, files, terminals, supervisor }: Services): Api {
   return {
     getState: async () => projects.getState(),
     openProject: (path) => projects.openProject(path),
     activateProject: (id) => projects.activateProject(id),
     closeProject: async (id) => {
       sessions.closeProject(id)
-      await terminals.closeProject(id)
+      await Promise.all([terminals.closeProject(id), supervisor.closeProject(id)])
       return projects.closeProject(id)
     },
     removeProject: async (id) => {
       sessions.closeProject(id)
-      await Promise.all([sessionStore.deleteProject(id), terminals.deleteProject(id)])
+      await Promise.all([sessionStore.deleteProject(id), terminals.deleteProject(id), supervisor.closeProject(id)])
       return projects.removeProject(id)
     },
     loadLayout: (projectId) => projects.loadLayout(projectId),
@@ -55,6 +57,15 @@ function createApi({ projects, sessions, sessionStore, files, terminals }: Servi
     writeTerminal: async (terminalId, data) => terminals.write(terminalId, data),
     resizeTerminal: async (terminalId, size) => terminals.resize(terminalId, size),
     closeTerminal: (projectId, terminalId) => terminals.close(projectId, terminalId),
+    listProcesses: async () => supervisor.list(),
+    startProcess: async (projectId, spec) => (await supervisor.start(projectId, spec)).process,
+    stopProcess: (projectId, processId) => supervisor.stop(projectId, processId),
+    restartProcess: async (projectId, processId) => void (await supervisor.restart(projectId, processId)),
+    removeProcess: async (projectId, processId) => supervisor.remove(projectId, processId),
+    attachProcess: (projectId, processId, size) => supervisor.attach(projectId, processId, size),
+    detachProcess: async (processId) => supervisor.detach(processId),
+    writeProcess: async (projectId, processId, data) => supervisor.write(projectId, processId, data),
+    resizeProcess: async (projectId, processId, size) => supervisor.resize(projectId, processId, size),
   }
 }
 
@@ -122,23 +133,28 @@ void app.whenReady().then(async () => {
   const terminals = new Terminals({
     dataDir,
     projectPath: (projectId) => projects.getProject(projectId).path,
-    send: (output) => send('terminalOutput', output),
+    send: (output) => send('screenOutput', output),
+  })
+  const supervisor = new Supervisor({
+    projectPath: (projectId) => projects.getProject(projectId).path,
+    send: (output) => send('screenOutput', output),
+    onChanged: (processes) => send('processesChanged', processes),
   })
   // Only the active project is watched.
   projects.onActiveChanged((projectId) => files.watch(projectId))
 
-  // Quitting waits while terminals save their scrollback.
+  // Quitting waits while terminals save their scrollback and processes stop.
   let shutDown = false
   app.on('before-quit', (event) => {
     if (shutDown) return
     event.preventDefault()
     sessions.closeAll()
-    void Promise.allSettled([files.unwatch(), terminals.closeAll()]).then((results) => {
+    void Promise.allSettled([files.unwatch(), terminals.closeAll(), supervisor.closeAll()]).then((results) => {
       for (const result of results) if (result.status === 'rejected') console.error(result.reason)
       shutDown = true
       app.quit()
     })
   })
-  registerApi(createApi({ projects, sessions, sessionStore, files, terminals }))
+  registerApi(createApi({ projects, sessions, sessionStore, files, terminals, supervisor }))
   createWindow()
 })

@@ -1,10 +1,12 @@
 import type { TabNode } from 'react-resizable-panels'
 import type { SessionPointer } from '../../shared/agent'
 import { baseName } from '../../shared/files'
+import type { ProcessInfo, TaskRef } from '../../shared/process'
+import { ProcessTab } from './process/ProcessTab'
 import { FileTab } from './file/FileTab'
 import { NewTabPage } from './NewTabPage'
 import { SessionTab } from './session/SessionTab'
-import { TerminalTab } from './terminal/TerminalTab'
+import { TerminalTab } from './screen/TerminalTab'
 
 /**
  * What a tab shows. Saved in the project's layout, so must stay JSON-serialisable
@@ -17,6 +19,8 @@ export type TabData =
   | { kind: 'file'; path: string; scrollPos?: number }
   /** The tab's id identifies its shell in main. */
   | { kind: 'terminal' }
+  /** Enough to start the process again after a restart. */
+  | { kind: 'process'; processId: string; command: string; cwd: string; task?: TaskRef }
 
 export type Tab = TabNode<TabData>
 
@@ -42,6 +46,21 @@ export function createTerminalTab(): Tab {
   return { id: `terminal:${crypto.randomUUID()}`, title: 'Terminal', data: { kind: 'terminal' } }
 }
 
+/** One tab per process. */
+export function createProcessTab(process: ProcessInfo): Tab {
+  return {
+    id: `process:${process.id}`,
+    title: process.command,
+    data: {
+      kind: 'process',
+      processId: process.id,
+      command: process.command,
+      cwd: process.cwd,
+      ...(process.task ? { task: process.task } : {}),
+    },
+  }
+}
+
 export function TabContent({ tab }: { tab: Tab }) {
   const data = tab.data
   switch (data.kind) {
@@ -53,6 +72,8 @@ export function TabContent({ tab }: { tab: Tab }) {
       return <FileTab tab={tab} path={data.path} scrollPos={data.scrollPos} />
     case 'terminal':
       return <TerminalTab tab={tab} />
+    case 'process':
+      return <ProcessTab processId={data.processId} command={data.command} cwd={data.cwd} task={data.task} />
     default:
       return <Centred>This version can't show “{(data as { kind: string }).kind}” tabs.</Centred>
   }

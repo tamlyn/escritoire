@@ -21,7 +21,8 @@ import type {
   SessionSummary,
 } from './agent'
 import type { DirectoryEntry, FileContent, FilesChanged, WriteResult } from './files'
-import type { TerminalOutput, TerminalSize, TerminalSnapshot } from './terminal'
+import type { ProcessInfo, ProcessSpec } from './process'
+import type { ScreenOutput, ScreenSize, ScreenSnapshot } from './screen'
 
 /**
  * Everything the renderer can ask of the main process. Each method is one
@@ -62,13 +63,26 @@ export type Api = {
   /** Overwrites the file; `missing` if it no longer exists, since the IDE never creates files. */
   writeFile(projectId: string, path: string, text: string): Promise<WriteResult>
 
-  /** Starts the terminal's shell if needed and sends its `terminalOutput` until detached. */
-  attachTerminal(projectId: string, terminalId: string, size: TerminalSize): Promise<TerminalSnapshot>
+  /** Starts the terminal's shell if needed and sends its `screenOutput` until detached. */
+  attachTerminal(projectId: string, terminalId: string, size: ScreenSize): Promise<ScreenSnapshot>
   detachTerminal(terminalId: string): Promise<void>
   writeTerminal(terminalId: string, data: string): Promise<void>
-  resizeTerminal(terminalId: string, size: TerminalSize): Promise<void>
+  resizeTerminal(terminalId: string, size: ScreenSize): Promise<void>
   /** Stops the shell and discards the terminal's saved scrollback. */
   closeTerminal(projectId: string, terminalId: string): Promise<void>
+
+  /** Every project's processes. */
+  listProcesses(): Promise<ProcessInfo[]>
+  /** Returns the running instance rather than starting another. */
+  startProcess(projectId: string, spec: ProcessSpec): Promise<ProcessInfo>
+  stopProcess(projectId: string, processId: string): Promise<void>
+  restartProcess(projectId: string, processId: string): Promise<void>
+  /** Forgets a process that has ended. */
+  removeProcess(projectId: string, processId: string): Promise<void>
+  attachProcess(projectId: string, processId: string, size: ScreenSize): Promise<ScreenSnapshot>
+  detachProcess(processId: string): Promise<void>
+  writeProcess(projectId: string, processId: string, data: string): Promise<void>
+  resizeProcess(projectId: string, processId: string, size: ScreenSize): Promise<void>
 }
 
 // A record rather than an array so the compiler rejects a missing or misspelt method.
@@ -100,6 +114,15 @@ const apiMethodSet: Record<keyof Api, true> = {
   writeTerminal: true,
   resizeTerminal: true,
   closeTerminal: true,
+  listProcesses: true,
+  startProcess: true,
+  stopProcess: true,
+  restartProcess: true,
+  removeProcess: true,
+  attachProcess: true,
+  detachProcess: true,
+  writeProcess: true,
+  resizeProcess: true,
 }
 
 export const apiMethods = Object.keys(apiMethodSet) as (keyof Api)[]
@@ -110,14 +133,18 @@ export type Events = {
   sessionEvent: SessionEvent
   /** Only for the active project, which is the only one watched. */
   filesChanged: FilesChanged
-  terminalOutput: TerminalOutput
+  /** Terminals and processes, keyed by terminal or process id. */
+  screenOutput: ScreenOutput
+  /** Every project's processes, whenever one changes. */
+  processesChanged: ProcessInfo[]
 }
 
 const eventNameSet: Record<keyof Events, true> = {
   sessionsChanged: true,
   sessionEvent: true,
   filesChanged: true,
-  terminalOutput: true,
+  screenOutput: true,
+  processesChanged: true,
 }
 
 export const eventNames = Object.keys(eventNameSet) as (keyof Events)[]
