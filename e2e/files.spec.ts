@@ -34,12 +34,10 @@ test('browses, edits and autosaves files, and shows changes made on disk', async
   await page.keyboard.type('// edited')
   await expect.poll(() => readFile(join(project, 'config', 'app.json'), 'utf8')).toContain('// edited')
 
-  // A change on disk, as an agent would make, updates the editor and marks the file.
+  // A change on disk, as an agent would make, updates the editor.
   await page.locator('[role=tree]').click()
   await writeFile(join(project, 'config', 'app.json'), '{\n  "port": 4000\n}\n')
   await expect(editor).toContainText('"port": 4000')
-  await expect(page.getByRole('tab', { name: /app\.json/ }).getByLabel('Changed just now')).toBeVisible()
-  await expect(tree.getByRole('treeitem', { name: 'config' })).toHaveAttribute('title', /changed just now/)
 
   // New files appear in the tree.
   await writeFile(join(project, 'config', 'new.yaml'), 'a: 1\n')

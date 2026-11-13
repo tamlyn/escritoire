@@ -24,7 +24,15 @@ import type {
   UserInput,
 } from './agent'
 import type { DirectoryEntry, FileContent, FilesChanged, WriteResult } from './files'
-import type { GitDiff, GitDiffRequest, GitSummary } from './git'
+import type {
+  GitBlame,
+  GitBranch,
+  GitCommitDetail,
+  GitDiff,
+  GitDiffRequest,
+  GitHistory,
+  GitSummary,
+} from './git'
 import type { ProcessInfo, ProcessSpec } from './process'
 import type { ScreenOutput, ScreenSize, ScreenSnapshot } from './screen'
 
@@ -97,6 +105,14 @@ export type Api = {
   /** `null` if the project isn't in a git repository. */
   getGitSummary(projectId: string): Promise<GitSummary | null>
   getGitDiff(projectId: string, request: GitDiffRequest): Promise<GitDiff>
+  /** `null` if the project isn't in a git repository. */
+  getGitHistory(projectId: string): Promise<GitHistory | null>
+  getGitCommit(projectId: string, hash: string): Promise<GitCommitDetail>
+  /** Blames `text`, the file as the editor has it, so lines match while it's being edited. */
+  getGitBlame(projectId: string, path: string, text: string): Promise<GitBlame | null>
+  switchGitBranch(projectId: string, branch: Pick<GitBranch, 'kind' | 'name'>): Promise<void>
+  pullGit(projectId: string): Promise<void>
+  pushGit(projectId: string): Promise<void>
 }
 
 // A record rather than an array so the compiler rejects a missing or misspelt method.
@@ -143,6 +159,12 @@ const apiMethodSet: Record<keyof Api, true> = {
   resizeProcess: true,
   getGitSummary: true,
   getGitDiff: true,
+  getGitHistory: true,
+  getGitCommit: true,
+  getGitBlame: true,
+  switchGitBranch: true,
+  pullGit: true,
+  pushGit: true,
 }
 
 export const apiMethods = Object.keys(apiMethodSet) as (keyof Api)[]

@@ -175,3 +175,20 @@
 .cm-run-task-running {
   color: var(--color-emerald-500);
 }
+
+.cm-blame-gutter {
+  width: 22ch;
+}
+
+.cm-blame {
+  overflow: hidden;
+  padding: 0 8px 0 6px;
+  color: var(--muted-foreground);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.cm-blame:hover {
+  color: var(--foreground);
+}

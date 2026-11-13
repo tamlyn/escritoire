@@ -1,5 +1,5 @@
-import { useMemo, useSyncExternalStore } from 'react'
-import type { GitDiff, GitDiffRequest, GitSummary } from '../../../shared/git'
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import type { GitCommitDetail, GitDiff, GitDiffRequest, GitHistory, GitSummary } from '../../../shared/git'
 import { api, subscribe } from '../api'
 
 // A burst of changes, such as an agent writing several files or a commit,
@@ -86,10 +86,39 @@ export function useGitSummary(projectId: string): GitSummary | null | undefined 
   return useSyncExternalStore(live.subscribe, live.getSnapshot)
 }
 
-export function useGitDiff(projectId: string, { path, staged, from }: GitDiffRequest): GitDiff | undefined {
+const histories = new Map<string, LiveGit<GitHistory | null>>()
+
+/** `undefined` while loading; `null` if the project isn't in a git repository. */
+export function useGitHistory(projectId: string): GitHistory | null | undefined {
+  let live = histories.get(projectId)
+  if (!live) {
+    live = new LiveGit(projectId, () => api.getGitHistory(projectId))
+    histories.set(projectId, live)
+  }
+  return useSyncExternalStore(live.subscribe, live.getSnapshot)
+}
+
+/** A commit never changes, so is loaded once. */
+export function useGitCommit(projectId: string, hash: string): GitCommitDetail | Error | undefined {
+  const [commit, setCommit] = useState<GitCommitDetail | Error>()
+  useEffect(() => {
+    let cancelled = false
+    setCommit(undefined)
+    void api.getGitCommit(projectId, hash).then(
+      (loaded) => !cancelled && setCommit(loaded),
+      (error: unknown) => !cancelled && setCommit(error instanceof Error ? error : new Error(String(error))),
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [projectId, hash])
+  return commit
+}
+
+export function useGitDiff(projectId: string, { path, staged, from, commit }: GitDiffRequest): GitDiff | undefined {
   const live = useMemo(
-    () => new LiveGit(projectId, () => api.getGitDiff(projectId, { path, staged, from })),
-    [projectId, path, staged, from],
+    () => new LiveGit(projectId, () => api.getGitDiff(projectId, { path, staged, from, commit })),
+    [projectId, path, staged, from, commit],
   )
   return useSyncExternalStore(live.subscribe, live.getSnapshot)
 }
@@ -100,4 +129,10 @@ export function changedFileCount(summary: GitSummary): number {
     [...summary.conflicted, ...summary.staged, ...summary.unstaged, ...summary.untracked].map((c) => c.path),
   )
   return paths.size + summary.untrackedOmitted
+}
+
+/** IPC prefixes a remote error with the channel name, which means nothing to the user. */
+export function errorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  return message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
 }

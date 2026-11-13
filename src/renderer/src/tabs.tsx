@@ -5,6 +5,7 @@ import type { GitDiffRequest } from '../../shared/git'
 import type { ProcessInfo, TaskRef } from '../../shared/process'
 import { ProcessTab } from './process/ProcessTab'
 import { FileTab } from './file/FileTab'
+import { CommitTab } from './git/CommitTab'
 import { DiffTab } from './git/DiffTab'
 import { GitTab } from './git/GitTab'
 import { NewTabPage } from './NewTabPage'
@@ -19,13 +20,14 @@ export type TabData =
   | { kind: 'empty' }
   | ({ kind: 'session' } & SessionPointer)
   /** `scrollPos` is the document position of the top line. */
-  | { kind: 'file'; path: string; scrollPos?: number }
+  | { kind: 'file'; path: string; scrollPos?: number; blame?: boolean }
   /** The tab's id identifies its shell in main. */
   | { kind: 'terminal' }
   /** Enough to start the process again after a restart. */
   | { kind: 'process'; processId: string; command: string; cwd: string; task?: TaskRef }
   | { kind: 'git' }
   | ({ kind: 'diff' } & GitDiffRequest)
+  | { kind: 'commit'; hash: string }
 
 export type Tab = TabNode<TabData>
 
@@ -71,13 +73,18 @@ export function createGitTab(): Tab {
   return { id: 'git', title: 'Git', data: { kind: 'git' } }
 }
 
-/** One per file and side, so a file's staged and unstaged changes can be open together. */
-export function createDiffTab({ path, staged, from }: GitDiffRequest): Tab {
+/** One per file and side, so a file's staged and unstaged changes, or its change in several commits, can be open together. */
+export function createDiffTab({ path, staged, from, commit }: GitDiffRequest): Tab {
   return {
-    id: `diff:${staged ? 'staged' : 'unstaged'}:${path}`,
+    id: `diff:${commit ?? (staged ? 'staged' : 'unstaged')}:${path}`,
     title: baseName(path),
-    data: { kind: 'diff', path, staged, ...(from ? { from } : {}) },
+    data: { kind: 'diff', path, staged, ...(from ? { from } : {}), ...(commit ? { commit } : {}) },
   }
+}
+
+/** One per commit. */
+export function createCommitTab({ hash, shortHash }: { hash: string; shortHash: string }): Tab {
+  return { id: `commit:${hash}`, title: shortHash, data: { kind: 'commit', hash } }
 }
 
 export function TabContent({ tab }: { tab: Tab }) {
@@ -88,7 +95,7 @@ export function TabContent({ tab }: { tab: Tab }) {
     case 'session':
       return <SessionTab tab={tab} pointer={{ agent: data.agent, agentSessionId: data.agentSessionId }} />
     case 'file':
-      return <FileTab tab={tab} path={data.path} scrollPos={data.scrollPos} />
+      return <FileTab tab={tab} data={data} />
     case 'terminal':
       return <TerminalTab tab={tab} />
     case 'process':
@@ -96,7 +103,9 @@ export function TabContent({ tab }: { tab: Tab }) {
     case 'git':
       return <GitTab />
     case 'diff':
-      return <DiffTab path={data.path} staged={data.staged} from={data.from} />
+      return <DiffTab path={data.path} staged={data.staged} from={data.from} commit={data.commit} />
+    case 'commit':
+      return <CommitTab hash={data.hash} />
     default:
       return <Centred>This version can't show “{(data as { kind: string }).kind}” tabs.</Centred>
   }

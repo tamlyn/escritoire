@@ -2,7 +2,18 @@ import { join } from 'node:path'
 import { app, BrowserWindow, ipcMain, nativeTheme } from 'electron'
 import { type Api, apiMethods, type Events } from '../shared/api'
 import { claudeAdapter } from './agents/claude'
-import { gitDiff, gitFiles, gitSummary, GitWatcher } from './git'
+import {
+  gitBlame,
+  gitCommit,
+  gitDiff,
+  gitFiles,
+  gitHistory,
+  gitPull,
+  gitPush,
+  gitSummary,
+  gitSwitch,
+  GitWatcher,
+} from './git'
 import { IdeServer } from './ide-server'
 import { registerSupervisorTools } from './ide-tools'
 import { completeDirectory } from './paths'
@@ -78,6 +89,12 @@ function createApi({ projects, sessions, sessionStore, files, terminals, supervi
     getGitSummary: (projectId) => gitSummary(projects.getProject(projectId).path),
     getGitDiff: (projectId, request) =>
       gitDiff(projects.getProject(projectId).path, request, (path) => files.readFile(projectId, path)),
+    getGitHistory: (projectId) => gitHistory(projects.getProject(projectId).path),
+    getGitCommit: (projectId, hash) => gitCommit(projects.getProject(projectId).path, hash),
+    getGitBlame: (projectId, path, text) => gitBlame(projects.getProject(projectId).path, path, text),
+    switchGitBranch: (projectId, branch) => gitSwitch(projects.getProject(projectId).path, branch),
+    pullGit: (projectId) => gitPull(projects.getProject(projectId).path),
+    pushGit: (projectId) => gitPush(projects.getProject(projectId).path),
   }
 }
 

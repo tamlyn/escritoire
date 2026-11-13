@@ -5,11 +5,13 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParentWorkspace } from 'react-resizable-panels'
 import { baseName } from '../../../shared/files'
 import { isTaskFile } from '../../../shared/process'
-import { api } from '../api'
+import { ContextMenu, ContextMenuCheckboxItem, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/context-menu'
+import { api, subscribe } from '../api'
 import { useFileContent } from '../files'
 import { useProcesses } from '../processes'
 import { useProject } from '../project-context'
-import { Centred, createProcessTab, type Tab, type TabData } from '../tabs'
+import { Centred, createCommitTab, createProcessTab, type Tab, type TabData } from '../tabs'
+import { blameGutter } from './blame'
 import { changeFromDisk, editorTheme, loadLanguage } from './editor'
 import { runGutter, setRunningTasks } from './run-gutter'
 
@@ -17,7 +19,10 @@ const saveDelayMs = 500
 // The scroll position lives in the project layout, which is rewritten on every save.
 const scrollSaveDelayMs = 1500
 
-export function FileTab({ tab, path, scrollPos }: { tab: Tab; path: string; scrollPos?: number }) {
+type FileTabData = Extract<TabData, { kind: 'file' }>
+
+export function FileTab({ tab, data }: { tab: Tab; data: FileTabData }) {
+  const { path, scrollPos, blame = false } = data
   const project = useProject()
   const content = useFileContent(project.id, path)
   const workspace = useParentWorkspace<TabData>()
@@ -49,9 +54,12 @@ export function FileTab({ tab, path, scrollPos }: { tab: Tab; path: string; scro
           path={path}
           content={content}
           initialScrollPos={scrollPos}
-          onScrolled={(pos) => workspace?.updateTab(tab.id, { data: { kind: 'file', path, scrollPos: pos } })}
+          onScrolled={(pos) => workspace?.updateTab(tab.id, { data: { ...data, scrollPos: pos } })}
           onRunTask={(name) => void runTask(name)}
           runningTasks={runningTasks}
+          blame={blame}
+          onBlameChange={(on) => workspace?.updateTab(tab.id, { data: { ...data, blame: on } })}
+          onOpenCommit={(commit) => workspace?.addTab(createCommitTab(commit))}
         />
       )
   }
@@ -69,6 +77,9 @@ type EditorProps = {
   onScrolled: (pos: number) => void
   onRunTask: (name: string) => void
   runningTasks: string[]
+  blame: boolean
+  onBlameChange: (on: boolean) => void
+  onOpenCommit: (commit: { hash: string; shortHash: string }) => void
 }
 
 /**
@@ -76,7 +87,18 @@ type EditorProps = {
  * manual save. Changes made on disk apply in place unless an edit is waiting
  * to be saved or is being saved, in which case the edit wins.
  */
-function Editor({ projectId, path, content, initialScrollPos, onScrolled, onRunTask, runningTasks }: EditorProps) {
+function Editor({
+  projectId,
+  path,
+  content,
+  initialScrollPos,
+  onScrolled,
+  onRunTask,
+  runningTasks,
+  blame,
+  onBlameChange,
+  onOpenCommit,
+}: EditorProps) {
   const parentRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView>(null)
   const unsaved = useRef<string | null>(null)
@@ -86,6 +108,9 @@ function Editor({ projectId, path, content, initialScrollPos, onScrolled, onRunT
   onScrolledRef.current = onScrolled
   const onRunTaskRef = useRef(onRunTask)
   onRunTaskRef.current = onRunTask
+  const onOpenCommitRef = useRef(onOpenCommit)
+  onOpenCommitRef.current = onOpenCommit
+  const blameCompartment = useRef(new Compartment()).current
 
   useEffect(() => {
     let saveTimer: ReturnType<typeof setTimeout> | undefined
@@ -117,6 +142,8 @@ function Editor({ projectId, path, content, initialScrollPos, onScrolled, onRunT
           // CodeMirror splits on any line ending and joins with \n unless told
           // otherwise, which would rewrite every line of a CRLF file on save.
           content.text.includes('\r\n') ? EditorState.lineSeparator.of('\r\n') : [],
+          // Configured by the effect below.
+          blameCompartment.of([]),
           isTaskFile(baseName(path)) ? runGutter(baseName(path), (name) => onRunTaskRef.current(name)) : [],
           basicSetup,
           language.of([]),
@@ -164,6 +191,21 @@ function Editor({ projectId, path, content, initialScrollPos, onScrolled, onRunT
     view.dispatch({ changes: changeFromDisk(view.state, content.text), annotations: fromDisk.of(true) })
   }, [content])
 
+  function blameExtension() {
+    return blameGutter({
+      load: (text) => api.getGitBlame(projectId, path, text),
+      onGitChanged: (listener) =>
+        subscribe('gitChanged', (event) => {
+          if (event.projectId === projectId) listener()
+        }),
+      onOpenCommit: (commit) => onOpenCommitRef.current(commit),
+    })
+  }
+
+  useEffect(() => {
+    viewRef.current?.dispatch({ effects: blameCompartment.reconfigure(blame ? blameExtension() : []) })
+  }, [blame, projectId, path])
+
   const runningKey = runningTasks.join('\0')
   useEffect(() => {
     viewRef.current?.dispatch({ effects: setRunningTasks.of(new Set(runningTasks)) })
@@ -176,7 +218,16 @@ function Editor({ projectId, path, content, initialScrollPos, onScrolled, onRunT
           Couldn't save: {saveError}
         </div>
       )}
-      <div ref={parentRef} className="min-h-0 flex-1" />
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div ref={parentRef} className="min-h-0 flex-1" />
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuCheckboxItem checked={blame} onCheckedChange={onBlameChange}>
+            Git blame
+          </ContextMenuCheckboxItem>
+        </ContextMenuContent>
+      </ContextMenu>
     </div>
   )
 }

@@ -1,7 +1,9 @@
 import { ChevronRightIcon } from 'lucide-react'
 import { useState } from 'react'
 import type { DirectoryEntry } from '../../shared/files'
-import { useDirectory, useRecentlyChanged } from './files'
+import { useDirectory } from './files'
+import { useGitSummary } from './git/git'
+import { fileStatuses, pathStatus, statusColours, statusNames } from './git/status'
 import { useProject } from './project-context'
 
 const indentPx = 12
@@ -42,7 +44,8 @@ function Directory({ path, depth, ...rest }: DirectoryProps) {
 
 function Entry({ entry, depth, expanded, onToggle, onOpenFile }: { entry: DirectoryEntry } & Omit<DirectoryProps, 'path'>) {
   const project = useProject()
-  const changed = useRecentlyChanged(project.id, entry.path)
+  const summary = useGitSummary(project.id)
+  const status = summary ? pathStatus(fileStatuses(summary), entry.path, entry.isDirectory) : undefined
   const isExpanded = entry.isDirectory && expanded.has(entry.path)
 
   return (
@@ -51,11 +54,15 @@ function Entry({ entry, depth, expanded, onToggle, onOpenFile }: { entry: Direct
         type="button"
         role="treeitem"
         aria-expanded={entry.isDirectory ? isExpanded : undefined}
-        title={changed ? `${entry.path} (changed just now)` : entry.path}
+        title={
+          status === undefined
+            ? entry.path
+            : `${entry.path} (${entry.isDirectory ? 'has changes' : (statusNames[status] ?? 'changed')})`
+        }
         onClick={() => (entry.isDirectory ? onToggle(entry.path) : onOpenFile(entry.path))}
         style={{ paddingLeft: 8 + depth * indentPx }}
         className={`hover:bg-accent focus-visible:bg-accent flex w-full items-center gap-1 py-0.5 pr-2 text-left outline-none ${
-          changed ? 'text-amber-600 dark:text-amber-400' : ''
+          status === undefined ? '' : (statusColours[status] ?? '')
         }`}
       >
         {entry.isDirectory ? (
@@ -66,7 +73,9 @@ function Entry({ entry, depth, expanded, onToggle, onOpenFile }: { entry: Direct
           <span className="size-3.5 shrink-0" />
         )}
         <span className="truncate">{entry.name}</span>
-        {changed && <span aria-hidden className="ml-auto size-1.5 shrink-0 rounded-full bg-current" />}
+        {status !== undefined && entry.isDirectory && (
+          <span aria-hidden className="ml-auto size-1.5 shrink-0 rounded-full bg-current" />
+        )}
       </button>
       {isExpanded && (
         <Directory

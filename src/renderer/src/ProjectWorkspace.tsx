@@ -1,4 +1,4 @@
-import { FileDiffIcon, LoaderCircleIcon, PlusIcon, XIcon } from 'lucide-react'
+import { FileDiffIcon, GitCommitHorizontalIcon, LoaderCircleIcon, PlusIcon, XIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import {
   Group,
@@ -20,9 +20,9 @@ import type { SessionSummary } from '../../shared/agent'
 import type { Project } from '../../shared/api'
 import { api } from './api'
 import { FileTree } from './FileTree'
-import { useRecentlyChanged } from './files'
+import { diffSide } from './git/DiffTab'
 import { GitStatusRow } from './git/GitStatusRow'
-import { ProjectContext, useProject } from './project-context'
+import { ProjectContext } from './project-context'
 import { useSessionSummary } from './sessions'
 import { modifierLabel, useShortcut } from './shortcuts'
 import { ProcessList } from './process/ProcessList'
@@ -172,13 +172,22 @@ function renderTab(tab: Tab, props: React.HTMLAttributes<HTMLElement>) {
       {tab.data.kind === 'session' ? (
         <SessionTabLabel tab={tab} agentSessionId={tab.data.agentSessionId} />
       ) : tab.data.kind === 'file' ? (
-        <FileTabLabel tab={tab} path={tab.data.path} />
+        <span className="truncate" title={tab.data.path}>
+          {tab.title}
+        </span>
       ) : tab.data.kind === 'process' ? (
         <ProcessTabLabel tab={tab} processId={tab.data.processId} />
       ) : tab.data.kind === 'diff' ? (
         <>
           <FileDiffIcon aria-label="Changes in" className="text-muted-foreground size-3.5 shrink-0" />
-          <span className="truncate" title={`${tab.data.path} (${tab.data.staged ? 'staged' : 'not staged'})`}>
+          <span className="truncate" title={`${tab.data.path} (${diffSide(tab.data).toLowerCase()})`}>
+            {tab.title}
+          </span>
+        </>
+      ) : tab.data.kind === 'commit' ? (
+        <>
+          <GitCommitHorizontalIcon aria-label="Commit" className="text-muted-foreground size-3.5 shrink-0" />
+          <span className="truncate font-mono text-xs" title={tab.data.hash}>
             {tab.title}
           </span>
         </>
@@ -198,18 +207,6 @@ function SessionTabLabel({ tab, agentSessionId }: { tab: Tab; agentSessionId: st
     <>
       <SessionIndicator summary={summary} />
       <span className="truncate">{summary?.title || tab.title}</span>
-    </>
-  )
-}
-
-function FileTabLabel({ tab, path }: { tab: Tab; path: string }) {
-  const changed = useRecentlyChanged(useProject().id, path)
-  return (
-    <>
-      {changed && <span role="img" aria-label="Changed just now" className="size-2 shrink-0 rounded-full bg-amber-500" />}
-      <span className="truncate" title={path}>
-        {tab.title}
-      </span>
     </>
   )
 }

@@ -1,55 +1,6 @@
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useState } from 'react'
 import { type DirectoryEntry, type FileContent, parentPath } from '../../shared/files'
 import { api, subscribe } from './api'
-
-const recentForMs = 10_000
-
-type Recent = { projectId: string; paths: ReadonlySet<string> }
-
-let recent: Recent = { projectId: '', paths: new Set() }
-// When each path's mark lapses, so a path changed again keeps its mark.
-const expiries = new Map<string, number>()
-const recentListeners = new Set<() => void>()
-
-function setRecent(next: Recent) {
-  recent = next
-  for (const listener of recentListeners) listener()
-}
-
-// Changes reported by main are made by something other than the IDE, usually
-// an agent, so they're marked for a while to make them visible.
-subscribe('filesChanged', ({ projectId, paths }) => {
-  if (recent.projectId !== projectId) expiries.clear()
-  const expiresAt = Date.now() + recentForMs
-  for (const path of paths) expiries.set(path, expiresAt)
-  setRecent({ projectId, paths: new Set(expiries.keys()) })
-  setTimeout(() => {
-    if (recent.projectId !== projectId) return
-    const now = Date.now()
-    for (const [path, expiry] of expiries) if (expiry <= now) expiries.delete(path)
-    setRecent({ projectId, paths: new Set(expiries.keys()) })
-  }, recentForMs)
-})
-
-function useRecent(): Recent {
-  return useSyncExternalStore(
-    (listener) => {
-      recentListeners.add(listener)
-      return () => recentListeners.delete(listener)
-    },
-    () => recent,
-  )
-}
-
-/** Whether the file, or for a directory anything inside it, changed recently. */
-export function useRecentlyChanged(projectId: string, path: string): boolean {
-  const { projectId: changedIn, paths } = useRecent()
-  if (changedIn !== projectId) return false
-  if (paths.has(path)) return true
-  const prefix = `${path}/`
-  for (const changed of paths) if (changed.startsWith(prefix)) return true
-  return false
-}
 
 /** Lists a directory, and lists it again whenever something in it changes. */
 export function useDirectory(projectId: string, path: string): DirectoryEntry[] | null {

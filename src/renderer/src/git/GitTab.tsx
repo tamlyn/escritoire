@@ -1,16 +1,30 @@
-import { GitBranchIcon } from 'lucide-react'
+import { ArrowDownIcon, ArrowUpIcon, CheckIcon, ChevronDownIcon, GitBranchIcon, LoaderCircleIcon } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import { useParentWorkspace } from 'react-resizable-panels'
-import { baseName, parentPath } from '../../../shared/files'
-import type { GitChange, GitCommit, GitSummary } from '../../../shared/git'
+import type { GitBranch, GitChange, GitCommit, GitHistory, GitSummary } from '../../../shared/git'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { api } from '../api'
 import { relativeTime } from '../lib/time'
 import { useProject } from '../project-context'
-import { Centred, createDiffTab, type TabData } from '../tabs'
-import { useGitSummary } from './git'
+import { Centred, createCommitTab, createDiffTab, type TabData } from '../tabs'
+import { ChangeGroup } from './ChangeGroup'
+import { errorMessage, useGitHistory, useGitSummary } from './git'
+import { type GraphRow, layoutGraph } from './graph'
+import { RefLabels } from './RefLabels'
 
-/** The project's changes and recent commits: a summary, not a review tool. */
+/** The project's changes, branches and history. */
 export function GitTab() {
   const project = useProject()
   const summary = useGitSummary(project.id)
+  const history = useGitHistory(project.id)
   const workspace = useParentWorkspace<TabData>()
 
   if (summary === undefined) return null
@@ -23,8 +37,8 @@ export function GitTab() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-6 text-sm">
-        <BranchHeader summary={summary} />
+      <div className="mx-auto flex max-w-5xl flex-col gap-6 px-6 py-6 text-sm">
+        <BranchHeader summary={summary} history={history ?? null} />
         {clean && <p className="text-muted-foreground">No changes.</p>}
         <ChangeGroup title="Conflicts" changes={summary.conflicted} onOpen={(c) => open(c, false)} />
         <ChangeGroup title="Staged" changes={summary.staged} onOpen={(c) => open(c, true)} />
@@ -35,114 +49,184 @@ export function GitTab() {
           omitted={summary.untrackedOmitted}
           onOpen={(c) => open(c, false)}
         />
-        {summary.commits.length > 0 && <History commits={summary.commits} />}
+        {history && history.commits.length > 0 && (
+          <History commits={history.commits} onOpen={(commit) => workspace?.addTab(createCommitTab(commit))} />
+        )}
       </div>
     </div>
   )
 }
 
-function BranchHeader({ summary }: { summary: GitSummary }) {
+type Operation = 'switch' | 'pull' | 'push'
+
+function BranchHeader({ summary, history }: { summary: GitSummary; history: GitHistory | null }) {
+  const project = useProject()
+  const [running, setRunning] = useState<Operation | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const { upstream } = summary
+
+  async function run(operation: Operation, action: () => Promise<void>) {
+    setRunning(operation)
+    setError(null)
+    try {
+      await action()
+    } catch (caught) {
+      setError(errorMessage(caught))
+    } finally {
+      setRunning(null)
+    }
+  }
+
   return (
-    <header className="flex items-baseline gap-2">
-      <GitBranchIcon className="text-muted-foreground size-4 shrink-0 self-center" />
-      <h1 className="font-medium">{summary.branch ?? 'Detached HEAD'}</h1>
-      {upstream && (
-        <span className="text-muted-foreground text-xs">
-          {upstream.name}
-          {upstream.ahead > 0 && <span title={`${upstream.ahead} to push`}> ↑{upstream.ahead}</span>}
-          {upstream.behind > 0 && <span title={`${upstream.behind} to pull`}> ↓{upstream.behind}</span>}
-        </span>
+    <header className="flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <BranchMenu
+          current={summary.branch}
+          branches={history?.branches ?? []}
+          disabled={running !== null}
+          onSwitch={(branch) => void run('switch', () => api.switchGitBranch(project.id, branch))}
+        />
+        {upstream && (
+          <span className="text-muted-foreground text-xs">
+            {upstream.name}
+            {upstream.ahead > 0 && <span title={`${upstream.ahead} to push`}> ↑{upstream.ahead}</span>}
+            {upstream.behind > 0 && <span title={`${upstream.behind} to pull`}> ↓{upstream.behind}</span>}
+          </span>
+        )}
+        <div className="ml-auto flex gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={running !== null || !upstream}
+            title={upstream ? `Pull from ${upstream.name}` : 'This branch has no upstream to pull from'}
+            onClick={() => void run('pull', () => api.pullGit(project.id))}
+          >
+            {running === 'pull' ? <LoaderCircleIcon className="animate-spin" /> : <ArrowDownIcon />}
+            Pull
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={running !== null || !summary.branch}
+            title={upstream ? `Push to ${upstream.name}` : 'Push to origin, and track it'}
+            onClick={() => void run('push', () => api.pushGit(project.id))}
+          >
+            {running === 'push' ? <LoaderCircleIcon className="animate-spin" /> : <ArrowUpIcon />}
+            Push
+          </Button>
+        </div>
+      </div>
+      {error && (
+        <pre role="alert" className="bg-destructive/10 text-destructive rounded-md px-3 py-2 text-xs whitespace-pre-wrap">
+          {error}
+        </pre>
       )}
     </header>
   )
 }
 
-const statusColours: Record<string, string> = {
-  M: 'text-amber-500',
-  T: 'text-amber-500',
-  A: 'text-green-500',
-  '?': 'text-green-500',
-  D: 'text-red-500',
-  U: 'text-red-500',
-  R: 'text-blue-500',
-  C: 'text-blue-500',
-}
-
-function ChangeGroup({
-  title,
-  changes,
-  omitted = 0,
-  onOpen,
+function BranchMenu({
+  current,
+  branches,
+  disabled,
+  onSwitch,
 }: {
-  title: string
-  changes: GitChange[]
-  omitted?: number
-  onOpen: (change: GitChange) => void
+  current: string | null
+  branches: GitBranch[]
+  disabled: boolean
+  onSwitch: (branch: GitBranch) => void
 }) {
-  if (changes.length === 0) return null
+  const local = branches.filter((b) => b.kind === 'local')
+  const remote = branches.filter((b) => b.kind === 'remote')
   return (
-    <section aria-label={title}>
-      <h2 className="text-muted-foreground mb-1 px-2 text-xs font-medium">
-        {title} <span className="tabular-nums">{changes.length + omitted}</span>
-      </h2>
-      <ul>
-        {changes.map((change) => (
-          <li key={change.path}>
-            <button
-              type="button"
-              onClick={() => onOpen(change)}
-              title={change.from ? `${change.path} (from ${change.from})` : change.path}
-              className="hover:bg-accent focus-visible:bg-accent flex w-full items-baseline gap-2 rounded-md px-2 py-1 text-left outline-none"
-            >
-              <span className={`w-3 shrink-0 font-mono text-xs ${statusColours[change.status] ?? ''}`}>
-                {change.status}
-              </span>
-              <span className="shrink-0">{baseName(change.path)}</span>
-              <span className="text-muted-foreground min-w-0 flex-1 truncate text-xs">{parentPath(change.path)}</span>
-              <LineCounts lines={change.lines} />
-            </button>
-          </li>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild disabled={disabled}>
+        <Button variant="ghost" size="sm" className="-ml-2.5 font-medium" title="Switch branch">
+          <GitBranchIcon className="text-muted-foreground" />
+          {current ?? 'Detached HEAD'}
+          <ChevronDownIcon className="text-muted-foreground" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="max-h-96 min-w-56">
+        {local.map((branch) => (
+          <DropdownMenuItem key={branch.name} disabled={branch.current} onSelect={() => onSwitch(branch)}>
+            <CheckIcon className={branch.current ? '' : 'invisible'} />
+            {branch.name}
+          </DropdownMenuItem>
         ))}
-      </ul>
-      {omitted > 0 && <p className="text-muted-foreground px-2 py-1 text-xs">and {omitted} more</p>}
-    </section>
+        {remote.length > 0 && (
+          <>
+            {local.length > 0 && <DropdownMenuSeparator />}
+            <DropdownMenuLabel className="text-muted-foreground text-xs font-normal">Remote</DropdownMenuLabel>
+            {remote.map((branch) => (
+              <DropdownMenuItem key={branch.name} onSelect={() => onSwitch(branch)}>
+                <CheckIcon className="invisible" />
+                {branch.name}
+              </DropdownMenuItem>
+            ))}
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
-function LineCounts({ lines }: { lines: GitChange['lines'] }) {
-  if (lines === null) return null
-  if (lines === 'binary') return <span className="text-muted-foreground shrink-0 text-xs">binary</span>
-  return (
-    <span className="shrink-0 font-mono text-xs tabular-nums">
-      {lines.added > 0 && <span className="text-green-500">+{lines.added}</span>}
-      {lines.added > 0 && lines.removed > 0 && ' '}
-      {lines.removed > 0 && <span className="text-red-500">−{lines.removed}</span>}
-    </span>
-  )
-}
+const laneWidth = 14
+const rowHeight = 28
+// Tailwind's 500 shades, as literals: Tailwind only emits the variables its classes use.
+const laneColours = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#f43f5e', '#06b6d4', '#f97316', '#ec4899']
 
-function History({ commits }: { commits: GitCommit[] }) {
+function History({ commits, onOpen }: { commits: GitCommit[]; onOpen: (commit: GitCommit) => void }) {
+  const graph = useMemo(() => layoutGraph(commits), [commits])
   return (
     <section aria-label="History">
       <h2 className="text-muted-foreground mb-1 px-2 text-xs font-medium">History</h2>
       <ul>
-        {commits.map((commit) => (
-          <li key={commit.hash} className="flex items-baseline gap-2 px-2 py-1" title={commit.hash}>
-            <span className="min-w-0 flex-1 truncate">
-              {commit.subject}
-              {commit.refs.map((ref) => (
-                <span key={ref} className="bg-muted text-muted-foreground ml-2 rounded px-1.5 py-0.5 text-xs">
-                  {ref.replace(/^HEAD -> /, '')}
-                </span>
-              ))}
-            </span>
-            <span className="text-muted-foreground shrink-0 text-xs">{commit.author}</span>
-            <span className="text-muted-foreground w-24 shrink-0 text-right text-xs">{relativeTime(commit.at)}</span>
-            <span className="text-muted-foreground shrink-0 font-mono text-xs">{commit.shortHash}</span>
+        {commits.map((commit, index) => (
+          <li key={commit.hash}>
+            <button
+              type="button"
+              onClick={() => onOpen(commit)}
+              title={commit.hash}
+              style={{ height: rowHeight }}
+              className="hover:bg-accent focus-visible:bg-accent flex w-full items-center gap-2 rounded-md px-2 text-left outline-none"
+            >
+              <GraphCell row={graph.rows[index]!} width={graph.width} />
+              <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                <RefLabels refs={commit.refs} />
+                <span className="truncate">{commit.subject}</span>
+              </span>
+              <span className="text-muted-foreground max-w-32 shrink-0 truncate text-xs">{commit.author}</span>
+              <span className="text-muted-foreground w-24 shrink-0 text-right text-xs">{relativeTime(commit.at)}</span>
+              <span className="text-muted-foreground shrink-0 font-mono text-xs">{commit.shortHash}</span>
+            </button>
           </li>
         ))}
       </ul>
     </section>
+  )
+}
+
+function GraphCell({ row, width }: { row: GraphRow; width: number }) {
+  const x = (lane: number) => (lane + 0.5) * laneWidth
+  const y = (position: number) => position * rowHeight
+  return (
+    <svg aria-hidden width={width * laneWidth} height={rowHeight} className="shrink-0 overflow-visible">
+      {row.lines.map((line, i) => {
+        const [x1, y1, x2, y2] = [x(line.x1), y(line.y1), x(line.x2), y(line.y2)]
+        // Curves where a line changes lane, joined vertically at both ends.
+        const middle = (y1 + y2) / 2
+        const d = x1 === x2 ? `M${x1} ${y1}V${y2}` : `M${x1} ${y1}C${x1} ${middle} ${x2} ${middle} ${x2} ${y2}`
+        return <path key={i} d={d} fill="none" strokeWidth={1.5} stroke={laneColours[line.colour % laneColours.length]} />
+      })}
+      <circle
+        cx={x(row.lane)}
+        cy={y(0.5)}
+        r={3.5}
+        fill="var(--background)"
+        strokeWidth={2}
+        stroke={laneColours[row.colour % laneColours.length]}
+      />
+    </svg>
   )
 }

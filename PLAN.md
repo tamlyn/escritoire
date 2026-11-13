@@ -49,7 +49,7 @@ Check current versions and APIs against documentation when adding each one.
 | Terminal | `@xterm/xterm`, `@xterm/addon-serialize`, `node-pty` | Interactive terminals, with serialised scrollback for restore |
 | Config editing and diffs | CodeMirror 6, `@codemirror/merge` | Syntax highlighting and diffs without Monaco's weight; a full editor is a non-goal |
 | File watching | `@parcel/watcher` | Native, scales to large repos (VS Code uses it). Only the active project is watched |
-| Git | The `git` CLI (`status --porcelain=v2 -z`, `log`, `diff --numstat`) | A summary needs no library |
+| Git | The `git` CLI (`status --porcelain=v2 -z`, `log`, `diff --numstat`, `blame --porcelain`) | Uses the user's own config, credentials and hooks, which matters most for pull and push. isomorphic-git does its own auth and lacks blame of unsaved text; nodegit is another native module for EL8. The history graph's layout is ours: the known libraries draw illustrative diagrams rather than lay out a real log |
 | Persistence | JSON files in the app data directory | Workspace layouts and attention state are small. Add SQLite only if a real need appears |
 | Process logs | Bounded in-memory ring buffers per process | Meets bounded retention with no storage |
 | SQL | `better-sqlite3` for SQLite, `pg` for Postgres | Both widely used from Node. `better-sqlite3` is native, so it gets the same rebuild treatment as `node-pty` |
@@ -146,15 +146,18 @@ Docker Compose services are not needed for v1. Don't design them out.
 
 - File tree for each project.
 - View files, and edit config files (JSON, YAML, TOML, env and similar) with syntax highlighting. A full code-editing experience is not required.
-- Make it obvious when a file is being changed by an agent.
+- Make it obvious which files have changed: the file tree shows their git status. Open editors follow changes made on disk.
 - File tabs persist as path and scroll position.
 - **Autosave promptly**, including when an editor tab loses focus. There is no manual-save workflow; do not design around long-lived unsaved editor buffers.
 
 ### Git
 
-- **A summary, not detailed review:** which files changed (staged, unstaged, untracked) and how much, per project.
-- Commit history at a glance.
-- Optionally drill into a file's diff. This is secondary.
+- **A summary, not detailed review:** which files changed (staged, unstaged, untracked) and how much, per project. The file tree colours changed files and the directories containing them.
+- Commit history as a graph across local and remote branches and tags, with branch heads and tags labelled. A commit opens to show its message and files, each with its diff.
+- Drill into a file's diff, staged, unstaged or in a commit.
+- Switch branch, pull and push. These use the user's own git configuration and credentials; a prompt for credentials fails rather than waiting.
+- Git blame in the editor gutter, toggled per file tab.
+- Staging, committing, creating branches and resolving conflicts are left to agents and the terminal.
 - Useful if feasible: relate changes to the agent session that made them.
 
 ### Terminal

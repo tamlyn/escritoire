@@ -54,3 +54,74 @@ test('summarises changes and history, and follows changes made elsewhere', async
   await close()
   await rm(root, { recursive: true, force: true })
 })
+
+test('marks changes in the file tree, and shows history, commits, branches and blame', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'escritoire-e2e-')))
+  const project = join(root, 'project')
+  await mkdir(join(project, 'src'), { recursive: true })
+  const git = (...args: string[]) =>
+    execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.com', ...args], { cwd: project })
+  git('init', '-q', '-b', 'main')
+  await writeFile(join(project, 'src', 'app.js'), 'const a = 1\nconst b = 2\n')
+  git('add', '.')
+  git('commit', '-qm', 'First commit')
+  git('tag', 'v1')
+  git('switch', '-qc', 'feature')
+  await writeFile(join(project, 'feature.txt'), 'feature\n')
+  git('add', '.')
+  git('commit', '-qm', 'Feature work')
+  git('switch', '-q', 'main')
+  await writeFile(join(project, 'src', 'app.js'), 'const a = 1\nconst b = 3\n')
+  await writeFile(join(project, 'notes.md'), 'notes\n')
+
+  const { page, close } = await launchApp(join(root, 'data'))
+  await page.keyboard.press(`${modifier}+o`)
+  await page.getByRole('combobox').fill(`${project}/`)
+  await page.getByRole('option', { name: `Open ${project}/` }).click()
+
+  const tree = page.getByRole('tree', { name: 'Files' })
+  await expect(tree.getByRole('treeitem', { name: 'src' })).toHaveAttribute('title', /has changes/)
+  await expect(tree.getByRole('treeitem', { name: 'notes.md' })).toHaveAttribute('title', /untracked/)
+  await tree.getByRole('treeitem', { name: 'src' }).click()
+  await expect(tree.getByRole('treeitem', { name: 'app.js' })).toHaveAttribute('title', /modified/)
+
+  // Blame, from the editor's context menu.
+  await tree.getByRole('treeitem', { name: 'app.js' }).click()
+  await page.locator('.cm-content:visible').click({ button: 'right' })
+  await page.getByRole('menuitemcheckbox', { name: 'Git blame' }).click()
+  // The changed line isn't committed, so only the first is attributed.
+  await expect(page.locator('.cm-blame:visible')).toHaveCount(1)
+  await expect(page.locator('.cm-blame:visible')).toContainText('Test')
+  await page.screenshot({ path: 'test-results/git-blame.png' })
+  await page.locator('.cm-blame:visible').click()
+  await expect(page.getByRole('heading', { name: 'First commit' })).toBeVisible()
+
+  await page.getByRole('button', { name: /main.*2 files changed/ }).click()
+  const history = page.getByRole('region', { name: 'History' })
+  await expect(history.getByRole('button', { name: /Feature work/ })).toBeVisible()
+  await expect(history.getByTitle('Tag v1')).toBeVisible()
+  await expect(history.getByTitle('Branch main (checked out)')).toBeVisible()
+  await page.screenshot({ path: 'test-results/git-history.png' })
+
+  // A commit lists its files, which open their diffs.
+  await history.getByRole('button', { name: /Feature work/ }).click()
+  await page.getByRole('region', { name: 'Files' }).getByRole('button', { name: /feature\.txt/ }).click()
+  await expect(page.locator('.cm-content:visible')).toContainText('feature')
+  await expect(page.getByText(/^In [0-9a-f]{7}$/)).toBeVisible()
+
+  // Switching branch carries the uncommitted change along.
+  await page.getByRole('tab', { name: 'Git' }).click()
+  await page.getByTitle('Switch branch').click()
+  await page.getByRole('menuitem', { name: 'feature' }).click()
+  await expect(page.getByRole('button', { name: /feature.*2 files changed/ })).toBeVisible()
+  await expect(tree.getByRole('treeitem', { name: 'feature.txt' })).toBeVisible()
+
+  // A failed switch explains itself.
+  await page.getByTitle('Switch branch').click()
+  git('branch', '-D', 'main')
+  await page.getByRole('menuitem', { name: 'main' }).click()
+  await expect(page.getByRole('alert')).toContainText('main')
+
+  await close()
+  await rm(root, { recursive: true, force: true })
+})

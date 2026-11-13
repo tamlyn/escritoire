@@ -10,10 +10,10 @@ import { useProject } from '../project-context'
 import { Centred, createFileTab, type TabData } from '../tabs'
 import { useGitDiff } from './git'
 
-/** One file's staged or unstaged change, kept current as the file or index changes. */
-export function DiffTab({ path, staged, from }: GitDiffRequest) {
+/** One file's staged, unstaged or committed change, kept current as the file or index changes. */
+export function DiffTab({ path, staged, from, commit }: GitDiffRequest) {
   const project = useProject()
-  const diff = useGitDiff(project.id, { path, staged, from })
+  const diff = useGitDiff(project.id, { path, staged, from, commit })
   const workspace = useParentWorkspace<TabData>()
 
   return (
@@ -22,7 +22,7 @@ export function DiffTab({ path, staged, from }: GitDiffRequest) {
         <span className="truncate font-mono" title={from ? `${path} (from ${from})` : path}>
           {from ? `${from} → ${path}` : path}
         </span>
-        <span className="text-muted-foreground shrink-0">{staged ? 'Staged' : 'Not staged'}</span>
+        <span className="text-muted-foreground shrink-0">{diffSide({ staged, commit })}</span>
         <button
           type="button"
           onClick={() => workspace?.addTab(createFileTab(path))}
@@ -92,6 +92,10 @@ function UnifiedDiff({ path, before, after }: { path: string; before: string; af
   }, [original, changed])
 
   return <div ref={parentRef} className="h-full" />
+}
+
+export function diffSide({ staged, commit }: Pick<GitDiffRequest, 'staged' | 'commit'>): string {
+  return commit ? `In ${commit.slice(0, 7)}` : staged ? 'Staged' : 'Not staged'
 }
 
 /** CodeMirror joins lines with \n, so both sides are compared that way. */
