@@ -1,3 +1,5 @@
+import { baseName } from '../../../shared/files'
+
 /** An `@` being typed at the caret: where it starts and what follows it so far. */
 export type Mention = { start: number; query: string }
 
@@ -37,7 +39,7 @@ export function matchFiles(files: string[], query: string, limit: number): strin
 
 function scorePath(path: string, needle: string): number | null {
   if (!needle) return 0
-  const name = path.slice(path.lastIndexOf('/') + 1)
+  const name = baseName(path)
   if (name.startsWith(needle)) return 4
   if (name.includes(needle)) return 3
   if (path.includes(needle)) return 2

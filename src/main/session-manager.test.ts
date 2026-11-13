@@ -13,6 +13,7 @@ function fakeAdapter(history: Item[] = []) {
     emit: (e: AgentEvent) => void
     sent: string[]
     settings: SessionSettings[]
+    refuseSettings: boolean
   }[] = []
   const adapter: AgentAdapter = {
     kind: 'claude',
@@ -21,7 +22,7 @@ function fakeAdapter(history: Item[] = []) {
     loadHistory: async () => ({ items: history }),
     settingChoices: async () => ({ models: [], permissionModes: [] }),
     start(options, emit) {
-      const run = { options, emit, sent: [] as string[], settings: [] as SessionSettings[] }
+      const run = { options, emit, sent: [] as string[], settings: [] as SessionSettings[], refuseSettings: false }
       runs.push(run)
       return {
         send: (input) => {
@@ -30,7 +31,10 @@ function fakeAdapter(history: Item[] = []) {
         },
         interrupt: async () => {},
         respond: () => {},
-        changeSettings: async (settings) => void run.settings.push(settings),
+        changeSettings: async (settings) => {
+          if (run.refuseSettings) throw new Error('Not available')
+          run.settings.push(settings)
+        },
         stopTask: async () => {},
         close: () => {},
       }
@@ -167,5 +171,35 @@ describe('SessionManager', () => {
     })
     const reopened = await restarted.openSession('p1', pointer)
     expect(reopened.view.settings).toEqual({ model: undefined, permissionMode: 'plan' })
+  })
+
+  it('forgets a setting the run refuses', async () => {
+    const { manager, runs } = await setup()
+    const pointer = await manager.createSession('p1', 'claude')
+    await manager.openSession('p1', pointer)
+    manager.sendMessage(pointer, say('Hi'))
+    runs[0]!.refuseSettings = true
+    await manager.changeSettings(pointer, { permissionMode: 'auto' })
+
+    const { view } = await manager.openSession('p1', pointer)
+    expect(view.settings).toEqual({})
+    expect(view.items).toContainEqual(expect.objectContaining({ kind: 'notice', level: 'error' }))
+
+    runs[0]!.emit({ type: 'statusChanged', status: 'errored', error: 'Claude Code exited.' })
+    manager.sendMessage(pointer, say('Again'))
+    expect(runs[1]!.options.settings).toEqual({})
+  })
+
+  it('continues in the mode the agent switched to', async () => {
+    const { manager, runs } = await setup()
+    const pointer = await manager.createSession('p1', 'claude')
+    await manager.openSession('p1', pointer)
+    await manager.changeSettings(pointer, { permissionMode: 'plan' })
+    manager.sendMessage(pointer, say('Plan it'))
+    runs[0]!.emit({ type: 'settingsChanged', settings: { permissionMode: 'acceptEdits' } })
+    runs[0]!.emit({ type: 'statusChanged', status: 'errored', error: 'Claude Code exited.' })
+    manager.sendMessage(pointer, say('Go on'))
+
+    expect(runs[1]!.options.settings).toEqual({ permissionMode: 'acceptEdits' })
   })
 })

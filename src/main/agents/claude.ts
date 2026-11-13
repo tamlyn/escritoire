@@ -456,8 +456,12 @@ export class ClaudeTranscript {
 
   private mapSystem(message: Message): AgentEvent[] {
     switch (message.subtype) {
-      case 'compact_boundary':
-        return [notice('info', 'Conversation compacted')]
+      case 'compact_boundary': {
+        const postTokens = (message.compact_metadata as { post_tokens?: number }).post_tokens
+        if (!this.usage || postTokens === undefined) return [notice('info', 'Conversation compacted')]
+        this.usage = { ...this.usage, contextTokens: postTokens }
+        return [notice('info', 'Conversation compacted'), { type: 'usageChanged', usage: this.usage }]
+      }
       case 'init':
         return [
           {
@@ -608,8 +612,9 @@ export class ClaudeTranscript {
     const blocks = typeof content === 'string' ? [{ type: 'text', text: content }] : content
     const text = textOf({ content })
     const images = blocks.flatMap((b) => (b.type === 'image' ? imageAttachment(b) : []))
-    // Claude Code's own prompts to the model, such as skill bodies and image captions.
-    const synthetic = Boolean(message.isMeta || message.isSynthetic)
+    // Claude Code's own prompts to the model, such as skill bodies, image captions
+    // and compaction summaries: `isSynthetic` live, `is_meta` in saved history.
+    const synthetic = Boolean(message.isSynthetic || message.is_meta)
     const events: AgentEvent[] = []
     if ((text || images.length) && !parentId && !synthetic) {
       events.push(upsert(userItem(id, text, images)))
@@ -631,7 +636,11 @@ const interruptionMarker = /^\[Request interrupted by user[^\]]*\]$/
 
 const syntheticModel = '<synthetic>'
 
-/** A request that failed, which Claude Code reports as a synthetic reply, live and in history. */
+/**
+ * A request that failed, which Claude Code reports as a synthetic reply. Only
+ * live: saved history drops `error`, and other synthetic replies look the same,
+ * so a failed request reloaded from history reads as a reply.
+ */
 function isApiError(message: Message): boolean {
   return message.type === 'assistant' && Boolean(message.error) && (message.message as ApiMessage).model === syntheticModel
 }

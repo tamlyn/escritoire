@@ -58,10 +58,10 @@ export function SessionControls({
       />
       {efforts.length > 0 && (
         <Picker
-          label={settings.effort ? `${capitalise(settings.effort)} effort` : 'Default effort'}
+          label={settings.effort ? `${capitalize(settings.effort)} effort` : 'Default effort'}
           title="Effort"
           value={settings.effort ?? defaultValue}
-          options={[{ id: defaultValue, label: 'Default' }, ...efforts.map((e) => ({ id: e, label: capitalise(e) }))]}
+          options={[{ id: defaultValue, label: 'Default' }, ...efforts.map((e) => ({ id: e, label: capitalize(e) }))]}
           onChange={(id) => change({ effort: id || undefined })}
         />
       )}
@@ -179,6 +179,6 @@ function compact(tokens: number): string {
   return tokens >= 1000 ? `${Math.round(tokens / 1000)}k` : String(tokens)
 }
 
-function capitalise(text: string): string {
+function capitalize(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1)
 }

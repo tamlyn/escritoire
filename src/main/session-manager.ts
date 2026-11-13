@@ -134,14 +134,11 @@ export class SessionManager {
   }
 
   /**
-   * Remembers the user's choice for the session's next run and applies it to
-   * the current one. The view then shows what the agent reports it is using.
+   * Applies the user's choice to the current run, if there is one, and
+   * remembers it for the next. A choice the run refuses is forgotten.
    */
   async changeSettings(pointer: SessionPointer, settings: SessionSettings): Promise<void> {
     const session = this.get(pointer)
-    session.record.settings = { ...session.record.settings, ...settings }
-    this.save(session)
-    this.apply(session, { type: 'settingsChanged', settings })
     try {
       await session.run?.changeSettings(settings)
     } catch (error) {
@@ -149,7 +146,10 @@ export class SessionManager {
         type: 'itemUpserted',
         item: { kind: 'notice', id: randomUUID(), level: 'error', text: `Couldn't change the settings: ${errorText(error)}` },
       })
+      return
     }
+    this.rememberSettings(session, settings)
+    this.apply(session, { type: 'settingsChanged', settings })
   }
 
   async stopTask(pointer: SessionPointer, taskId: string): Promise<void> {
@@ -216,7 +216,18 @@ export class SessionManager {
       // A failed run has ended itself; the next message starts a new one.
       if (event.status === 'errored') session.run = undefined
     }
+    // The agent can change mode itself, such as leaving plan mode, and the next
+    // run should continue in it. Models are reported resolved, so stay as chosen.
+    const { permissionMode } = event.type === 'settingsChanged' ? event.settings : {}
+    if (permissionMode && permissionMode !== session.record.settings?.permissionMode) {
+      this.rememberSettings(session, { permissionMode })
+    }
     if (event.type !== 'itemUpserted' && event.type !== 'textAppended') this.broadcastSummaries()
+  }
+
+  private rememberSettings(session: Session, settings: SessionSettings): void {
+    session.record.settings = { ...session.record.settings, ...settings }
+    this.save(session)
   }
 
   private markSeen(session: Session): void {

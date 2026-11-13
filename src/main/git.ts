@@ -60,7 +60,7 @@ export async function gitSummary(root: string): Promise<GitSummary | null> {
 
 /**
  * The project's files that git tracks or would track, relative to the project,
- * or `null` if it isn't in a git repository.
+ * or `null` if git can't say, such as outside a repository or with no git installed.
  */
 export async function gitFiles(root: string): Promise<string[] | null> {
   try {
@@ -68,8 +68,8 @@ export async function gitFiles(root: string): Promise<string[] | null> {
     const output = await git(root, ['ls-files', '-z', '--cached', '--others', '--exclude-standard', '--deduplicate', '--', '.'])
     return output.toString().split('\0').filter(Boolean)
   } catch (error) {
-    if (error instanceof NotARepository) return null
-    throw error
+    if (!(error instanceof NotARepository)) console.error(`Could not list the files of ${root} with git:`, error)
+    return null
   }
 }
 

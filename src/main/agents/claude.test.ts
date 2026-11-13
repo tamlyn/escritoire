@@ -103,12 +103,22 @@ describe('ClaudeTranscript', () => {
   it("hides Claude Code's own prompts to the model, live and saved", () => {
     const items = fold([
       { type: 'user', uuid: 'u1', message: { role: 'user', content: 'Resume.' }, isSynthetic: true, parent_tool_use_id: null },
-      { type: 'user', uuid: 'u2', message: { role: 'user', content: '[Image: source: a.png]' }, isMeta: true },
+      {
+        type: 'user',
+        uuid: 'u2',
+        session_id: 's1',
+        message: { role: 'user', content: 'This session is being continued from a previous conversation…' },
+        parent_tool_use_id: null,
+        parent_agent_id: null,
+        isCompactSummary: true,
+        is_meta: true,
+        timestamp: '2026-11-13T09:00:00.000Z',
+      },
     ])
     expect(items).toEqual([])
   })
 
-  it('shows a failed request as an error that leaves the usage alone', () => {
+  it('shows a failed live request as an error that leaves the usage alone', () => {
     const view = foldView([
       {
         type: 'assistant',
@@ -163,6 +173,19 @@ describe('ClaudeTranscript', () => {
       cacheTtlMs: 3_600_000,
       at: Date.parse('2026-11-13T09:00:00.000Z'),
     })
+  })
+
+  it('shrinks the context to what compaction left', () => {
+    const view = foldView([
+      {
+        type: 'assistant',
+        timestamp: '2026-11-13T09:00:00.000Z',
+        parent_tool_use_id: null,
+        message: { id: 'msg_1', model: 'claude-opus-5-5', content: [], usage: { input_tokens: 95_000, output_tokens: 0 } },
+      },
+      { type: 'system', subtype: 'compact_boundary', compact_metadata: { trigger: 'manual', pre_tokens: 95_000, post_tokens: 12_000 } },
+    ])
+    expect(view.usage?.contextTokens).toBe(12_000)
   })
 
   it('tracks background tasks and notes when one finishes', () => {

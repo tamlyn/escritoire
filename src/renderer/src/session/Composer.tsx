@@ -1,7 +1,8 @@
 import { ArrowUpIcon, FileIcon, SquareIcon, XIcon } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import type { ImageAttachment, SessionPointer, SessionSettings, SettingChoices } from '../../../shared/agent'
+import { baseName, parentPath } from '../../../shared/files'
 import { api } from '../api'
 import { imageFiles, toAttachment } from './images'
 import { activeMention, insertMention, type Mention, matchFiles } from './mentions'
@@ -33,13 +34,18 @@ export function Composer({
 }) {
   const [text, setText] = useState(initialDraft)
   const [images, setImages] = useState<ImageAttachment[]>([])
+  const [attachErrors, setAttachErrors] = useState<string[]>([])
   const [mention, setMention] = useState<Mention | null>(null)
   const [files, setFiles] = useState<string[] | null>(null)
   const [selected, setSelected] = useState(0)
   const textarea = useRef<HTMLTextAreaElement>(null)
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
-  const matches = mention && files ? matchFiles(files, mention.query, mentionLimit) : []
+  const query = mention?.query
+  const matches = useMemo(
+    () => (query !== undefined && files ? matchFiles(files, query, mentionLimit) : []),
+    [files, query],
+  )
   const canSend = text.trim() !== '' || images.length > 0
 
   function changeText(next: string, caret: number) {
@@ -69,8 +75,13 @@ export function Composer({
   }
 
   async function attach(files: File[]) {
-    const attached = await Promise.all(files.map((file) => toAttachment(file).catch(() => null)))
-    setImages((current) => [...current, ...attached.filter((image) => image !== null)])
+    const results = await Promise.allSettled(files.map(toAttachment))
+    const attached = results.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []))
+    const errors = results.flatMap((result, index) =>
+      result.status === 'rejected' ? [`Couldn't attach ${files[index]!.name || 'the image'}: ${errorText(result.reason)}`] : [],
+    )
+    setImages((current) => [...current, ...attached])
+    setAttachErrors(errors)
   }
 
   function send() {
@@ -79,6 +90,7 @@ export function Composer({
     void api.sendMessage(pointer, { text: text.trim(), images })
     setText('')
     setImages([])
+    setAttachErrors([])
     setMention(null)
   }
 
@@ -150,8 +162,8 @@ export function Composer({
               )}
             >
               <FileIcon className="text-muted-foreground size-3.5 shrink-0" />
-              <span className="truncate">{fileName(path)}</span>
-              <span className="text-muted-foreground min-w-0 truncate text-xs">{directory(path)}</span>
+              <span className="truncate">{baseName(path)}</span>
+              <span className="text-muted-foreground min-w-0 truncate text-xs">{parentPath(path)}</span>
             </button>
           ))}
         </div>
@@ -161,6 +173,11 @@ export function Composer({
         onDrop={onDrop}
         className="focus-within:ring-ring/50 bg-background flex flex-col gap-1 rounded-xl border p-2 focus-within:ring-2"
       >
+        {attachErrors.map((error) => (
+          <p key={error} className="text-destructive px-2 text-xs">
+            {error}
+          </p>
+        ))}
         {images.length > 0 && (
           <div className="flex flex-wrap gap-2 px-1 pt-1">
             {images.map((image, index) => (
@@ -219,5 +236,6 @@ export function Composer({
   )
 }
 
-const fileName = (path: string) => path.slice(path.lastIndexOf('/') + 1)
-const directory = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf('/')))
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
