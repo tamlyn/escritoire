@@ -21,6 +21,7 @@ import type {
   SessionSummary,
 } from './agent'
 import type { DirectoryEntry, FileContent, FilesChanged, WriteResult } from './files'
+import type { GitDiff, GitDiffRequest, GitSummary } from './git'
 import type { ProcessInfo, ProcessSpec } from './process'
 import type { ScreenOutput, ScreenSize, ScreenSnapshot } from './screen'
 
@@ -83,6 +84,10 @@ export type Api = {
   detachProcess(processId: string): Promise<void>
   writeProcess(projectId: string, processId: string, data: string): Promise<void>
   resizeProcess(projectId: string, processId: string, size: ScreenSize): Promise<void>
+
+  /** `null` if the project isn't in a git repository. */
+  getGitSummary(projectId: string): Promise<GitSummary | null>
+  getGitDiff(projectId: string, request: GitDiffRequest): Promise<GitDiff>
 }
 
 // A record rather than an array so the compiler rejects a missing or misspelt method.
@@ -123,6 +128,8 @@ const apiMethodSet: Record<keyof Api, true> = {
   detachProcess: true,
   writeProcess: true,
   resizeProcess: true,
+  getGitSummary: true,
+  getGitDiff: true,
 }
 
 export const apiMethods = Object.keys(apiMethodSet) as (keyof Api)[]
@@ -137,6 +144,8 @@ export type Events = {
   screenOutput: ScreenOutput
   /** Every project's processes, whenever one changes. */
   processesChanged: ProcessInfo[]
+  /** The active project's files or git state may have changed: a hint to ask again. */
+  gitChanged: { projectId: string }
 }
 
 const eventNameSet: Record<keyof Events, true> = {
@@ -145,6 +154,7 @@ const eventNameSet: Record<keyof Events, true> = {
   filesChanged: true,
   screenOutput: true,
   processesChanged: true,
+  gitChanged: true,
 }
 
 export const eventNames = Object.keys(eventNameSet) as (keyof Events)[]

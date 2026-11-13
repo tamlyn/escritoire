@@ -14,6 +14,8 @@ const maxFileSize = 5 * 1024 * 1024
 type Options = {
   projectPath: (projectId: string) => string
   send: (payload: FilesChanged) => void
+  /** Any change in the watched project, including the IDE's own writes. */
+  onAnyChange?: (projectId: string) => void
 }
 
 /** The files of each project, and a watcher on the active project only. */
@@ -108,6 +110,7 @@ export class ProjectFiles {
             console.error(`Watching ${root} failed:`, error)
             return
           }
+          this.options.onAnyChange?.(projectId)
           const others = await Promise.all(
             events.map(async ({ path }) => (path !== root && !(await this.isOwnWrite(path)) ? path : null)),
           )

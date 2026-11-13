@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { type Api, apiMethods, type Events } from '../shared/api'
 import { claudeAdapter } from './agents/claude'
+import { gitDiff, gitSummary, GitWatcher } from './git'
 import { IdeServer } from './ide-server'
 import { registerSupervisorTools } from './ide-tools'
 import { completeDirectory } from './paths'
@@ -69,6 +70,9 @@ function createApi({ projects, sessions, sessionStore, files, terminals, supervi
     detachProcess: async (processId) => supervisor.detach(processId),
     writeProcess: async (projectId, processId, data) => supervisor.write(projectId, processId, data),
     resizeProcess: async (projectId, processId, size) => supervisor.resize(projectId, processId, size),
+    getGitSummary: (projectId) => gitSummary(projects.getProject(projectId).path),
+    getGitDiff: (projectId, request) =>
+      gitDiff(projects.getProject(projectId).path, request, (path) => files.readFile(projectId, path)),
   }
 }
 
@@ -146,6 +150,11 @@ void app.whenReady().then(async () => {
   const files = new ProjectFiles({
     projectPath: (projectId) => projects.getProject(projectId).path,
     send: (payload) => send('filesChanged', payload),
+    onAnyChange: (projectId) => send('gitChanged', { projectId }),
+  })
+  const gitWatcher = new GitWatcher({
+    projectPath: (projectId) => projects.getProject(projectId).path,
+    onChanged: (projectId) => send('gitChanged', { projectId }),
   })
   const terminals = new Terminals({
     dataDir,
@@ -153,7 +162,10 @@ void app.whenReady().then(async () => {
     send: (output) => send('screenOutput', output),
   })
   // Only the active project is watched.
-  projects.onActiveChanged((projectId) => files.watch(projectId))
+  projects.onActiveChanged((projectId) => {
+    files.watch(projectId)
+    gitWatcher.watch(projectId)
+  })
 
   // Quitting waits while terminals save their scrollback and processes stop.
   let shutDown = false
@@ -161,7 +173,7 @@ void app.whenReady().then(async () => {
     if (shutDown) return
     event.preventDefault()
     sessions.closeAll()
-    void Promise.allSettled([files.unwatch(), terminals.closeAll(), supervisor.closeAll(), ideServer.close()]).then((results) => {
+    void Promise.allSettled([files.unwatch(), gitWatcher.unwatch(), terminals.closeAll(), supervisor.closeAll(), ideServer.close()]).then((results) => {
       logFailures(results)
       shutDown = true
       app.quit()

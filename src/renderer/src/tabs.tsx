@@ -1,9 +1,12 @@
 import type { TabNode } from 'react-resizable-panels'
 import type { SessionPointer } from '../../shared/agent'
 import { baseName } from '../../shared/files'
+import type { GitDiffRequest } from '../../shared/git'
 import type { ProcessInfo, TaskRef } from '../../shared/process'
 import { ProcessTab } from './process/ProcessTab'
 import { FileTab } from './file/FileTab'
+import { DiffTab } from './git/DiffTab'
+import { GitTab } from './git/GitTab'
 import { NewTabPage } from './NewTabPage'
 import { SessionTab } from './session/SessionTab'
 import { TerminalTab } from './screen/TerminalTab'
@@ -21,6 +24,8 @@ export type TabData =
   | { kind: 'terminal' }
   /** Enough to start the process again after a restart. */
   | { kind: 'process'; processId: string; command: string; cwd: string; task?: TaskRef }
+  | { kind: 'git' }
+  | ({ kind: 'diff' } & GitDiffRequest)
 
 export type Tab = TabNode<TabData>
 
@@ -61,6 +66,20 @@ export function createProcessTab(process: ProcessInfo): Tab {
   }
 }
 
+/** One per project. */
+export function createGitTab(): Tab {
+  return { id: 'git', title: 'Git', data: { kind: 'git' } }
+}
+
+/** One per file and side, so a file's staged and unstaged changes can be open together. */
+export function createDiffTab({ path, staged, from }: GitDiffRequest): Tab {
+  return {
+    id: `diff:${staged ? 'staged' : 'unstaged'}:${path}`,
+    title: baseName(path),
+    data: { kind: 'diff', path, staged, ...(from ? { from } : {}) },
+  }
+}
+
 export function TabContent({ tab }: { tab: Tab }) {
   const data = tab.data
   switch (data.kind) {
@@ -74,6 +93,10 @@ export function TabContent({ tab }: { tab: Tab }) {
       return <TerminalTab tab={tab} />
     case 'process':
       return <ProcessTab processId={data.processId} command={data.command} cwd={data.cwd} task={data.task} />
+    case 'git':
+      return <GitTab />
+    case 'diff':
+      return <DiffTab path={data.path} staged={data.staged} from={data.from} />
     default:
       return <Centred>This version can't show “{(data as { kind: string }).kind}” tabs.</Centred>
   }

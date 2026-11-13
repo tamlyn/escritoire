@@ -1,4 +1,4 @@
-import { LoaderCircleIcon, PlusIcon, XIcon } from 'lucide-react'
+import { FileDiffIcon, LoaderCircleIcon, PlusIcon, XIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import {
   Group,
@@ -21,13 +21,22 @@ import type { Project } from '../../shared/api'
 import { api } from './api'
 import { FileTree } from './FileTree'
 import { useRecentlyChanged } from './files'
+import { GitStatusRow } from './git/GitStatusRow'
 import { ProjectContext, useProject } from './project-context'
 import { useSessionSummary } from './sessions'
 import { modifierLabel, useShortcut } from './shortcuts'
 import { ProcessList } from './process/ProcessList'
 import { ProcessStatusDot } from './process/ProcessStatusDot'
 import { useProcess } from './processes'
-import { createEmptyTab, createFileTab, createProcessTab, type Tab, TabContent, type TabData } from './tabs'
+import {
+  createEmptyTab,
+  createFileTab,
+  createGitTab,
+  createProcessTab,
+  type Tab,
+  TabContent,
+  type TabData,
+} from './tabs'
 
 const emptyModel: WorkspaceModelInput<TabData> = {
   version: 1,
@@ -90,6 +99,7 @@ export function ProjectWorkspace({ project }: { project: Project }) {
               <FileTree onOpenFile={(path) => workspaceRef.current?.addTab(createFileTab(path))} />
             </div>
             <ProcessList onOpen={(process) => workspaceRef.current?.addTab(createProcessTab(process))} />
+            <GitStatusRow onOpen={() => workspaceRef.current?.addTab(createGitTab())} />
           </div>
         </Panel>
         {renderSeparator()}
@@ -165,6 +175,13 @@ function renderTab(tab: Tab, props: React.HTMLAttributes<HTMLElement>) {
         <FileTabLabel tab={tab} path={tab.data.path} />
       ) : tab.data.kind === 'process' ? (
         <ProcessTabLabel tab={tab} processId={tab.data.processId} />
+      ) : tab.data.kind === 'diff' ? (
+        <>
+          <FileDiffIcon aria-label="Changes in" className="text-muted-foreground size-3.5 shrink-0" />
+          <span className="truncate" title={`${tab.data.path} (${tab.data.staged ? 'staged' : 'not staged'})`}>
+            {tab.title}
+          </span>
+        </>
       ) : (
         <span className="truncate">{tab.title}</span>
       )}

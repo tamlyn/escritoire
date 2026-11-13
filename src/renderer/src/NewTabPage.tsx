@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useParentTab, useParentWorkspace } from 'react-resizable-panels'
 import type { PastSession } from '../../shared/agent'
 import { api } from './api'
+import { relativeTime } from './lib/time'
 import { useProject } from './project-context'
 import { createSessionTab, createTerminalTab, type Tab, type TabData } from './tabs'
 
@@ -76,19 +77,4 @@ export function NewTabPage({ tab }: { tab: Tab }) {
       )}
     </div>
   )
-}
-
-const units: [Intl.RelativeTimeFormatUnit, number][] = [
-  ['day', 86_400_000],
-  ['hour', 3_600_000],
-  ['minute', 60_000],
-]
-const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
-
-function relativeTime(timestamp: number): string {
-  const elapsed = timestamp - Date.now()
-  for (const [unit, size] of units) {
-    if (Math.abs(elapsed) >= size) return formatter.format(Math.round(elapsed / size), unit)
-  }
-  return 'just now'
 }
