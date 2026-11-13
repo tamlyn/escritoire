@@ -110,6 +110,8 @@ export type Api = {
   getGitCommit(projectId: string, hash: string): Promise<GitCommitDetail>
   /** Blames `text`, the file as the editor has it, so lines match while it's being edited. */
   getGitBlame(projectId: string, path: string, text: string): Promise<GitBlame | null>
+  /** The file as last committed: empty if only added, `null` if untracked or not text. */
+  getGitHeadText(projectId: string, path: string): Promise<string | null>
   switchGitBranch(projectId: string, branch: Pick<GitBranch, 'kind' | 'name'>): Promise<void>
   pullGit(projectId: string): Promise<void>
   pushGit(projectId: string): Promise<void>
@@ -162,6 +164,7 @@ const apiMethodSet: Record<keyof Api, true> = {
   getGitHistory: true,
   getGitCommit: true,
   getGitBlame: true,
+  getGitHeadText: true,
   switchGitBranch: true,
   pullGit: true,
   pushGit: true,

@@ -85,8 +85,19 @@ test('marks changes in the file tree, and shows history, commits, branches and b
   await tree.getByRole('treeitem', { name: 'src' }).click()
   await expect(tree.getByRole('treeitem', { name: 'app.js' })).toHaveAttribute('title', /modified/)
 
-  // Blame, from the editor's context menu.
+  // Lines changed since the last commit are marked in the gutter and beside the scrollbar.
   await tree.getByRole('treeitem', { name: 'app.js' }).click()
+  await expect(page.locator('.cm-change-gutter .cm-change-modified:visible')).toHaveCount(1)
+  await expect(page.locator('.cm-change-scrollbar .cm-change-modified:visible')).toHaveCount(1)
+  await page.locator('.cm-content:visible').click()
+  await page.keyboard.press(`${modifier}+Home`)
+  // One transaction, so one undo removes it.
+  await page.keyboard.insertText('// new\n')
+  await expect(page.locator('.cm-change-gutter .cm-change-added:visible')).toHaveCount(1)
+  await page.screenshot({ path: 'test-results/git-change-markers.png' })
+  await page.keyboard.press(`${modifier}+z`)
+
+  // Blame, from the editor's context menu.
   await page.locator('.cm-content:visible').click({ button: 'right' })
   await page.getByRole('menuitemcheckbox', { name: 'Git blame' }).click()
   // The changed line isn't committed, so only the first is attributed.

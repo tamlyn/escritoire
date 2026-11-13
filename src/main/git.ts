@@ -125,6 +125,16 @@ export async function gitBlame(root: string, path: string, text: string): Promis
   return parseBlame(output.toString())
 }
 
+/**
+ * The file as last committed, to compare the editor's text with: empty if it's
+ * added but not yet committed, `null` if git doesn't track it or it isn't text.
+ */
+export async function gitHeadText(root: string, path: string): Promise<string | null> {
+  const head = await blob(root, `HEAD:./${path}`)
+  if (head) return head.kind === 'text' ? head.text : null
+  return (await blob(root, `:./${path}`)) ? '' : null
+}
+
 /** Switches to a local branch, or creates one tracking a remote branch. */
 export async function gitSwitch(root: string, branch: Pick<GitBranch, 'kind' | 'name'>): Promise<void> {
   await git(root, branch.kind === 'remote' ? ['switch', '--track', branch.name] : ['switch', branch.name])
@@ -450,21 +460,27 @@ const utf8 = new TextDecoder('utf-8', { fatal: true })
 /** The first of the given blobs that exists, or empty if none does. */
 async function firstBlob(root: string, specs: string[]): Promise<Side> {
   for (const spec of specs) {
-    let buffer: Buffer
-    try {
-      buffer = await git(root, ['cat-file', 'blob', spec], { maxBuffer: maxBlobSize })
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return { kind: 'tooLarge' }
-      continue
-    }
-    if (buffer.subarray(0, 8000).includes(0)) return { kind: 'binary' }
-    try {
-      return { kind: 'text', text: utf8.decode(buffer) }
-    } catch {
-      return { kind: 'binary' }
-    }
+    const side = await blob(root, spec)
+    if (side) return side
   }
   return { kind: 'text', text: '' }
+}
+
+/** A blob, or `null` if it doesn't exist. */
+async function blob(root: string, spec: string): Promise<Side | null> {
+  let buffer: Buffer
+  try {
+    buffer = await git(root, ['cat-file', 'blob', spec], { maxBuffer: maxBlobSize })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return { kind: 'tooLarge' }
+    return null
+  }
+  if (buffer.subarray(0, 8000).includes(0)) return { kind: 'binary' }
+  try {
+    return { kind: 'text', text: utf8.decode(buffer) }
+  } catch {
+    return { kind: 'binary' }
+  }
 }
 
 function fields(record: string, count: number): string {

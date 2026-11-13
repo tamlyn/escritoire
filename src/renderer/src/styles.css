@@ -192,3 +192,70 @@
 .cm-blame:hover {
   color: var(--foreground);
 }
+
+.cm-scroller {
+  scrollbar-color: color-mix(in oklch, var(--muted-foreground) 40%, transparent) transparent;
+}
+
+.cm-change-gutter {
+  width: 7px;
+}
+
+.cm-change-gutter .cm-gutterElement {
+  padding: 0;
+}
+
+.cm-change {
+  height: 100%;
+  width: 3px;
+}
+
+.cm-change-added {
+  background: var(--color-green-500);
+}
+
+.cm-change-modified {
+  background: var(--color-blue-500);
+}
+
+/* A wedge on the boundary where lines were removed. */
+.cm-change.cm-change-deleted {
+  position: relative;
+  background: none;
+}
+
+.cm-change.cm-change-deleted::before {
+  position: absolute;
+  top: -4px;
+  left: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 5px solid var(--muted-foreground);
+  content: '';
+}
+
+.cm-change.cm-change-deleted.cm-change-at-end::before {
+  top: auto;
+  bottom: -4px;
+}
+
+.cm-change-scrollbar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  width: 4px;
+  pointer-events: none;
+}
+
+.cm-change-scrollbar > div {
+  position: absolute;
+  right: 0;
+  left: 0;
+  min-height: 2px;
+}
+
+.cm-change-scrollbar > .cm-change-deleted {
+  background: var(--muted-foreground);
+}

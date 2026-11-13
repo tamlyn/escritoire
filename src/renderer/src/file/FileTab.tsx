@@ -12,6 +12,7 @@ import { useProcesses } from '../processes'
 import { useProject } from '../project-context'
 import { Centred, createCommitTab, createProcessTab, type Tab, type TabData } from '../tabs'
 import { blameGutter } from './blame'
+import { changeMarkers } from './change-markers'
 import { changeFromDisk, editorTheme, loadLanguage } from './editor'
 import { runGutter, setRunningTasks } from './run-gutter'
 
@@ -146,6 +147,14 @@ function Editor({
           blameCompartment.of([]),
           isTaskFile(baseName(path)) ? runGutter(baseName(path), (name) => onRunTaskRef.current(name)) : [],
           basicSetup,
+          // After basicSetup, so its gutter sits between the line numbers and the text.
+          changeMarkers({
+            load: () => api.getGitHeadText(projectId, path),
+            onGitChanged: (listener) =>
+              subscribe('gitChanged', (event) => {
+                if (event.projectId === projectId) listener()
+              }),
+          }),
           language.of([]),
           editorTheme(),
           EditorView.updateListener.of((update) => {

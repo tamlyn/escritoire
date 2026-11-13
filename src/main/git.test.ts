@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test } from 'vitest'
-import { gitBlame, gitCommit, gitDiff, gitHistory, gitPull, gitPush, gitSummary, gitSwitch } from './git'
+import { gitBlame, gitCommit, gitDiff, gitHeadText, gitHistory, gitPull, gitPush, gitSummary, gitSwitch } from './git'
 import { ProjectFiles } from './project-files'
 
 let repo: string
@@ -164,6 +164,21 @@ test('blames the text being edited', async () => {
   expect(blame!.commits[hash!]).toMatchObject({ author: 'Test', subject: 'First commit', shortHash: hash!.slice(0, 7) })
   await write('untracked.txt', 'x\n')
   expect(await gitBlame(repo, 'untracked.txt', 'x\n')).toBeNull()
+})
+
+test('reads the committed text of a file to compare edits with', async () => {
+  git('init', '-q', '-b', 'main')
+  await write('a.txt', 'one\n')
+  git('add', '.')
+  git('commit', '-qm', 'First commit')
+  await write('a.txt', 'changed\n')
+  await write('added.txt', 'x\n')
+  git('add', 'added.txt')
+  await write('untracked.txt', 'x\n')
+
+  expect(await gitHeadText(repo, 'a.txt')).toBe('one\n')
+  expect(await gitHeadText(repo, 'added.txt')).toBe('')
+  expect(await gitHeadText(repo, 'untracked.txt')).toBeNull()
 })
 
 test('switches branches, and pushes and pulls through a remote', async () => {
