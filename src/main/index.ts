@@ -2,7 +2,7 @@ import { join } from 'node:path'
 import { app, BrowserWindow, ipcMain, nativeTheme } from 'electron'
 import { type Api, apiMethods, type Events } from '../shared/api'
 import { claudeAdapter } from './agents/claude'
-import { gitDiff, gitSummary, GitWatcher } from './git'
+import { gitDiff, gitFiles, gitSummary, GitWatcher } from './git'
 import { IdeServer } from './ide-server'
 import { registerSupervisorTools } from './ide-tools'
 import { completeDirectory } from './paths'
@@ -47,8 +47,11 @@ function createApi({ projects, sessions, sessionStore, files, terminals, supervi
     createSession: (projectId, agent) => sessions.createSession(projectId, agent),
     openSession: (projectId, session) => sessions.openSession(projectId, session),
     closeSessionView: async (session) => sessions.closeSessionView(session),
-    sendMessage: async (session, text) => sessions.sendMessage(session, text),
+    sendMessage: async (session, input) => sessions.sendMessage(session, input),
     interrupt: (session) => sessions.interrupt(session),
+    getSettingChoices: (projectId, agent) => sessions.settingChoices(projectId, agent),
+    changeSessionSettings: (session, settings) => sessions.changeSettings(session, settings),
+    stopTask: (session, taskId) => sessions.stopTask(session, taskId),
     respond: async (session, requestId, response) => sessions.respond(session, requestId, response),
     saveDraft: async (session, draft) => sessions.saveDraft(session, draft),
     setSessionVisible: async (session, visible) => sessions.setVisible(session, visible),
@@ -56,6 +59,8 @@ function createApi({ projects, sessions, sessionStore, files, terminals, supervi
     listDirectory: (projectId, path) => files.listDirectory(projectId, path),
     readFile: (projectId, path) => files.readFile(projectId, path),
     writeFile: (projectId, path, text) => files.writeFile(projectId, path, text),
+    listProjectFiles: async (projectId) =>
+      (await gitFiles(projects.getProject(projectId).path)) ?? files.listAllFiles(projectId),
     attachTerminal: (projectId, terminalId, size) => terminals.attach(projectId, terminalId, size),
     detachTerminal: async (terminalId) => terminals.detach(terminalId),
     writeTerminal: async (terminalId, data) => terminals.write(terminalId, data),

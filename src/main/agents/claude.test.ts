@@ -4,12 +4,12 @@ import { ClaudeTranscript } from './claude'
 
 const cwd = '/work/project'
 
-function fold(messages: object[]) {
+function foldView(messages: object[]) {
   const transcript = new ClaudeTranscript(cwd)
-  return messages
-    .flatMap((m) => transcript.map(m as never))
-    .reduce(applyEvent, emptySessionView).items
+  return messages.flatMap((m) => transcript.map(m as never)).reduce(applyEvent, emptySessionView)
 }
+
+const fold = (messages: object[]) => foldView(messages).items
 
 const stream = (event: object) => ({ type: 'stream_event', event, parent_tool_use_id: null })
 const assistant = (id: string, content: object[]) => ({
@@ -100,8 +100,132 @@ describe('ClaudeTranscript', () => {
     expect(items).toEqual([{ kind: 'notice', id: 'u1', level: 'info', text: 'Interrupted' }])
   })
 
+  it("hides Claude Code's own prompts to the model, live and saved", () => {
+    const items = fold([
+      { type: 'user', uuid: 'u1', message: { role: 'user', content: 'Resume.' }, isSynthetic: true, parent_tool_use_id: null },
+      { type: 'user', uuid: 'u2', message: { role: 'user', content: '[Image: source: a.png]' }, isMeta: true },
+    ])
+    expect(items).toEqual([])
+  })
+
+  it('shows a failed request as an error that leaves the usage alone', () => {
+    const view = foldView([
+      {
+        type: 'assistant',
+        uuid: 'e1',
+        error: 'authentication_failed',
+        message: {
+          id: 'synthetic-1',
+          model: '<synthetic>',
+          content: [{ type: 'text', text: 'API Error: 403' }],
+          usage: { input_tokens: 0, output_tokens: 0 },
+        },
+        parent_tool_use_id: null,
+      },
+    ])
+    expect(view.items).toEqual([{ kind: 'notice', id: 'e1', level: 'error', text: 'API Error: 403' }])
+    expect(view.usage).toBeUndefined()
+  })
+
   it('keeps unrecognised blocks visible', () => {
     const [item] = fold([assistant('msg_1', [{ type: 'hologram', data: 1 }])])
     expect(item).toMatchObject({ kind: 'unknown', label: 'hologram' })
+  })
+
+  it('reports context and cache use from the latest main request, sized by the result', () => {
+    const usage = (cacheRead: number, ttl: '5m' | '1h' | null) => ({
+      type: 'assistant',
+      timestamp: '2026-11-13T09:00:00.000Z',
+      parent_tool_use_id: null,
+      message: {
+        id: `msg_${cacheRead}`,
+        model: 'claude-opus-5-5',
+        content: [{ type: 'text', text: 'Hi' }],
+        usage: {
+          input_tokens: 2,
+          output_tokens: 8,
+          cache_read_input_tokens: cacheRead,
+          cache_creation_input_tokens: ttl ? 90 : 0,
+          cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: ttl === '1h' ? 90 : 0 },
+        },
+      },
+    })
+    const view = foldView([
+      usage(1000, '1h'),
+      usage(2000, null),
+      { type: 'result', subtype: 'success', modelUsage: { 'claude-opus-5-5': { contextWindow: 1_000_000 } } },
+    ])
+    expect(view.usage).toEqual({
+      contextTokens: 2010,
+      contextWindow: 1_000_000,
+      cacheReadTokens: 2000,
+      cacheWriteTokens: 0,
+      cacheTtlMs: 3_600_000,
+      at: Date.parse('2026-11-13T09:00:00.000Z'),
+    })
+  })
+
+  it('tracks background tasks and notes when one finishes', () => {
+    const view = foldView([
+      assistant('msg_1', [{ type: 'tool_use', id: 'toolu_1', name: 'Monitor', input: { command: 'make' } }]),
+      {
+        type: 'system',
+        subtype: 'background_tasks_changed',
+        tasks: [
+          { task_id: 't1', task_type: 'local_bash', description: 'Watch the build' },
+          { task_id: 't2', task_type: 'local_bash', description: 'Housekeeping', ambient: true },
+        ],
+      },
+      { type: 'system', subtype: 'task_started', task_id: 't1', tool_use_id: 'toolu_1' },
+      { type: 'system', subtype: 'task_notification', uuid: 'n1', task_id: 't1', summary: 'Monitor "Watch the build" stream ended' },
+      { type: 'system', subtype: 'task_notification', uuid: 'n2', task_id: 'foreground', summary: 'Agent finished' },
+    ])
+    expect(view.tasks).toEqual([{ id: 't1', kind: 'Monitor', description: 'Watch the build' }])
+    expect(view.items.slice(1)).toEqual([
+      { kind: 'notice', id: 'n1', level: 'info', text: 'Monitor "Watch the build" stream ended' },
+    ])
+  })
+
+  it('shows a saved task notification as a notice', () => {
+    const items = fold([
+      {
+        type: 'user',
+        uuid: 'u1',
+        parent_tool_use_id: null,
+        message: {
+          role: 'user',
+          content: '<task-notification>\n<task-id>t1</task-id>\n<summary>Monitor event: "Build"</summary>\n<event>failed</event>\n</task-notification>',
+        },
+      },
+    ])
+    expect(items).toEqual([{ kind: 'notice', id: 'u1', level: 'info', text: 'Monitor event: "Build": failed' }])
+  })
+
+  it('keeps images in user messages', () => {
+    const items = fold([
+      {
+        type: 'user',
+        uuid: 'u1',
+        parent_tool_use_id: null,
+        message: {
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } },
+            { type: 'text', text: 'What is this?' },
+          ],
+        },
+      },
+    ])
+    expect(items).toEqual([
+      { kind: 'userMessage', id: 'u1', text: 'What is this?', images: [{ mediaType: 'image/png', data: 'AAAA' }] },
+    ])
+  })
+
+  it('reports the model and permission mode Claude Code is using', () => {
+    const view = foldView([
+      { type: 'system', subtype: 'init', model: 'claude-opus-5-5', permissionMode: 'auto' },
+      { type: 'system', subtype: 'status', status: null, permissionMode: 'plan' },
+    ])
+    expect(view.settings).toEqual({ model: 'claude-opus-5-5', permissionMode: 'plan' })
   })
 })

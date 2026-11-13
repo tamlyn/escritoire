@@ -2,34 +2,44 @@ import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import type { AgentEvent, Item } from '../shared/agent'
+import type { AgentEvent, Item, SessionSettings, UserInput } from '../shared/agent'
 import type { AgentAdapter, StartOptions } from './agents/types'
 import { SessionManager } from './session-manager'
 import { SessionStore } from './session-store'
 
 function fakeAdapter(history: Item[] = []) {
-  const runs: { options: StartOptions; emit: (e: AgentEvent) => void; sent: string[] }[] = []
+  const runs: {
+    options: StartOptions
+    emit: (e: AgentEvent) => void
+    sent: string[]
+    settings: SessionSettings[]
+  }[] = []
   const adapter: AgentAdapter = {
     kind: 'claude',
     createSession: async () => 'session-1',
     listSessions: async () => [],
-    loadHistory: async () => history,
+    loadHistory: async () => ({ items: history }),
+    settingChoices: async () => ({ models: [], permissionModes: [] }),
     start(options, emit) {
-      const run = { options, emit, sent: [] as string[] }
+      const run = { options, emit, sent: [] as string[], settings: [] as SessionSettings[] }
       runs.push(run)
       return {
-        send: (text) => {
-          run.sent.push(text)
+        send: (input) => {
+          run.sent.push(input.text)
           emit({ type: 'statusChanged', status: 'working' })
         },
         interrupt: async () => {},
         respond: () => {},
+        changeSettings: async (settings) => void run.settings.push(settings),
+        stopTask: async () => {},
         close: () => {},
       }
     },
   }
   return { adapter, runs }
 }
+
+const say = (text: string): UserInput => ({ text, images: [] })
 
 async function setup(history: Item[] = []) {
   const dataDir = await mkdtemp(join(tmpdir(), 'escritoire-sessions-'))
@@ -51,9 +61,9 @@ describe('SessionManager', () => {
     const { manager, runs } = await setup()
     const pointer = await manager.createSession('p1', 'claude')
     await manager.openSession('p1', pointer)
-    manager.sendMessage(pointer, 'Fix the login bug\nIt fails on Safari')
+    manager.sendMessage(pointer, say('Fix the login bug\nIt fails on Safari'))
 
-    expect(runs[0]!.options).toEqual({ cwd: '/work/project', agentSessionId: 'session-1' })
+    expect(runs[0]!.options).toEqual({ cwd: '/work/project', agentSessionId: 'session-1', settings: {} })
     expect(manager.summaries()).toEqual([
       { ...pointer, projectId: 'p1', title: 'Fix the login bug', status: 'working', attention: null },
     ])
@@ -63,7 +73,7 @@ describe('SessionManager', () => {
     const { manager, runs } = await setup([{ kind: 'userMessage', id: 'u1', text: 'Earlier' }])
     const pointer = { agent: 'claude' as const, agentSessionId: 'external' }
     const opened = await manager.openSession('p1', pointer)
-    manager.sendMessage(pointer, 'Carry on')
+    manager.sendMessage(pointer, say('Carry on'))
 
     expect(opened.view.items).toHaveLength(1)
     expect(runs).toHaveLength(1)
@@ -74,7 +84,7 @@ describe('SessionManager', () => {
     const { manager, runs, sent } = await setup()
     const pointer = await manager.createSession('p1', 'claude')
     const opened = await manager.openSession('p1', pointer)
-    manager.sendMessage(pointer, 'Hi')
+    manager.sendMessage(pointer, say('Hi'))
     manager.closeSessionView(pointer)
     runs[0]!.emit({ type: 'statusChanged', status: 'idle' })
 
@@ -88,7 +98,7 @@ describe('SessionManager', () => {
     const { manager, runs } = await setup()
     const pointer = await manager.createSession('p1', 'claude')
     await manager.openSession('p1', pointer)
-    manager.sendMessage(pointer, 'Hi')
+    manager.sendMessage(pointer, say('Hi'))
     runs[0]!.emit({ type: 'statusChanged', status: 'idle' })
     expect(manager.summaries()[0]!.attention).toBe('unread')
 
@@ -100,7 +110,7 @@ describe('SessionManager', () => {
     const { manager, runs } = await setup()
     const pointer = await manager.createSession('p1', 'claude')
     await manager.openSession('p1', pointer)
-    manager.sendMessage(pointer, 'Hi')
+    manager.sendMessage(pointer, say('Hi'))
     runs[0]!.emit({ type: 'requestAdded', request: { kind: 'question', id: 'r1', questions: [] } })
     expect(manager.summaries()[0]!.attention).toBe('waiting')
   })
@@ -109,9 +119,9 @@ describe('SessionManager', () => {
     const { manager, runs } = await setup()
     const pointer = await manager.createSession('p1', 'claude')
     await manager.openSession('p1', pointer)
-    manager.sendMessage(pointer, 'Hi')
+    manager.sendMessage(pointer, say('Hi'))
     runs[0]!.emit({ type: 'statusChanged', status: 'errored', error: 'Claude Code exited.' })
-    manager.sendMessage(pointer, 'Again')
+    manager.sendMessage(pointer, say('Again'))
 
     expect(runs).toHaveLength(2)
     expect(runs[1]!.sent).toEqual(['Again'])
@@ -121,7 +131,7 @@ describe('SessionManager', () => {
     const { manager, runs, dataDir } = await setup()
     const pointer = await manager.createSession('p1', 'claude')
     await manager.openSession('p1', pointer)
-    manager.sendMessage(pointer, 'Hi')
+    manager.sendMessage(pointer, say('Hi'))
     runs[0]!.emit({ type: 'statusChanged', status: 'idle' })
     manager.saveDraft(pointer, 'Next, ')
     await new Promise((resolve) => setTimeout(resolve, 50))
@@ -135,5 +145,27 @@ describe('SessionManager', () => {
     const reopened = await restarted.openSession('p1', pointer)
     expect(reopened).toMatchObject({ title: 'Hi', draft: 'Next, ' })
     expect(restarted.summaries()[0]!.attention).toBe('unread')
+  })
+
+  it('starts runs with the chosen settings and changes the running one', async () => {
+    const { manager, runs, dataDir } = await setup()
+    const pointer = await manager.createSession('p1', 'claude')
+    await manager.openSession('p1', pointer)
+    await manager.changeSettings(pointer, { model: 'opus', permissionMode: 'plan' })
+    manager.sendMessage(pointer, say('Hi'))
+    await manager.changeSettings(pointer, { model: undefined })
+
+    expect(runs[0]!.options.settings).toEqual({ model: 'opus', permissionMode: 'plan' })
+    expect(runs[0]!.settings).toEqual([{ model: undefined }])
+
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    const restarted = new SessionManager({
+      adapters: { claude: fakeAdapter().adapter },
+      store: new SessionStore(dataDir),
+      projectPath: () => '/work/project',
+      send: () => {},
+    })
+    const reopened = await restarted.openSession('p1', pointer)
+    expect(reopened.view.settings).toEqual({ model: undefined, permissionMode: 'plan' })
   })
 })

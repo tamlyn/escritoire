@@ -10,6 +10,7 @@ const hiddenNames = new Set(['.git', '.DS_Store'])
 const unwatched = ['**/.git/**', '**/node_modules/**']
 const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
 const maxFileSize = 5 * 1024 * 1024
+const maxListedFiles = 20_000
 
 type Options = {
   projectPath: (projectId: string) => string
@@ -46,6 +47,24 @@ export class ProjectFiles {
         Number(b.isDirectory) - Number(a.isDirectory) ||
         a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }),
     )
+  }
+
+  /** Every file under the project, for one that isn't in git; capped, since it may be huge. */
+  async listAllFiles(projectId: string): Promise<string[]> {
+    const root = this.options.projectPath(projectId)
+    const files: string[] = []
+    const pending = ['']
+    while (pending.length > 0 && files.length < maxListedFiles) {
+      const directory = pending.shift()!
+      const entries = await readdir(join(root, directory), { withFileTypes: true }).catch(() => [])
+      for (const entry of entries) {
+        if (hiddenNames.has(entry.name) || entry.name === 'node_modules') continue
+        const path = directory ? `${directory}/${entry.name}` : entry.name
+        if (entry.isDirectory()) pending.push(path)
+        else files.push(path)
+      }
+    }
+    return files.slice(0, maxListedFiles)
   }
 
   async readFile(projectId: string, path: string): Promise<FileContent> {

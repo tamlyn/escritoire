@@ -18,7 +18,10 @@ import type {
   RequestResponse,
   SessionEvent,
   SessionPointer,
+  SessionSettings,
   SessionSummary,
+  SettingChoices,
+  UserInput,
 } from './agent'
 import type { DirectoryEntry, FileContent, FilesChanged, WriteResult } from './files'
 import type { GitDiff, GitDiffRequest, GitSummary } from './git'
@@ -50,8 +53,12 @@ export type Api = {
   openSession(projectId: string, session: SessionPointer): Promise<OpenedSession>
   closeSessionView(session: SessionPointer): Promise<void>
   /** Starts or resumes the agent if it isn't running. */
-  sendMessage(session: SessionPointer, text: string): Promise<void>
+  sendMessage(session: SessionPointer, input: UserInput): Promise<void>
   interrupt(session: SessionPointer): Promise<void>
+  getSettingChoices(projectId: string, agent: AgentKind): Promise<SettingChoices>
+  /** Only the settings given change; an `undefined` value goes back to the agent's default. */
+  changeSessionSettings(session: SessionPointer, settings: SessionSettings): Promise<void>
+  stopTask(session: SessionPointer, taskId: string): Promise<void>
   respond(session: SessionPointer, requestId: string, response: RequestResponse): Promise<void>
   saveDraft(session: SessionPointer, draft: string): Promise<void>
   /** Whether the user can currently see the session, which marks its turns as read. */
@@ -63,6 +70,8 @@ export type Api = {
   readFile(projectId: string, path: string): Promise<FileContent>
   /** Overwrites the file; `missing` if it no longer exists, since the IDE never creates files. */
   writeFile(projectId: string, path: string, text: string): Promise<WriteResult>
+  /** Every file in the project that git doesn't ignore, as relative paths. */
+  listProjectFiles(projectId: string): Promise<string[]>
 
   /** Starts the terminal's shell if needed and sends its `screenOutput` until detached. */
   attachTerminal(projectId: string, terminalId: string, size: ScreenSize): Promise<ScreenSnapshot>
@@ -107,6 +116,9 @@ const apiMethodSet: Record<keyof Api, true> = {
   closeSessionView: true,
   sendMessage: true,
   interrupt: true,
+  getSettingChoices: true,
+  changeSessionSettings: true,
+  stopTask: true,
   respond: true,
   saveDraft: true,
   setSessionVisible: true,
@@ -114,6 +126,7 @@ const apiMethodSet: Record<keyof Api, true> = {
   listDirectory: true,
   readFile: true,
   writeFile: true,
+  listProjectFiles: true,
   attachTerminal: true,
   detachTerminal: true,
   writeTerminal: true,

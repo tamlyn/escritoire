@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import {
   type AgentEvent,
   type AgentKind,
@@ -7,8 +8,11 @@ import {
   type PastSession,
   type RequestResponse,
   type SessionPointer,
+  type SessionSettings,
   type SessionSummary,
   type SessionView,
+  type SettingChoices,
+  type UserInput,
 } from '../shared/agent'
 import type { Events } from '../shared/api'
 import type { AgentAdapter, AgentRun } from './agents/types'
@@ -105,17 +109,51 @@ export class SessionManager {
     session.visible = false
   }
 
-  sendMessage(pointer: SessionPointer, text: string): void {
+  async settingChoices(projectId: string, agent: AgentKind): Promise<SettingChoices> {
+    return this.deps.adapters[agent].settingChoices(this.deps.projectPath(projectId))
+  }
+
+  sendMessage(pointer: SessionPointer, input: UserInput): void {
     const session = this.get(pointer)
     // Sessions resumed from elsewhere keep the title the agent gave them.
-    if (!session.record.title && !session.hadHistory) session.record.title = titleFrom(text)
+    if (!session.record.title && !session.hadHistory) {
+      session.record.title = titleFrom(input.text) || 'Image'
+    }
     session.run ??= this.deps.adapters[pointer.agent].start(
-      { cwd: session.cwd, agentSessionId: pointer.agentSessionId, ide: this.deps.ideConnection?.(session.projectId) },
+      {
+        cwd: session.cwd,
+        agentSessionId: pointer.agentSessionId,
+        settings: session.record.settings ?? {},
+        ide: this.deps.ideConnection?.(session.projectId),
+      },
       (event) => this.apply(session, event),
     )
     session.record.draft = ''
     this.save(session)
-    session.run.send(text)
+    session.run.send(input)
+  }
+
+  /**
+   * Remembers the user's choice for the session's next run and applies it to
+   * the current one. The view then shows what the agent reports it is using.
+   */
+  async changeSettings(pointer: SessionPointer, settings: SessionSettings): Promise<void> {
+    const session = this.get(pointer)
+    session.record.settings = { ...session.record.settings, ...settings }
+    this.save(session)
+    this.apply(session, { type: 'settingsChanged', settings })
+    try {
+      await session.run?.changeSettings(settings)
+    } catch (error) {
+      this.apply(session, {
+        type: 'itemUpserted',
+        item: { kind: 'notice', id: randomUUID(), level: 'error', text: `Couldn't change the settings: ${errorText(error)}` },
+      })
+    }
+  }
+
+  async stopTask(pointer: SessionPointer, taskId: string): Promise<void> {
+    await this.get(pointer).run?.stopTask(taskId)
   }
 
   async interrupt(pointer: SessionPointer): Promise<void> {
@@ -204,13 +242,15 @@ export class SessionManager {
     const cwd = this.deps.projectPath(projectId)
     const record =
       (await this.deps.store.get(projectId, pointer.agentSessionId)) ?? newRecord(pointer.agent)
-    let view: SessionView = emptySessionView
+    const settings = record.settings ?? {}
+    let view: SessionView
     try {
-      const items = await this.deps.adapters[pointer.agent].loadHistory(pointer.agentSessionId, cwd)
-      view = { ...emptySessionView, items }
+      const history = await this.deps.adapters[pointer.agent].loadHistory(pointer.agentSessionId, cwd)
+      view = { ...emptySessionView, ...history, settings }
     } catch (error) {
       view = {
         ...emptySessionView,
+        settings,
         items: [{ kind: 'notice', id: 'history-error', level: 'error', text: `Couldn't load history: ${String(error)}` }],
       }
     }
@@ -245,7 +285,11 @@ export class SessionManager {
 }
 
 function newRecord(agent: AgentKind): SessionRecord {
-  return { agent, title: '', draft: '', lastSeenAt: 0, lastTurnEndedAt: 0 }
+  return { agent, title: '', draft: '', lastSeenAt: 0, lastTurnEndedAt: 0, settings: {} }
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 function titleFrom(text: string): string {

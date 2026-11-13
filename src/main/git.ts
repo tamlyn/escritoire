@@ -58,6 +58,21 @@ export async function gitSummary(root: string): Promise<GitSummary | null> {
   }
 }
 
+/**
+ * The project's files that git tracks or would track, relative to the project,
+ * or `null` if it isn't in a git repository.
+ */
+export async function gitFiles(root: string): Promise<string[] | null> {
+  try {
+    // Relative to the working directory, so already relative to the project.
+    const output = await git(root, ['ls-files', '-z', '--cached', '--others', '--exclude-standard', '--deduplicate', '--', '.'])
+    return output.toString().split('\0').filter(Boolean)
+  } catch (error) {
+    if (error instanceof NotARepository) return null
+    throw error
+  }
+}
+
 /** Both sides of one file's change. `readWorktree` reads a file in the project. */
 export async function gitDiff(
   root: string,

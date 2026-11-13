@@ -1,10 +1,12 @@
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import {
+  type AgentKind,
   applyEvent,
   type SessionEvent,
   type SessionPointer,
   type SessionSummary,
   type SessionView,
+  type SettingChoices,
 } from '../../shared/agent'
 import { api, subscribe } from './api'
 
@@ -83,4 +85,26 @@ export function useSession(projectId: string, pointer: SessionPointer): OpenSess
   }, [projectId, agent, agentSessionId])
 
   return state
+}
+
+const settingChoices = new Map<string, Promise<SettingChoices>>()
+
+/** The agent's models and modes, asked for once per agent. */
+export function useSettingChoices(projectId: string, agent: AgentKind): SettingChoices | null {
+  const [choices, setChoices] = useState<SettingChoices | null>(null)
+  useEffect(() => {
+    let current = settingChoices.get(agent)
+    if (!current) {
+      current = api.getSettingChoices(projectId, agent)
+      settingChoices.set(agent, current)
+      // Asked again next time rather than failing for the rest of the app's life.
+      current.catch(() => settingChoices.delete(agent))
+    }
+    let cancelled = false
+    current.then((loaded) => cancelled || setChoices(loaded)).catch((error: unknown) => console.error(error))
+    return () => {
+      cancelled = true
+    }
+  }, [projectId, agent])
+  return choices
 }

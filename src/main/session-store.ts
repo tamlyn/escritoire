@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import type { AgentKind } from '../shared/agent'
+import type { AgentKind, SessionSettings } from '../shared/agent'
 import { deleteJson, readJson, writeJson } from './json-file'
 
 /** What the IDE remembers about a session that the agent can't tell it. */
@@ -10,6 +10,8 @@ export type SessionRecord = {
   draft: string
   lastSeenAt: number
   lastTurnEndedAt: number
+  /** The user's choices, for the next run. Missing from records saved before they existed. */
+  settings?: SessionSettings
 }
 
 type ProjectSessions = Record<string, SessionRecord>

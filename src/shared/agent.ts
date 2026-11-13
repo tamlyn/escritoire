@@ -8,8 +8,13 @@ export type AgentKind = 'claude'
 
 export type SessionPointer = { agent: AgentKind; agentSessionId: string }
 
+/** Base64 image data, as the agents take it. */
+export type ImageAttachment = { mediaType: string; data: string }
+
+export type UserInput = { text: string; images: ImageAttachment[] }
+
 export type Item =
-  | { kind: 'userMessage'; id: string; text: string }
+  | { kind: 'userMessage'; id: string; text: string; images?: ImageAttachment[] }
   | { kind: 'agentMessage'; id: string; parentId?: string; text: string }
   | { kind: 'reasoning'; id: string; parentId?: string; text: string }
   | {
@@ -62,6 +67,40 @@ export type RequestResponse =
   /** `null` dismisses the question without answering. */
   | { kind: 'question'; answers: QuestionAnswers | null }
 
+/** What the session runs with. An unset value is the agent's own default. */
+export type SessionSettings = { model?: string; effort?: string; permissionMode?: string }
+
+/** The values the agent accepts for each setting. */
+export type SettingChoices = {
+  models: ModelChoice[]
+  permissionModes: { id: string; label: string }[]
+}
+
+export type ModelChoice = {
+  id: string
+  label: string
+  description?: string
+  /** The model an alias such as `default` currently stands for. */
+  resolvedId?: string
+  efforts: string[]
+}
+
+/** From the latest request the agent made in the main conversation. */
+export type ContextUsage = {
+  /** Everything the request sent plus its reply: how full the context window is. */
+  contextTokens: number
+  contextWindow?: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  /** How long the prompt cache outlives the request, once a cache write has said. */
+  cacheTtlMs?: number
+  /** When the request was answered, in epoch milliseconds. */
+  at: number
+}
+
+/** Work the agent left running in the background, such as a monitor or a background subagent. */
+export type BackgroundTask = { id: string; kind: string; description: string }
+
 /** Waiting for input is not a status: it is derived from pending requests. */
 export type SessionStatus = 'idle' | 'working' | 'errored'
 
@@ -73,15 +112,29 @@ export type AgentEvent =
   | { type: 'requestAdded'; request: PendingRequest }
   | { type: 'requestResolved'; requestId: string }
   | { type: 'statusChanged'; status: SessionStatus; error?: string }
+  /** Merged into the current settings. */
+  | { type: 'settingsChanged'; settings: SessionSettings }
+  | { type: 'usageChanged'; usage: ContextUsage }
+  /** The whole set of running background tasks. */
+  | { type: 'tasksChanged'; tasks: BackgroundTask[] }
 
 export type SessionView = {
   status: SessionStatus
   error?: string
   items: Item[]
   requests: PendingRequest[]
+  settings: SessionSettings
+  usage?: ContextUsage
+  tasks: BackgroundTask[]
 }
 
-export const emptySessionView: SessionView = { status: 'idle', items: [], requests: [] }
+export const emptySessionView: SessionView = {
+  status: 'idle',
+  items: [],
+  requests: [],
+  settings: {},
+  tasks: [],
+}
 
 export function applyEvent(view: SessionView, event: AgentEvent): SessionView {
   switch (event.type) {
@@ -105,6 +158,12 @@ export function applyEvent(view: SessionView, event: AgentEvent): SessionView {
       return { ...view, requests: view.requests.filter((r) => r.id !== event.requestId) }
     case 'statusChanged':
       return { ...view, status: event.status, error: event.error }
+    case 'settingsChanged':
+      return { ...view, settings: { ...view.settings, ...event.settings } }
+    case 'usageChanged':
+      return { ...view, usage: event.usage }
+    case 'tasksChanged':
+      return { ...view, tasks: event.tasks }
   }
 }
 
