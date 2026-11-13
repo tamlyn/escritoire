@@ -2,6 +2,8 @@ import { join } from 'node:path'
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { type Api, apiMethods, type Events } from '../shared/api'
 import { claudeAdapter } from './agents/claude'
+import { IdeServer } from './ide-server'
+import { registerSupervisorTools } from './ide-tools'
 import { completeDirectory } from './paths'
 import { ProjectFiles } from './project-files'
 import { ProjectStore } from './project-store'
@@ -120,10 +122,20 @@ void app.whenReady().then(async () => {
   const projects = await ProjectStore.load(dataDir)
   const sessionStore = new SessionStore(dataDir)
   await shellEnv
+  const supervisor = new Supervisor({
+    projectPath: (projectId) => projects.getProject(projectId).path,
+    send: (output) => send('screenOutput', output),
+    onChanged: (processes) => send('processesChanged', processes),
+  })
+  const ideServer = await IdeServer.start((mcp, projectId) => {
+    projects.getProject(projectId)
+    registerSupervisorTools(mcp, supervisor, projectId)
+  })
   const sessions = new SessionManager({
     adapters: { claude: claudeAdapter },
     store: sessionStore,
     projectPath: (projectId) => projects.getProject(projectId).path,
+    ideConnection: (projectId) => ideServer.connection(projectId),
     send,
   })
   const files = new ProjectFiles({
@@ -135,11 +147,6 @@ void app.whenReady().then(async () => {
     projectPath: (projectId) => projects.getProject(projectId).path,
     send: (output) => send('screenOutput', output),
   })
-  const supervisor = new Supervisor({
-    projectPath: (projectId) => projects.getProject(projectId).path,
-    send: (output) => send('screenOutput', output),
-    onChanged: (processes) => send('processesChanged', processes),
-  })
   // Only the active project is watched.
   projects.onActiveChanged((projectId) => files.watch(projectId))
 
@@ -149,7 +156,7 @@ void app.whenReady().then(async () => {
     if (shutDown) return
     event.preventDefault()
     sessions.closeAll()
-    void Promise.allSettled([files.unwatch(), terminals.closeAll(), supervisor.closeAll()]).then((results) => {
+    void Promise.allSettled([files.unwatch(), terminals.closeAll(), supervisor.closeAll(), ideServer.close()]).then((results) => {
       for (const result of results) if (result.status === 'rejected') console.error(result.reason)
       shutDown = true
       app.quit()

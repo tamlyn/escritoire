@@ -12,6 +12,7 @@ import {
 } from '../shared/agent'
 import type { Events } from '../shared/api'
 import type { AgentAdapter, AgentRun } from './agents/types'
+import type { IdeServerConnection } from './ide-server'
 import type { SessionRecord, SessionStore } from './session-store'
 
 type Session = {
@@ -33,6 +34,8 @@ export type SessionManagerDeps = {
   adapters: Record<AgentKind, AgentAdapter>
   store: SessionStore
   projectPath: (projectId: string) => string
+  /** The IDE's MCP server for a project, given to every session the IDE starts. */
+  ideConnection?: (projectId: string) => IdeServerConnection
   send: <K extends keyof Events>(name: K, payload: Events[K]) => void
   now?: () => number
 }
@@ -107,7 +110,7 @@ export class SessionManager {
     // Sessions resumed from elsewhere keep the title the agent gave them.
     if (!session.record.title && !session.hadHistory) session.record.title = titleFrom(text)
     session.run ??= this.deps.adapters[pointer.agent].start(
-      { cwd: session.cwd, agentSessionId: pointer.agentSessionId },
+      { cwd: session.cwd, agentSessionId: pointer.agentSessionId, ide: this.deps.ideConnection?.(session.projectId) },
       (event) => this.apply(session, event),
     )
     session.record.draft = ''

@@ -1,4 +1,5 @@
 import type { AgentEvent, AgentKind, Item, PastSession, RequestResponse } from '../../shared/agent'
+import type { IdeServerConnection } from '../ide-server'
 
 export interface AgentAdapter {
   kind: AgentKind
@@ -14,6 +15,8 @@ export interface AgentAdapter {
 export type StartOptions = {
   cwd: string
   agentSessionId: string
+  /** The IDE's MCP server for this project, offered to the agent. */
+  ide?: IdeServerConnection
 }
 
 /**

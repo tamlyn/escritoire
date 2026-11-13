@@ -3,6 +3,8 @@ import { relative } from 'node:path'
 import {
   type CanUseTool,
   getSessionMessages,
+  type HookCallbackMatcher,
+  type McpServerConfig,
   listSessions,
   type PermissionResult,
   type PermissionUpdate,
@@ -21,8 +23,55 @@ import {
   type RequestResponse,
   type ToolView,
 } from '../../shared/agent'
+import { readOnlyTools } from '../ide-tools'
 import { AsyncQueue } from './async-queue'
 import type { AgentAdapter, AgentRun, StartOptions } from './types'
+
+const ideServerName = 'escritoire'
+
+/**
+ * Gives Claude the IDE's tools, and refuses background Bash commands in favour
+ * of the supervisor, so the user can see everything an agent leaves running.
+ */
+function ideOptions(ide: NonNullable<StartOptions['ide']>): {
+  mcpServers: Record<string, McpServerConfig>
+  hooks: { PreToolUse: HookCallbackMatcher[] }
+} {
+  const tool = (name: string) => `mcp__${ideServerName}__${name}`
+  return {
+    mcpServers: {
+      [ideServerName]: {
+        type: 'http',
+        ...ide,
+        tools: readOnlyTools.map((name) => ({ name, permission_policy: 'always_allow' })),
+        // Loaded up front rather than behind tool search, so Claude knows the supervisor exists.
+        alwaysLoad: true,
+      },
+    },
+    hooks: {
+      PreToolUse: [
+        {
+          matcher: 'Bash',
+          hooks: [
+            async (input) => {
+              const toolInput = 'tool_input' in input ? (input.tool_input as { run_in_background?: unknown }) : {}
+              if (toolInput.run_in_background !== true) return {}
+              return {
+                hookSpecificOutput: {
+                  hookEventName: 'PreToolUse',
+                  permissionDecision: 'deny',
+                  permissionDecisionReason:
+                    `Background commands aren't available here. Start long-running processes with ${tool('start_process')} ` +
+                    `(check ${tool('list_processes')} first) so the user can see them, and read their output with ${tool('read_output')}.`,
+                },
+              }
+            },
+          ],
+        },
+      ],
+    },
+  }
+}
 
 export const claudeAdapter: AgentAdapter = {
   kind: 'claude',
@@ -122,6 +171,7 @@ class ClaudeRun implements AgentRun {
           canUseTool: this.canUseTool,
           // Lets a machine pin a known-good Claude Code binary instead of the one the SDK bundles.
           pathToClaudeCodeExecutable: process.env.ESCRITOIRE_CLAUDE_CODE_PATH || undefined,
+          ...(this.options.ide ? ideOptions(this.options.ide) : {}),
         },
       })
       for await (const message of this.query) {

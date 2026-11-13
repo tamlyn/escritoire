@@ -28,6 +28,7 @@ A session is a **transcript of items**, a list of **pending requests** and a **s
 - **Item ids.** The SDK delivers each content block of an API message as its own message, in order, so a block's id is the API message id plus its position. Streamed deltas carry the same position as their block index, so the final message replaces the streamed item. Verified live.
 - **History** comes from `getSessionMessages`, which has the same message shapes but no structured tool results, so tool views are built from the `tool_use` input and the text result, which both paths have. Verified live: history, live output and resume agree.
 - **Questions.** `AskUserQuestion` arrives through `canUseTool` and is answered with `allow` and `updatedInput.answers`. Verified live.
+- **IDE tools.** Every run gets the IDE's MCP server for its project (`StartOptions.ide`) as `escritoire`, loaded up front rather than behind tool search, with the read-only tools always allowed. A `PreToolUse` hook refuses Bash calls with `run_in_background` and names the supervisor's tools instead. Verified live: Claude reaches for `start_process` unprompted, and when told to use background Bash it follows the refusal to the supervisor.
 - **Interruption.** Claude Code records an interruption as a `[Request interrupted by user…]` user message, live and in history; the adapter shows it as a notice.
 
 ## Sessions in main
@@ -50,7 +51,6 @@ A session is a **transcript of items**, a list of **pending requests** and a **s
 
 ## Not built yet
 
-- Passing the IDE's MCP server to sessions (with the supervisor, slice 4).
 - Model and permission mode switching, slash commands, @-mentions, images.
 - The permission prompt has not been exercised live: the user's `auto` permission mode approved every tool in testing.
 
