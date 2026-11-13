@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -22,10 +23,16 @@ afterEach(async () => {
 
 const outputOf = (id: string) => supervisor.output('p', id, 100).map((l) => l.text)
 
+/** Zombies count as dead: in a container whose init doesn't reap, killed orphans stay zombies. */
 function isAlive(pid: number): boolean {
   try {
     process.kill(pid, 0)
-    return true
+  } catch {
+    return false
+  }
+  if (process.platform !== 'linux') return true
+  try {
+    return readFileSync(`/proc/${pid}/stat`, 'utf8').split(') ')[1]?.[0] !== 'Z'
   } catch {
     return false
   }
