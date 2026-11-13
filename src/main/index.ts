@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeTheme } from 'electron'
 import { type Api, apiMethods, type Events } from '../shared/api'
 import { claudeAdapter } from './agents/claude'
 import { gitDiff, gitSummary, GitWatcher } from './git'
@@ -91,6 +91,15 @@ function send<K extends keyof Events>(name: K, payload: Events[K]): void {
   for (const window of BrowserWindow.getAllWindows()) window.webContents.send(name, payload)
 }
 
+// The window controls drawn over the header on Windows and Linux. Electron
+// can't read CSS variables, so these are the header's --chrome and --foreground
+// in hex; one pixel shorter than the header so its bottom border shows.
+function titleBarOverlay(): Electron.TitleBarOverlay {
+  return nativeTheme.shouldUseDarkColors
+    ? { color: '#0b0b0b', symbolColor: '#e8e8e8', height: 39 }
+    : { color: '#f5f5f5', symbolColor: '#0a0a0a', height: 39 }
+}
+
 function createWindow(): void {
   const window = new BrowserWindow({
     width: 1400,
@@ -99,13 +108,21 @@ function createWindow(): void {
     backgroundColor: '#1c1c1e',
     ...(process.platform === 'darwin'
       ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 14, y: 12 } }
-      : {}),
+      : { titleBarStyle: 'hidden', titleBarOverlay: titleBarOverlay() }),
     webPreferences: {
       preload: join(import.meta.dirname, '../preload/index.cjs'),
       sandbox: true,
       contextIsolation: true,
     },
   })
+
+  if (process.platform !== 'darwin') {
+    // Hidden rather than removed, so its shortcuts (reload, dev tools, zoom) still work.
+    window.setMenuBarVisibility(false)
+    const updateOverlay = () => window.setTitleBarOverlay(titleBarOverlay())
+    nativeTheme.on('updated', updateOverlay)
+    window.once('closed', () => nativeTheme.off('updated', updateOverlay))
+  }
 
   window.once('ready-to-show', () => window.show())
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
