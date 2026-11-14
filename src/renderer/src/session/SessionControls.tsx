@@ -42,7 +42,7 @@ export function SessionControls({
     <div className="text-muted-foreground flex items-center gap-1 text-xs">
       <Picker
         // The user's settings choose the mode until a run reports it.
-        label={mode?.label ?? settings.permissionMode ?? 'Default mode'}
+        label={mode?.label ?? (settings.permissionMode === 'granular' ? 'Custom approval policy' : settings.permissionMode) ?? 'Default mode'}
         title="Permission mode (Shift+Tab)"
         value={settings.permissionMode ?? defaultValue}
         options={choices?.permissionModes ?? []}
@@ -67,7 +67,11 @@ export function SessionControls({
       )}
       <div className="ml-auto flex items-center gap-3">
         {usage && <ContextIndicator usage={usage} />}
-        {usage && <CacheIndicator usage={usage} working={working} />}
+        {usage && (pointer.agent === 'claude' ? <CacheIndicator usage={usage} working={working} /> : (
+          <span title={`The latest request read ${usage.cacheReadTokens.toLocaleString()} tokens from the prompt cache.`}>
+            {compact(usage.cacheReadTokens)} cached
+          </span>
+        ))}
       </div>
     </div>
   )

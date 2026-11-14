@@ -23,7 +23,7 @@ export interface AgentAdapter {
   start(options: StartOptions, emit: (event: AgentEvent) => void): AgentRun
 }
 
-export type History = Pick<SessionView, 'items' | 'usage'>
+export type History = Pick<SessionView, 'items' | 'usage'> & { settings?: SessionSettings }
 
 /** The run continues the session's transcript if the agent has one. */
 export type StartOptions = {

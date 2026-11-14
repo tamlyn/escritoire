@@ -65,7 +65,10 @@ client requests receive a JSON-RPC error. Models and effort choices come from
 user's configured sandbox retained. Supervisor tools are supplied on creation or resume along
 with guidance to use them for background processes.
 
-Context/cache telemetry and Codex background-task controls are not yet exposed.
+Context usage uses the latest request’s total tokens and reported context window,
+with cache-read token counts displayed separately. Effective model, effort and
+approval policy come from thread creation/resume and settings notifications.
+Codex background-task controls are not yet exposed.
 The macOS checks cover the adapter with a simulated server and the installed CLI's
 pre-turn lifecycle; a model-backed conversation and the RHEL release still need
 manual validation.

@@ -1,10 +1,12 @@
-import type { AgentEvent, Item, RequestResponse, SessionSettings, ToolStatus, UserInput } from '../../shared/agent'
+import type { AgentEvent, ContextUsage, Item, RequestResponse, SessionSettings, ToolStatus, UserInput } from '../../shared/agent'
 import type { ThreadItem } from './codex-protocol/v2/ThreadItem'
 import type { ThreadListResponse } from './codex-protocol/v2/ThreadListResponse'
 import type { ThreadTurnsListResponse } from './codex-protocol/v2/ThreadTurnsListResponse'
 import type { ThreadStartResponse } from './codex-protocol/v2/ThreadStartResponse'
 import type { TurnStartResponse } from './codex-protocol/v2/TurnStartResponse'
 import type { ModelListResponse } from './codex-protocol/v2/ModelListResponse'
+import type { ThreadTokenUsage } from './codex-protocol/v2/ThreadTokenUsage'
+import type { ThreadSettingsUpdatedNotification } from './codex-protocol/v2/ThreadSettingsUpdatedNotification'
 import { CodexRpc, type RpcMessage } from './codex-rpc'
 import type { AgentAdapter, AgentRun, StartOptions } from './types'
 
@@ -16,7 +18,7 @@ async function using<T>(cwd: string, fn: (rpc: CodexRpc) => Promise<T>): Promise
 
 // Codex only writes a rollout after the first turn. Keep newly created threads
 // alive until the run adopts their connection.
-const freshThreads = new Map<string, CodexRpc>()
+const freshThreads = new Map<string, { rpc: CodexRpc; settings: SessionSettings }>()
 
 export const codexAdapter: AgentAdapter = {
   kind: 'codex',
@@ -24,13 +26,13 @@ export const codexAdapter: AgentAdapter = {
     const rpc = new CodexRpc(cwd)
     try {
       await rpc.initialize()
-      const { thread } = await rpc.call<ThreadStartResponse>('thread/start', { cwd, ...ideConfig(ide) })
-      freshThreads.set(thread.id, rpc)
-      return thread.id
+      const result = await rpc.call<ThreadStartResponse>('thread/start', { cwd, ...ideConfig(ide) })
+      freshThreads.set(result.thread.id, { rpc, settings: resolvedSettings(result) })
+      return result.thread.id
     } catch (e) { rpc.close(); throw e }
   },
-  closeSession(id) { freshThreads.get(id)?.close(); freshThreads.delete(id) },
-  dispose() { for (const rpc of freshThreads.values()) rpc.close(); freshThreads.clear() },
+  closeSession(id) { freshThreads.get(id)?.rpc.close(); freshThreads.delete(id) },
+  dispose() { for (const { rpc } of freshThreads.values()) rpc.close(); freshThreads.clear() },
   listSessions: (cwd) => using(cwd, async (rpc) => {
     const sessions = []
     let cursor: string | null = null
@@ -41,8 +43,13 @@ export const codexAdapter: AgentAdapter = {
     } while (cursor)
     return sessions
   }),
-  loadHistory: (threadId, cwd) => freshThreads.has(threadId) ? Promise.resolve({ items: [] }) : using(cwd, async (rpc) => {
-    await rpc.call('thread/resume', { threadId, excludeTurns: true })
+  loadHistory: (threadId, cwd) => freshThreads.has(threadId) ? Promise.resolve({ items: [], settings: freshThreads.get(threadId)!.settings }) : using(cwd, async (rpc) => {
+    let usage: ContextUsage | undefined
+    rpc.onMessage = (m) => {
+      if (m.method === 'thread/tokenUsage/updated' && m.params?.threadId === threadId) usage = contextUsage(m.params.tokenUsage as ThreadTokenUsage)
+      else if (m.id !== undefined) rpc.unsupported(m.id)
+    }
+    const result = await rpc.call<ThreadStartResponse>('thread/resume', { threadId, excludeTurns: true })
     const items: Item[] = []
     let cursor: string | null = null
     do {
@@ -50,7 +57,7 @@ export const codexAdapter: AgentAdapter = {
       for (const turn of page.data) items.push(...turn.items.map(codexItem))
       cursor = page.nextCursor
     } while (cursor)
-    return { items }
+    return { items, settings: resolvedSettings(result), ...(usage ? { usage } : {}) }
   }),
   settingChoices: (cwd) => using(cwd, async (rpc) => {
     const models: ModelListResponse['data'] = []
@@ -62,10 +69,28 @@ export const codexAdapter: AgentAdapter = {
     } while (cursor)
     return {
       models: [{ id: 'default', label: 'Default', efforts: models.find((m) => m.isDefault)?.supportedReasoningEfforts.map((e) => e.reasoningEffort) ?? [] }, ...models.map((m) => ({ id: m.model, label: m.displayName, description: m.description, efforts: m.supportedReasoningEfforts.map((e) => e.reasoningEffort) }))],
-      permissionModes: [{ id: 'on-request', label: 'Ask when needed' }, { id: 'untrusted', label: 'Ask first' }],
+      permissionModes: [{ id: 'on-request', label: 'Ask when needed' }, { id: 'untrusted', label: 'Ask first' }, { id: 'never', label: 'Never ask' }],
     }
   }),
   start: (options, emit) => new CodexRun(options, emit),
+}
+
+function resolvedSettings(result: Pick<ThreadStartResponse, 'model' | 'approvalPolicy' | 'reasoningEffort'>): SessionSettings {
+  return {
+    ...(result.model ? { model: result.model } : {}),
+    ...(result.approvalPolicy ? { permissionMode: typeof result.approvalPolicy === 'string' ? result.approvalPolicy : 'granular' } : {}),
+    ...(result.reasoningEffort !== undefined ? { effort: result.reasoningEffort ?? undefined } : {}),
+  }
+}
+
+function contextUsage(usage: ThreadTokenUsage): ContextUsage {
+  return {
+    contextTokens: usage.last.totalTokens,
+    ...(usage.modelContextWindow ? { contextWindow: usage.modelContextWindow } : {}),
+    cacheReadTokens: usage.last.cachedInputTokens,
+    cacheWriteTokens: usage.last.cacheWriteInputTokens ?? 0,
+    at: Date.now(),
+  }
 }
 
 function ideConfig(ide: StartOptions['ide']) {
@@ -113,13 +138,13 @@ class CodexRun implements AgentRun {
     this.settings = { ...options.settings }
     const fresh = freshThreads.get(options.agentSessionId)
     freshThreads.delete(options.agentSessionId)
-    this.rpc = fresh ?? new CodexRpc(options.cwd)
+    this.rpc = fresh?.rpc ?? new CodexRpc(options.cwd)
     this.rpc.onError = (e) => this.fail(e)
     this.rpc.onMessage = (m) => this.message(m)
-    this.ready = fresh ? Promise.resolve() : this.rpc.initialize().then(() => this.rpc.call('thread/resume', {
+    this.ready = fresh ? Promise.resolve().then(() => this.reportSettings(fresh.settings)) : this.rpc.initialize().then(() => this.rpc.call<ThreadStartResponse>('thread/resume', {
       threadId: options.agentSessionId, cwd: options.cwd, excludeTurns: true,
       ...ideConfig(options.ide),
-    }))
+    })).then((result) => this.reportSettings(resolvedSettings(result)))
     void this.ready.catch((e: unknown) => this.fail(e))
   }
   send(input: UserInput): void { if (!this.closed) { this.queue.push(input); void this.drain() } }
@@ -136,7 +161,7 @@ class CodexRun implements AgentRun {
         threadId: this.options.agentSessionId,
         input: [{ type: 'text', text: input.text, text_elements: [] }, ...input.images.map((i) => ({ type: 'image', url: `data:${i.mediaType};base64,${i.data}` }))],
         model: this.settings.model ?? null, effort: this.settings.effort ?? null,
-        ...(this.settings.permissionMode ? { approvalPolicy: this.settings.permissionMode } : {}),
+        ...(this.settings.permissionMode && this.settings.permissionMode !== 'granular' ? { approvalPolicy: this.settings.permissionMode } : {}),
       })
       if (!this.completedTurns.has(result.turn.id)) this.turnId ??= result.turn.id
       if (this.interruptRequested && this.turnId) await this.interrupt()
@@ -163,6 +188,9 @@ class CodexRun implements AgentRun {
   async changeSettings(settings: SessionSettings): Promise<void> { this.settings = { ...this.settings, ...settings } }
   async stopTask(): Promise<void> { throw new Error('Codex does not expose task stopping here. Interrupt the turn instead.') }
   close(): void { this.closed = true; this.queue = []; this.rpc.close() }
+  private reportSettings(settings: SessionSettings): void {
+    if (!this.closed) this.emit({ type: 'settingsChanged', settings })
+  }
   private resolve(id: string): void { this.requests.delete(id); this.emit({ type: 'requestResolved', requestId: id }) }
   private fail(error: unknown): void {
     if (this.closed) return
@@ -176,6 +204,12 @@ class CodexRun implements AgentRun {
     if (p.threadId && p.threadId !== this.options.agentSessionId) return
     if (m.id !== undefined && m.method) { this.request(m.id, m.method, p); return }
     switch (m.method) {
+      case 'thread/tokenUsage/updated':
+        this.emit({ type: 'usageChanged', usage: contextUsage(p.tokenUsage as ThreadTokenUsage) }); break
+      case 'thread/settings/updated': {
+        const settings = (p as unknown as ThreadSettingsUpdatedNotification).threadSettings
+        this.reportSettings(resolvedSettings({ ...settings, reasoningEffort: settings.effort })); break
+      }
       case 'turn/started': this.turnId = (p.turn as { id: string }).id; break
       case 'turn/completed': {
         this.turnId = undefined

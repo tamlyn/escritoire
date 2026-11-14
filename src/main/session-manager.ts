@@ -266,7 +266,7 @@ export class SessionManager {
     let view: SessionView
     try {
       const history = await this.adapter(pointer.agent).loadHistory(pointer.agentSessionId, cwd)
-      view = { ...emptySessionView, ...history, settings }
+      view = { ...emptySessionView, ...history, settings: { ...history.settings, ...settings } }
     } catch (error) {
       view = {
         ...emptySessionView,

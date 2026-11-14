@@ -20,10 +20,33 @@ const tick = async () => { await new Promise((r) => setTimeout(r, 10)) }
 beforeEach(() => { mocks.clients.length = 0; mocks.call.mockReset() })
 
 describe('Codex adapter', () => {
+  it('reports effective settings on open and live context usage without cumulative totals', async () => {
+    const effective = { model: 'actual-model', approvalPolicy: 'untrusted', reasoningEffort: 'high' }
+    mocks.call.mockImplementation(async (method: string) => method === 'thread/start' ? { thread: { id: 'usage-thread' }, ...effective } : { turn: { id: 'turn' } })
+    const id = await codexAdapter.createSession('/project')
+    expect((await codexAdapter.loadHistory(id, '/project')).settings).toEqual({ model: 'actual-model', permissionMode: 'untrusted', effort: 'high' })
+    let view: SessionView = { ...emptySessionView }
+    const run = codexAdapter.start({ cwd: '/project', agentSessionId: id, settings: {} }, (e) => { view = applyEvent(view, e) })
+    run.send({ text: 'Hi', images: [] }); await tick()
+    expect(view.settings).toEqual({ model: 'actual-model', permissionMode: 'untrusted', effort: 'high' })
+    const client = mocks.clients[0]
+    client.onMessage({ method: 'thread/tokenUsage/updated', params: { threadId: id, tokenUsage: { last: { totalTokens: 25000, cachedInputTokens: 20000 }, total: { totalTokens: 100000 }, modelContextWindow: 100000 } } })
+    expect(view.usage).toMatchObject({ contextTokens: 25000, contextWindow: 100000, cacheReadTokens: 20000, cacheWriteTokens: 0 })
+    client.onMessage({ method: 'thread/settings/updated', params: { threadId: id, threadSettings: { model: 'new-model', approvalPolicy: 'on-request', effort: 'low' } } })
+    expect(view.settings).toEqual({ model: 'new-model', permissionMode: 'on-request', effort: 'low' })
+    run.close()
+  })
+
+  it('restores the resolved model and approval policy from resume', async () => {
+    mocks.call.mockResolvedValueOnce({ model: 'restored-model', approvalPolicy: 'never', reasoningEffort: 'medium' }).mockResolvedValueOnce({ data: [], nextCursor: null })
+    const history = await codexAdapter.loadHistory('existing', '/project')
+    expect(history.settings).toEqual({ model: 'restored-model', permissionMode: 'never', effort: 'medium' })
+  })
+
   it('adopts an unpersisted new thread without resuming it', async () => {
     mocks.call.mockImplementation(async (method: string) => method === 'thread/start' ? { thread: { id: 'fresh' } } : { turn: { id: 'turn' } })
     const id = await codexAdapter.createSession('/project')
-    expect(await codexAdapter.loadHistory(id, '/project')).toEqual({ items: [] })
+    expect(await codexAdapter.loadHistory(id, '/project')).toEqual({ items: [], settings: {} })
     const run = codexAdapter.start({ cwd: '/project', agentSessionId: id, settings: {} }, () => {})
     run.send({ text: 'Hello', images: [] }); await tick()
     expect(mocks.clients).toHaveLength(1)
