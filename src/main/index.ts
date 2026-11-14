@@ -1,5 +1,6 @@
+import { drainPersistence } from './json-file'
 import { join } from 'node:path'
-import { app, BrowserWindow, ipcMain, nativeTheme } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme } from 'electron'
 import { type Api, apiMethods, type Events } from '../shared/api'
 import { codexAdapter } from './agents/codex'
 import { claudeAdapter } from './agents/claude'
@@ -71,7 +72,7 @@ function createApi({ projects, sessions, sessionStore, files, terminals, supervi
     closeSession: async (session) => sessions.closeSession(session),
     listDirectory: (projectId, path) => files.listDirectory(projectId, path),
     readFile: (projectId, path) => files.readFile(projectId, path),
-    writeFile: (projectId, path, text) => files.writeFile(projectId, path, text),
+    writeFile: (projectId, path, text, expected) => files.writeFile(projectId, path, text, expected),
     listProjectFiles: async (projectId) =>
       (await gitFiles(projects.getProject(projectId).path)) ?? files.listAllFiles(projectId),
     attachTerminal: (projectId, terminalId, size) => terminals.attach(projectId, terminalId, size),
@@ -125,6 +126,8 @@ function titleBarOverlay(): Electron.TitleBarOverlay {
     : { color: '#f5f5f5', symbolColor: '#0a0a0a', height: 39 }
 }
 
+let allowClose = false
+
 function createWindow(): void {
   const window = new BrowserWindow({
     width: 1400,
@@ -149,6 +152,9 @@ function createWindow(): void {
     window.once('closed', () => nativeTheme.off('updated', updateOverlay))
   }
 
+  window.on('close', (event) => {
+    if (!allowClose) { event.preventDefault(); app.quit() }
+  })
   window.once('ready-to-show', () => window.show())
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
 
@@ -209,17 +215,32 @@ void app.whenReady().then(async () => {
     gitWatcher.watch(projectId)
   })
 
-  // Quitting waits while terminals save their scrollback and processes stop.
-  let shutDown = false
+  let shuttingDown = false
   app.on('before-quit', (event) => {
-    if (shutDown) return
+    if (allowClose) return
     event.preventDefault()
-    sessions.closeAll()
-    void Promise.allSettled([files.unwatch(), gitWatcher.unwatch(), terminals.closeAll(), supervisor.closeAll(), ideServer.close()]).then((results) => {
-      logFailures(results)
-      shutDown = true
-      app.quit()
-    })
+    if (shuttingDown) return
+    shuttingDown = true
+    void (async () => {
+      try {
+        await Promise.all(BrowserWindow.getAllWindows().map((window) =>
+          window.webContents.executeJavaScript('window.flushEdits()')))
+        await files.drain()
+        await sessions.drain()
+        await drainPersistence()
+        sessions.closeAll()
+        logFailures(await Promise.allSettled([files.unwatch(), gitWatcher.unwatch(), terminals.closeAll(), supervisor.closeAll(), ideServer.close()]))
+        await sessions.drain()
+        await drainPersistence()
+        allowClose = true
+        app.quit()
+      } catch (error) {
+        shuttingDown = false
+        await Promise.allSettled(BrowserWindow.getAllWindows().map((window) =>
+          window.webContents.executeJavaScript('document.body.inert = false')))
+        dialog.showErrorBox("Couldn't save before quitting", String(error))
+      }
+    })()
   })
   registerApi(createApi({ projects, sessions, sessionStore, files, terminals, supervisor }))
   createWindow()

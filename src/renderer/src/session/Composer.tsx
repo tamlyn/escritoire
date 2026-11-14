@@ -1,9 +1,9 @@
 import { ArrowUpIcon, FileIcon, SquareIcon, XIcon } from 'lucide-react'
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import type { ImageAttachment, SessionPointer, SessionSettings, SettingChoices } from '../../../shared/agent'
 import { baseName, parentPath } from '../../../shared/files'
-import { api } from '../api'
+import { api, flushers } from '../api'
 import { imageFiles, toAttachment } from './images'
 import { activeMention, insertMention, type Mention, matchFiles } from './mentions'
 import { nextPermissionMode } from './SessionControls'
@@ -40,6 +40,17 @@ export function Composer({
   const [selected, setSelected] = useState(0)
   const textarea = useRef<HTMLTextAreaElement>(null)
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+
+  const draft = useRef(text)
+  draft.current = text
+  useEffect(() => {
+    const flush = async () => {
+      clearTimeout(saveTimer.current)
+      await api.saveDraft(pointer, draft.current)
+    }
+    flushers.add(flush)
+    return () => { flushers.delete(flush) }
+  }, [pointer.agentSessionId])
 
   const query = mention?.query
   const matches = useMemo(

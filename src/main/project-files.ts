@@ -1,5 +1,5 @@
 import { open, readdir, readFile, realpath, stat } from 'node:fs/promises'
-import { isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import watcher, { type AsyncSubscription } from '@parcel/watcher'
 import type { DirectoryEntry, FileContent, FilesChanged, WriteResult } from '../shared/files'
 
@@ -27,22 +27,34 @@ export class ProjectFiles {
   // made just after an autosave.
   private readonly ownWrites = new Map<string, string>()
 
+  private resolving: Promise<void> = Promise.resolve()
+  private readonly writes = new Map<string, Promise<WriteResult>>()
+
+  async drain(): Promise<void> {
+    while (this.writes.size) await Promise.all([...this.writes.values()])
+  }
+
   constructor(private readonly options: Options) {}
 
   async listDirectory(projectId: string, path: string): Promise<DirectoryEntry[]> {
-    const directory = this.resolve(projectId, path)
+    const directory = await this.resolve(projectId, path)
     const entries = await readdir(directory, { withFileTypes: true })
     const listed = await Promise.all(
       entries
         .filter((entry) => !hiddenNames.has(entry.name))
-        .map(async (entry) => ({
+        .map(async (entry) => {
+          if (entry.isSymbolicLink()) {
+            try { await this.resolve(projectId, path ? `${path}/${entry.name}` : entry.name) }
+            catch { return null }
+          }
+          return ({
           name: entry.name,
           path: path ? `${path}/${entry.name}` : entry.name,
           isDirectory:
             entry.isDirectory() || (entry.isSymbolicLink() && (await isDirectory(join(directory, entry.name)))),
-        })),
+        })}),
     )
-    return listed.sort(
+    return listed.filter((entry) => entry !== null).sort(
       (a, b) =>
         Number(b.isDirectory) - Number(a.isDirectory) ||
         a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }),
@@ -59,6 +71,10 @@ export class ProjectFiles {
       const entries = await readdir(join(root, directory), { withFileTypes: true }).catch(() => [])
       for (const entry of entries) {
         if (hiddenNames.has(entry.name) || entry.name === 'node_modules') continue
+        if (entry.isSymbolicLink()) {
+          try { await this.resolve(projectId, directory ? `${directory}/${entry.name}` : entry.name) }
+          catch { continue }
+        }
         const path = directory ? `${directory}/${entry.name}` : entry.name
         if (entry.isDirectory()) pending.push(path)
         else files.push(path)
@@ -68,7 +84,7 @@ export class ProjectFiles {
   }
 
   async readFile(projectId: string, path: string): Promise<FileContent> {
-    const file = this.resolve(projectId, path)
+    const file = await this.resolve(projectId, path)
     try {
       const info = await stat(file)
       if (!info.isFile()) return { kind: 'missing' }
@@ -92,8 +108,29 @@ export class ProjectFiles {
    * Overwrites an existing file. Never creates one, so a pending save can't
    * bring back a file an agent has just deleted.
    */
-  async writeFile(projectId: string, path: string, text: string): Promise<WriteResult> {
-    const file = this.resolve(projectId, path)
+  async writeFile(projectId: string, path: string, text: string, expected?: string): Promise<WriteResult> {
+    const resolution = this.resolving.then(() => this.resolve(projectId, path))
+    this.resolving = resolution.then(() => {}, () => {})
+    const file = await resolution
+    const write = (this.writes.get(file) ?? Promise.resolve()).catch(() => {}).then(async () => {
+      await this.resolve(projectId, path)
+      if (expected !== undefined) {
+        const current = await readFile(file, 'utf8').catch((error) => {
+          if (error.code === 'ENOENT') return undefined
+          throw error
+        })
+        if (current === undefined) return 'missing' as const
+        if (current !== expected) throw new Error('File changed on disk. Reopen the tab to load it; copy your edits first.')
+      }
+      return this.writeQueued(file, text)
+    })
+    this.writes.set(file, write)
+    const cleanup = () => { if (this.writes.get(file) === write) this.writes.delete(file) }
+    void write.then(cleanup, cleanup)
+    return write
+  }
+
+  private async writeQueued(file: string, text: string): Promise<WriteResult> {
     let handle
     try {
       // In place rather than via a rename, so hard links, permissions and other
@@ -107,7 +144,7 @@ export class ProjectFiles {
       // Keyed by the real path, which is what the watcher reports.
       this.ownWrites.set(await realpath(file), text)
       const data = Buffer.from(text)
-      await handle.write(data, 0, data.length, 0)
+      await handle.writeFile(data)
       await handle.truncate(data.length)
     } finally {
       await handle.close()
@@ -161,9 +198,13 @@ export class ProjectFiles {
     return current === written
   }
 
-  private resolve(projectId: string, path: string): string {
-    const root = this.options.projectPath(projectId)
-    const resolved = resolve(root, path)
+  private async resolve(projectId: string, path: string): Promise<string> {
+    const root = await realpath(this.options.projectPath(projectId))
+    const lexical = resolve(root, path)
+    const resolved = await realpath(lexical).catch(async (error) => {
+      if (error.code !== 'ENOENT') throw error
+      return join(await realpath(dirname(lexical)), lexical.slice(dirname(lexical).length + 1))
+    })
     const fromRoot = relative(root, resolved)
     if (fromRoot === '..' || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
       throw new Error(`Outside the project: ${path}`)

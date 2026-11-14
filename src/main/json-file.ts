@@ -18,19 +18,19 @@ export async function readJson(path: string): Promise<unknown> {
  * file. Writes to the same path are queued so an older write never lands last.
  */
 export function writeJson(path: string, value: unknown): Promise<void> {
+  const serialized = JSON.stringify(value, null, 2)
   const previous = pendingWrites.get(path) ?? Promise.resolve()
   const write = previous
     .catch(() => {})
     .then(async () => {
       await mkdir(dirname(path), { recursive: true })
       const temporaryPath = `${path}.${randomUUID()}.tmp`
-      await writeFile(temporaryPath, JSON.stringify(value, null, 2))
+      await writeFile(temporaryPath, serialized)
       await rename(temporaryPath, path)
     })
   pendingWrites.set(path, write)
-  void write.finally(() => {
-    if (pendingWrites.get(path) === write) pendingWrites.delete(path)
-  })
+  const cleanup = () => { if (pendingWrites.get(path) === write) pendingWrites.delete(path) }
+  void write.then(cleanup, cleanup)
   return write
 }
 
@@ -39,4 +39,12 @@ export function deleteJson(path: string): Promise<void> {
   const deletion = previous.catch(() => {}).then(() => rm(path, { force: true }))
   pendingWrites.set(path, deletion)
   return deletion
+}
+
+export async function drainPersistence(): Promise<void> {
+  while (pendingWrites.size) {
+    const writes = [...pendingWrites.entries()]
+    await Promise.all(writes.map(([, write]) => write))
+    for (const [path, write] of writes) if (pendingWrites.get(path) === write) pendingWrites.delete(path)
+  }
 }

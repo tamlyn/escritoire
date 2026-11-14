@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
@@ -82,4 +82,26 @@ test('reports changes made by others, but not its own writes or dependencies', a
   // Someone else changing the file straight after the IDE's write is still reported.
   await writeFile(join(root, 'mine.yaml'), 'a: 3')
   await vi.waitFor(() => expect(sent.flatMap((s) => s.paths)).toContain('mine.yaml'), { timeout: 3000 })
+})
+
+
+test('serializes writes through canonical aliases and rejects stale saves', async () => {
+  await writeFile(join(root, 'file.txt'), 'original')
+  await symlink(join(root, 'file.txt'), join(root, 'alias.txt'))
+  await Promise.all([
+    files.writeFile('p', 'file.txt', 'a'.repeat(100000)),
+    files.writeFile('p', 'alias.txt', 'last'),
+  ])
+  await files.drain()
+  expect(await readFile(join(root, 'file.txt'), 'utf8')).toBe('last')
+  await expect(files.writeFile('p', 'file.txt', 'stale', 'original')).rejects.toThrow('changed on disk')
+  expect(await readFile(join(root, 'file.txt'), 'utf8')).toBe('last')
+})
+
+test('rejects links outside the project for reads, writes and directory listing', async () => {
+  await symlink(tmpdir(), join(root, 'outside'))
+  await expect(files.listDirectory('p', 'outside')).rejects.toThrow('Outside the project')
+  await expect(files.readFile('p', 'outside')).rejects.toThrow('Outside the project')
+  await expect(files.writeFile('p', 'outside', 'bad')).rejects.toThrow('Outside the project')
+  expect(await files.listDirectory('p', '')).toEqual([])
 })

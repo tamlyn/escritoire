@@ -6,7 +6,7 @@ import { useParentWorkspace } from 'react-resizable-panels'
 import { baseName } from '../../../shared/files'
 import { isTaskFile } from '../../../shared/process'
 import { ContextMenu, ContextMenuCheckboxItem, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/context-menu'
-import { api, subscribe } from '../api'
+import { api, flushers, subscribe } from '../api'
 import { useFileContent } from '../files'
 import { useProcesses } from '../processes'
 import { useProject } from '../project-context'
@@ -104,6 +104,8 @@ function Editor({
   const viewRef = useRef<EditorView>(null)
   const unsaved = useRef<string | null>(null)
   const writing = useRef(0)
+  const baseline = useRef(content.text)
+  const [diskContent, setDiskContent] = useState(content)
   const [saveError, setSaveError] = useState<string | null>(null)
   const onScrolledRef = useRef(onScrolled)
   onScrolledRef.current = onScrolled
@@ -117,22 +119,34 @@ function Editor({
     let saveTimer: ReturnType<typeof setTimeout> | undefined
     let scrollTimer: ReturnType<typeof setTimeout> | undefined
 
-    const save = () => {
+    let pending: Promise<void> = Promise.resolve()
+    const save = (): Promise<void> => {
       clearTimeout(saveTimer)
-      const text = unsaved.current
-      if (text === null) return
-      unsaved.current = null
-      writing.current++
-      // 'missing' needs nothing: the file was deleted and the tab will say so.
-      void api.writeFile(projectId, path, text).then(
-        () => setSaveError(null),
-        (error: unknown) => {
-          // Keep the edit so the next change or blur tries again.
+      pending = pending.then(async () => {
+        const text = unsaved.current
+        if (text === null) return
+        unsaved.current = null
+        writing.current++
+        try {
+          await api.writeFile(projectId, path, text, baseline.current)
+          baseline.current = text
+          setSaveError(null)
+          const latest = await api.readFile(projectId, path)
+          if (latest.kind === 'text') setDiskContent(latest)
+        } catch (error) {
           unsaved.current ??= text
           setSaveError(error instanceof Error ? error.message : String(error))
-        },
-      ).finally(() => writing.current--)
+        } finally {
+          writing.current--
+        }
+      })
+      return pending
     }
+    const flush = async () => {
+      await save()
+      if (unsaved.current !== null) throw new Error(`Couldn't save ${path}`)
+    }
+    flushers.add(flush)
 
     const language = new Compartment()
     const view = new EditorView({
@@ -165,7 +179,7 @@ function Editor({
             saveTimer = setTimeout(save, saveDelayMs)
           }),
           EditorView.domEventHandlers({
-            blur: save,
+            blur: () => { void save() },
             scroll: (_event, view) => {
               clearTimeout(scrollTimer)
               scrollTimer = setTimeout(() => {
@@ -182,10 +196,10 @@ function Editor({
     })
     viewRef.current = view
     loadLanguage(view, language, baseName(path))
-    window.addEventListener('beforeunload', save)
+
 
     return () => {
-      window.removeEventListener('beforeunload', save)
+      flushers.delete(flush)
       clearTimeout(scrollTimer)
       save()
       view.destroy()
@@ -193,12 +207,18 @@ function Editor({
     }
   }, [projectId, path])
 
+  useEffect(() => { setDiskContent(content) }, [content])
   useEffect(() => {
     const view = viewRef.current
-    if (!view || unsaved.current !== null || writing.current > 0) return
-    if (view.state.sliceDoc() === content.text) return
-    view.dispatch({ changes: changeFromDisk(view.state, content.text), annotations: fromDisk.of(true) })
-  }, [content])
+    if (!view || writing.current > 0) return
+    if (unsaved.current !== null) {
+      if (diskContent.text !== baseline.current) setSaveError('File changed on disk. Copy your edits and reopen the tab to resolve the conflict.')
+      return
+    }
+    baseline.current = diskContent.text
+    if (view.state.sliceDoc() === diskContent.text) return
+    view.dispatch({ changes: changeFromDisk(view.state, diskContent.text), annotations: fromDisk.of(true) })
+  }, [diskContent])
 
   function blameExtension() {
     return blameGutter({

@@ -77,7 +77,7 @@ export type Api = {
   listDirectory(projectId: string, path: string): Promise<DirectoryEntry[]>
   readFile(projectId: string, path: string): Promise<FileContent>
   /** Overwrites the file; `missing` if it no longer exists, since the IDE never creates files. */
-  writeFile(projectId: string, path: string, text: string): Promise<WriteResult>
+  writeFile(projectId: string, path: string, text: string, expected?: string): Promise<WriteResult>
   /** Every file in the project that git doesn't ignore, as relative paths. */
   listProjectFiles(projectId: string): Promise<string[]>
 

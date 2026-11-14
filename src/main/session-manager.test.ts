@@ -203,3 +203,24 @@ describe('SessionManager', () => {
     expect(runs[1]!.options.settings).toEqual({ permissionMode: 'acceptEdits' })
   })
 })
+
+it('does not insert a session whose project closed during history loading', async () => {
+  const dataDir = await mkdtemp(join(tmpdir(), 'escritoire-cancel-'))
+  const { adapter } = fakeAdapter()
+  let finish!: () => void
+  let started!: () => void
+  const loading = new Promise<void>((resolve) => { started = resolve })
+  adapter.loadHistory = async () => {
+    started()
+    await new Promise<void>((resolve) => { finish = resolve })
+    return { items: [] }
+  }
+  const manager = new SessionManager({ adapters: { claude: adapter }, store: new SessionStore(dataDir), projectPath: () => '/work', send: () => {} })
+  const opened = manager.openSession('p', { agent: 'claude', agentSessionId: 'late' })
+  const rejected = expect(opened).rejects.toThrow('Project closed')
+  await loading
+  manager.closeProject('p')
+  finish()
+  await rejected
+  expect(manager.summaries()).toEqual([])
+})
