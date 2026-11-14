@@ -35,7 +35,7 @@ type Session = {
 }
 
 export type SessionManagerDeps = {
-  adapters: Record<AgentKind, AgentAdapter>
+  adapters: Partial<Record<AgentKind, AgentAdapter>>
   store: SessionStore
   projectPath: (projectId: string) => string
   /** The IDE's MCP server for a project, given to every session the IDE starts. */
@@ -59,6 +59,12 @@ export class SessionManager {
     this.now = deps.now ?? Date.now
   }
 
+  private adapter(kind: AgentKind): AgentAdapter {
+    const adapter = this.deps.adapters[kind]
+    if (!adapter) throw new Error(`Agent unavailable: ${kind}`)
+    return adapter
+  }
+
   summaries(): SessionSummary[] {
     return [...this.sessions.values()].map((s) => ({
       ...s.pointer,
@@ -76,15 +82,16 @@ export class SessionManager {
 
   async listPastSessions(projectId: string): Promise<PastSession[]> {
     const cwd = this.deps.projectPath(projectId)
-    const lists = await Promise.all(
+    const lists = await Promise.allSettled(
       Object.values(this.deps.adapters).map((adapter) => adapter.listSessions(cwd)),
     )
-    return lists.flat().sort((a, b) => b.lastActiveAt - a.lastActiveAt)
+    return lists.flatMap((r) => r.status === 'fulfilled' ? r.value : []).sort((a, b) => b.lastActiveAt - a.lastActiveAt)
   }
 
   async createSession(projectId: string, agent: AgentKind): Promise<SessionPointer> {
-    const agentSessionId = await this.deps.adapters[agent].createSession(
+    const agentSessionId = await this.adapter(agent).createSession(
       this.deps.projectPath(projectId),
+      this.deps.ideConnection?.(projectId),
     )
     await this.deps.store.put(projectId, agentSessionId, newRecord(agent))
     return { agent, agentSessionId }
@@ -110,7 +117,7 @@ export class SessionManager {
   }
 
   async settingChoices(projectId: string, agent: AgentKind): Promise<SettingChoices> {
-    return this.deps.adapters[agent].settingChoices(this.deps.projectPath(projectId))
+    return this.adapter(agent).settingChoices(this.deps.projectPath(projectId))
   }
 
   sendMessage(pointer: SessionPointer, input: UserInput): void {
@@ -119,7 +126,7 @@ export class SessionManager {
     if (!session.record.title && !session.hadHistory) {
       session.record.title = titleFrom(input.text) || 'Image'
     }
-    session.run ??= this.deps.adapters[pointer.agent].start(
+    session.run ??= this.adapter(pointer.agent).start(
       {
         cwd: session.cwd,
         agentSessionId: pointer.agentSessionId,
@@ -181,6 +188,7 @@ export class SessionManager {
     const session = this.sessions.get(pointer.agentSessionId)
     if (!session) return
     session.run?.close()
+    this.adapter(pointer.agent).closeSession?.(pointer.agentSessionId)
     this.sessions.delete(pointer.agentSessionId)
     this.broadcastSummaries()
   }
@@ -194,6 +202,7 @@ export class SessionManager {
   closeAll(): void {
     for (const session of this.sessions.values()) session.run?.close()
     this.sessions.clear()
+    for (const adapter of Object.values(this.deps.adapters)) adapter.dispose?.()
   }
 
   private apply(session: Session, event: AgentEvent): void {
@@ -256,7 +265,7 @@ export class SessionManager {
     const settings = record.settings ?? {}
     let view: SessionView
     try {
-      const history = await this.deps.adapters[pointer.agent].loadHistory(pointer.agentSessionId, cwd)
+      const history = await this.adapter(pointer.agent).loadHistory(pointer.agentSessionId, cwd)
       view = { ...emptySessionView, ...history, settings }
     } catch (error) {
       view = {

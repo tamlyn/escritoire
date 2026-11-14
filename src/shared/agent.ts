@@ -4,7 +4,7 @@
  * See docs/agent-abstraction.md.
  */
 
-export type AgentKind = 'claude'
+export type AgentKind = 'claude' | 'codex'
 
 export type SessionPointer = { agent: AgentKind; agentSessionId: string }
 

@@ -39,3 +39,33 @@ Spike run on 12 November 2026 against `codex-cli 0.167.0` on macOS, using the us
 - One app-server process can host many threads. Decide between one process per app, per project or per session when building it; per-project limits the blast radius of a crash.
 - app-server labels its threads `source: "vscode"` regardless of client; our `clientInfo` appears in the user agent.
 - Use the user's installed `codex` binary, configurable like the Claude Code executable, and generate types from it (`codex app-server generate-ts --out <dir>`). Many methods are experimental and need `capabilities.experimentalApi`; none of the methods above did.
+
+## Slice 6 implementation
+
+`src/main/agents/codex.ts` integrates the installed CLI (override its path with
+`ESCRITOIRE_CODEX_PATH`). No Codex npm dependency or separate login is needed.
+The protocol types under `codex-protocol/` are the transitive subset generated
+by `codex-cli 0.167.0`, not runtime dependencies. Regenerate with
+`codex app-server generate-ts --out <temporary-directory>` when updating them.
+Protocol reference: https://learn.chatgpt.com/docs/app-server.
+
+Each active session has its own app-server process, fitting the existing run
+lifecycle and isolating failures. Short-lived connections handle lists, history
+and model choices. A newly created thread's connection stays alive until its run
+adopts it: the CLI does not persist a rollout before the first turn. History
+connections resume a persisted thread before paging its turns. Closing a session
+or the app also closes unused new-thread connections.
+
+The adapter maps live and historical items identically, queues messages between
+turns, handles command/file approvals and questions, and interrupts active turns.
+Unknown item types remain visible. Only the IDE server's tool-approval elicitations
+are automatically accepted. Other elicitations are shown for approval; unsupported
+client requests receive a JSON-RPC error. Models and effort choices come from
+`model/list`; approval policies offered are `on-request` and `untrusted`, with the
+user's configured sandbox retained. Supervisor tools are supplied on creation or resume along
+with guidance to use them for background processes.
+
+Context/cache telemetry and Codex background-task controls are not yet exposed.
+The macOS checks cover the adapter with a simulated server and the installed CLI's
+pre-turn lifecycle; a model-backed conversation and the RHEL release still need
+manual validation.

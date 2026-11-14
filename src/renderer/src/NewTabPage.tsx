@@ -34,8 +34,8 @@ export function NewTabPage({ tab }: { tab: Tab }) {
     workspace.closeTab(tab.id)
   }
 
-  async function startSession() {
-    const pointer = await api.createSession(project.id, 'claude')
+  async function startSession(agent: 'claude' | 'codex') {
+    const pointer = await api.createSession(project.id, agent)
     replaceWith(createSessionTab(pointer, ''))
   }
 
@@ -45,11 +45,15 @@ export function NewTabPage({ tab }: { tab: Tab }) {
         <button
           type="button"
           autoFocus
-          onClick={() => void startSession()}
+          onClick={() => void startSession('claude')}
           className={startButton}
         >
           <MessageSquarePlusIcon className="text-muted-foreground size-5" />
           <span className="font-medium">New Claude session</span>
+        </button>
+        <button type="button" onClick={() => void startSession('codex')} className={startButton}>
+          <MessageSquarePlusIcon className="text-muted-foreground size-5" />
+          <span className="font-medium">New Codex session</span>
         </button>
         <button type="button" onClick={() => replaceWith(createTerminalTab())} className={startButton}>
           <SquareTerminalIcon className="text-muted-foreground size-5" />
@@ -69,7 +73,7 @@ export function NewTabPage({ tab }: { tab: Tab }) {
             >
               <span className="min-w-0 flex-1 truncate">{session.title || 'Untitled session'}</span>
               <span className="text-muted-foreground shrink-0 text-xs">
-                {relativeTime(session.lastActiveAt)}
+                {session.agent === 'codex' ? 'Codex · ' : 'Claude · '}{relativeTime(session.lastActiveAt)}
               </span>
             </button>
           ))}

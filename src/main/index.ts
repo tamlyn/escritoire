@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, ipcMain, nativeTheme } from 'electron'
 import { type Api, apiMethods, type Events } from '../shared/api'
+import { codexAdapter } from './agents/codex'
 import { claudeAdapter } from './agents/claude'
 import {
   gitBlame,
@@ -182,7 +183,7 @@ void app.whenReady().then(async () => {
     registerSupervisorTools(mcp, supervisor, projectId)
   })
   const sessions = new SessionManager({
-    adapters: { claude: claudeAdapter },
+    adapters: { claude: claudeAdapter, codex: codexAdapter },
     store: sessionStore,
     projectPath: (projectId) => projects.getProject(projectId).path,
     ideConnection: (projectId) => ideServer.connection(projectId),

@@ -60,3 +60,12 @@ A session is a **transcript of items**, a list of **pending requests** and a **s
 - **Sending whole transcripts to the renderer on each change.** Simple, but quadratic while streaming long sessions.
 - **Storing transcripts ourselves.** Both agents persist history and list sessions, including those started elsewhere; a copy would drift.
 - **An id of our own.** Unnecessary once both agents hand out their id before the first message, and it would need mapping both ways.
+
+## Codex adapter
+
+Slice 6 adds `codex` to the same agent interface and tab UI. It uses one native
+app-server connection per run; see [codex-app-server.md](codex-app-server.md) for
+protocol and lifecycle details. Optional adapter `closeSession` and `dispose`
+hooks release threads created before their first message. Recent-session listing
+combines successful adapters, so an absent Codex binary does not hide Claude's
+history.

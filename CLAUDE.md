@@ -16,6 +16,7 @@ Agentic IDE built with Electron. `PLAN.md` holds the direction, decisions and sl
 - `asar` is off so bundled binaries (Claude Code, later native modules) can be executed and loaded.
 - At startup main adopts the environment of an interactive login shell (`src/main/shell-env.ts`), so an app launched from Finder or a desktop launcher gives agents the same PATH and variables as a terminal. The IPC API isn't registered until that has loaded.
 - `npmRebuild` is off: the native modules ship N-API prebuilds, so nothing is compiled (their install scripts are denied in `pnpm-workspace.yaml`). `@parcel/watcher` has per-platform packages; `node-pty` is pinned to a 1.2 beta because 1.1.0 lacks Linux prebuilds and its macOS `spawn-helper` isn't executable. CI checks both load on EL8.
+- `ESCRITOIRE_CODEX_PATH` overrides the installed `codex` executable used for native app-server sessions. Codex reuses its existing login and config.
 - `ESCRITOIRE_CLAUDE_CODE_PATH` overrides the Claude Code binary the SDK bundles, for pinning a known-good version on RHEL 8.
 
 ## Structure

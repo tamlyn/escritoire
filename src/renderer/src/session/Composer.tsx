@@ -206,7 +206,7 @@ export function Composer({
             onPaste={onPaste}
             autoFocus={autoFocus}
             rows={1}
-            placeholder={working ? 'Queue a message (Esc to interrupt)' : 'Message Claude, @ to mention a file'}
+            placeholder={working ? 'Queue a message (Esc to interrupt)' : 'Message agent, @ to mention a file'}
             className="placeholder:text-muted-foreground field-sizing-content max-h-60 min-h-9 flex-1 resize-none bg-transparent px-2 py-1.5 outline-none"
           />
           {working && !canSend ? (

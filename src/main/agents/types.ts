@@ -12,8 +12,10 @@ import type { IdeServerConnection } from '../ide-server'
 
 export interface AgentAdapter {
   kind: AgentKind
+  closeSession?(id: string): void
+  dispose?(): void
   /** Returns the agent's id for a session that has not started yet. */
-  createSession(cwd: string): Promise<string>
+  createSession(cwd: string, ide?: IdeServerConnection): Promise<string>
   listSessions(cwd: string): Promise<PastSession[]>
   /** Empty if the session has no transcript yet. */
   loadHistory(agentSessionId: string, cwd: string): Promise<History>
