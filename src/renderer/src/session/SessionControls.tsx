@@ -54,7 +54,7 @@ export function SessionControls({
         value={model?.id ?? defaultValue}
         options={(choices?.models ?? []).map((m) => ({ id: m.id, label: m.label, description: m.description }))}
         // The agent's default follows the user's settings, so isn't pinned as a model.
-        onChange={(id) => change({ model: id === 'default' ? undefined : id })}
+        onChange={(id) => change({ model: id === 'default' ? null : id })}
       />
       {efforts.length > 0 && (
         <Picker
@@ -62,7 +62,7 @@ export function SessionControls({
           title="Effort"
           value={settings.effort ?? defaultValue}
           options={[{ id: defaultValue, label: 'Default' }, ...efforts.map((e) => ({ id: e, label: capitalize(e) }))]}
-          onChange={(id) => change({ effort: id || undefined })}
+          onChange={(id) => change({ effort: id || null })}
         />
       )}
       <div className="ml-auto flex items-center gap-3">
@@ -78,7 +78,7 @@ export function SessionControls({
 }
 
 /** The next permission mode, for cycling through them as Claude Code's Shift+Tab does. */
-export function nextPermissionMode(choices: SettingChoices | null, current: string | undefined): string | undefined {
+export function nextPermissionMode(choices: SettingChoices | null, current: string | null | undefined): string | undefined {
   const modes = choices?.permissionModes ?? []
   if (modes.length === 0) return undefined
   const index = modes.findIndex((m) => m.id === current)
@@ -87,7 +87,7 @@ export function nextPermissionMode(choices: SettingChoices | null, current: stri
 
 // Claude Code reports the model it resolved, such as `claude-opus-5-5`, where
 // the choices are mostly aliases that resolve to it.
-function findModel(models: ModelChoice[], model: string | undefined): ModelChoice | undefined {
+function findModel(models: ModelChoice[], model: string | null | undefined): ModelChoice | undefined {
   if (!model) return models.find((m) => m.id === 'default')
   return (
     models.find((m) => m.id === model) ??

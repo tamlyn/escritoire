@@ -59,7 +59,7 @@ Check current versions and APIs against documentation when adding each one.
 | Persistence | JSON files in the app data directory | Workspace layouts and attention state are small. Add SQLite only if a real need appears |
 | Process logs | Bounded in-memory ring buffers per process | Meets bounded retention with no storage |
 | SQL | Electron's built-in `node:sqlite` for SQLite; `pg` and `pg-cursor` for Postgres | `node:sqlite` needs no native module on EL8. It is synchronous and can't be interrupted, so each SQLite connection runs in a child process that cancelling kills. The cursor fetches only the rows shown |
-| Remote access | A WebSocket server in main, published with `tailscale serve`; Web Push for notifications | Decision 12. `tailscale serve` provides the tailnet-only exposure and the HTTPS that a home-screen web app, its service worker and push require |
+| Remote access | A WebSocket server in main (`ws`), published with `tailscale serve`; Web Push for notifications | Decision 12. Node has a WebSocket client but no server. `tailscale serve` provides the tailnet-only exposure and the HTTPS that a home-screen web app, its service worker and push require |
 | Fuzzy matching | `fzf` (a JS port of fzf's algorithm), bundled into the renderer | fzf's ranking and match positions without needing the `fzf` binary on each machine or a process per keystroke. Used by the palette and @-mentions |
 | Tests | Vitest; Playwright driving Electron for end-to-end | Lets agents verify their own UI work |
 | Package manager | pnpm | |
@@ -174,6 +174,15 @@ Learnings from The Running Man carried over:
 - The dialog asks for the URL or file first, and names the connection after it (`database@host`, or the file's name) until the user names it.
 - Each connection stays open between runs, so a transaction, `SET` or temporary table carries over, as in psql. Cancelling a SQLite query closes its connection, which rolls back any open transaction. Results aren't kept across restarts.
 
+### Remote access
+
+The first step towards using Escritoire from a phone (see [Remote access](PLAN.md#remote-access)).
+
+- **One contract, one transport.** Clients reach main only through `api` and `subscribe` (`src/shared/api.ts`), carried over a WebSocket for every client, the desktop window included. Electron IPC is left with what only the desktop needs: the preload gives the window the listener's address and a token. Quitting still waits for calls in flight.
+- **A small protocol of our own**, with no RPC library (decision 12). A client's first message is its token. Then requests `{id, method, args}` get replies `{id, result | error}`, and main pushes `{event, payload}`.
+- **Values travel as JSON**, which drops `undefined`. So `null` resets a session setting to the agent's default, a trailing `undefined` argument is left off rather than sent as `null`, and the contract fails to compile if any method or event carries a value JSON would change.
+- The listener binds to 127.0.0.1, on any free port until remote access can be turned on. The desktop's token is random per launch and never stored. A browser page from any origin but the window's own is refused, as is a client without the token. Every event goes to every client until state is per client.
+
 ## Slices built
 
 All in November 2026, each tried on macOS and, from slice 2, on RHEL 8 through the GitHub-built release.
@@ -186,3 +195,4 @@ All in November 2026, each tried on macOS and, from slice 2, on RHEL 8 through t
 6. Codex through app-server.
 7. SQL query files.
 8. Ports in the process list.
+9. Remote access, step 1: the desktop window's contract over a WebSocket.

@@ -1,8 +1,11 @@
+import { randomBytes } from 'node:crypto'
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron'
 import { type Api, apiMethods, type Events } from '../shared/api'
+import type { ApiConnection } from '../shared/api-client'
 import { codexAdapter } from './agents/codex'
 import { claudeAdapter } from './agents/claude'
+import { ApiServer, tokensMatch } from './api-server'
 import {
   gitBlame,
   gitCommit,
@@ -147,15 +150,20 @@ function logFailures(results: PromiseSettledResult<unknown>[]): void {
   for (const result of results) if (result.status === 'rejected') console.error(result.reason)
 }
 
-function registerApi(api: Api, work: Work): void {
-  for (const method of apiMethods) {
-    const handler = api[method] as (...args: unknown[]) => Promise<unknown>
-    ipcMain.handle(method, (_event, ...args) => work.run(() => handler(...args)))
+function handleApi(api: Api, work: Work): (method: string, args: unknown[]) => Promise<unknown> {
+  const methods = new Set<string>(apiMethods)
+  return (method, args) => {
+    if (!methods.has(method)) return Promise.reject(new Error(`Unknown method: ${method}`))
+    const handler = api[method as keyof Api] as (...args: unknown[]) => Promise<unknown>
+    return work.run(() => handler(...args))
   }
 }
 
+let apiServer: ApiServer | undefined
+
+// Events sent before the server starts have no one to go to.
 function send<K extends keyof Events>(name: K, payload: Events[K]): void {
-  for (const window of BrowserWindow.getAllWindows()) window.webContents.send(name, payload)
+  apiServer?.send(name, payload)
 }
 
 // The window controls drawn over the header on Windows and Linux. Electron
@@ -266,7 +274,18 @@ void app.whenReady().then(async () => {
     gitWatcher.watch(projectId)
   })
 
-  const ipc = new Work()
+  const apiWork = new Work()
+  // Never written down, so only the windows of this launch can know it.
+  const desktopToken = randomBytes(32).toString('base64url')
+  const rendererUrl = process.env.ELECTRON_RENDERER_URL
+  const server = await ApiServer.start({
+    port: 0,
+    origins: [rendererUrl ? new URL(rendererUrl).origin : 'file://'],
+    isAuthorised: (token) => tokensMatch(token, desktopToken),
+    handle: handleApi(createApi({ projects, sessions, sessionStore, files, terminals, supervisor, connections, databases }), apiWork),
+  })
+  apiServer = server
+
   let shuttingDown = false
   app.on('before-quit', (event) => {
     if (allowClose) return
@@ -285,14 +304,14 @@ void app.whenReady().then(async () => {
         dialog.showErrorBox("Couldn't save before quitting", String(error))
         return
       }
-      // Closing the databases first stops any query, which the IPC call running it would otherwise wait for.
+      // Closing the databases first stops any query, which the API call running it would otherwise wait for.
       const databasesClosed = await Promise.allSettled([databases.closeAll()])
       // In dependency order: the renderer starts work for everything, agents call
       // the IDE server, and the IDE server starts processes.
-      await ipc.close()
+      await apiWork.close()
       const sessionsClosed = await Promise.allSettled([sessions.close()])
       await ideServer.close()
-      logFailures([...databasesClosed, ...(await Promise.allSettled([files.unwatch(), gitWatcher.unwatch(), terminals.closeAll(), supervisor.closeAll()]))])
+      logFailures([...databasesClosed, ...(await Promise.allSettled([files.unwatch(), gitWatcher.unwatch(), terminals.closeAll(), supervisor.closeAll(), server.close()]))])
       if (sessionsClosed[0].status === 'rejected') {
         dialog.showErrorBox("Couldn't save sessions before quitting", String(sessionsClosed[0].reason))
       }
@@ -300,6 +319,6 @@ void app.whenReady().then(async () => {
       app.quit()
     })()
   })
-  registerApi(createApi({ projects, sessions, sessionStore, files, terminals, supervisor, connections, databases }), ipc)
+  ipcMain.handle('apiConnection', (): ApiConnection => ({ url: server.url, token: desktopToken }))
   createWindow()
 })

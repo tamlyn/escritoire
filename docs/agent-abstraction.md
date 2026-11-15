@@ -42,12 +42,12 @@ A session is a **transcript of items**, a list of **pending requests** and a **s
 
 ## Main → renderer events
 
-`Events` in [`src/shared/api.ts`](../src/shared/api.ts) is typed like `Api`, one channel per event; the preload exposes `window.subscribe(name, listener)`.
+`Events` in [`src/shared/api.ts`](../src/shared/api.ts) is typed like `Api`; the renderer listens with `subscribe(name, listener)`.
 
 - **`sessionsChanged`**: summaries (pointer, project, title, status, attention) of every loaded session, sent when status, requests or read state change. Drives tab indicators, and later the project attention count and switcher.
 - **`sessionEvent`**: `{ agentSessionId, seq, event }`, only for sessions the renderer has open.
 
-`openSession` returns the view with its `seq` and subscribes; events at or below that `seq` are dropped, and events that arrive before the snapshot are held, which removes any race between the invoke reply and pushed events. Text deltas are not batched; coalesce in main only if streaming proves costly.
+`openSession` returns the view with its `seq` and subscribes; events at or below that `seq` are dropped, and events that arrive before the snapshot are held, which removes any race between the reply and pushed events. Text deltas are not batched; coalesce in main only if streaming proves costly.
 
 ## Not built yet
 

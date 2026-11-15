@@ -79,7 +79,7 @@ function resolvedSettings(result: Pick<ThreadStartResponse, 'model' | 'approvalP
   return {
     ...(result.model ? { model: result.model } : {}),
     ...(result.approvalPolicy ? { permissionMode: typeof result.approvalPolicy === 'string' ? result.approvalPolicy : 'granular' } : {}),
-    ...(result.reasoningEffort !== undefined ? { effort: result.reasoningEffort ?? undefined } : {}),
+    ...(result.reasoningEffort !== undefined ? { effort: result.reasoningEffort } : {}),
   }
 }
 

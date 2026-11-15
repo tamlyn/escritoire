@@ -157,10 +157,10 @@ describe('SessionManager', () => {
     await manager.openSession('p1', pointer)
     await manager.changeSettings(pointer, { model: 'opus', permissionMode: 'plan' })
     manager.sendMessage(pointer, say('Hi'))
-    await manager.changeSettings(pointer, { model: undefined })
+    await manager.changeSettings(pointer, { model: null })
 
     expect(runs[0]!.options.settings).toEqual({ model: 'opus', permissionMode: 'plan' })
-    expect(runs[0]!.settings).toEqual([{ model: undefined }])
+    expect(runs[0]!.settings).toEqual([{ model: null }])
 
     await new Promise((resolve) => setTimeout(resolve, 50))
     const restarted = new SessionManager({
@@ -170,7 +170,7 @@ describe('SessionManager', () => {
       send: () => {},
     })
     const reopened = await restarted.openSession('p1', pointer)
-    expect(reopened.view.settings).toEqual({ model: undefined, permissionMode: 'plan' })
+    expect(reopened.view.settings).toEqual({ model: null, permissionMode: 'plan' })
   })
 
   it('forgets a setting the run refuses', async () => {

@@ -67,8 +67,11 @@ export type RequestResponse =
   /** `null` dismisses the question without answering. */
   | { kind: 'question'; answers: QuestionAnswers | null }
 
-/** What the session runs with. An unset value is the agent's own default. */
-export type SessionSettings = { model?: string; effort?: string; permissionMode?: string }
+/**
+ * What the session runs with. An unset or `null` value is the agent's own
+ * default. In a change, a missing setting stays as it is and `null` resets it.
+ */
+export type SessionSettings = { model?: string | null; effort?: string | null; permissionMode?: string | null }
 
 /** The values the agent accepts for each setting. */
 export type SettingChoices = {

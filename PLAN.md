@@ -54,15 +54,14 @@ The user must be able to tell when another project needs them, without a persist
 
 Use Escritoire from a phone, and later from another computer, over the user's Tailscale network. The phone is for keeping agents moving away from the desk: seeing what needs attention, reading sessions, answering questions and permission requests, and sending messages. Tailscale isn't allowed on the work machine, so this is for the personal machine only.
 
-- **One contract, one transport.** The renderer reaches main only through `window.api` and `subscribe` (`src/shared/api.ts`). That contract moves from Electron IPC to a WebSocket for every client, the desktop window included, and the same renderer build runs in a browser. There is no separate mobile app and no second message model. The desktop window gets a session token from main through the preload, held only in memory; the preload otherwise keeps only what is genuinely desktop-only (flushing edits on quit, native dialogs, the dock). Quitting still waits for calls in flight, as it does over IPC. See decision 12.
-- **A small protocol of our own over a plain WebSocket.** Requests `{id, method, args}`, replies `{id, result | error}`, pushes `{event, payload}`, driven by `apiMethods` and `eventNames`. No RPC library: see decision 12. JSON loses `undefined`, so contract values must survive a JSON round trip: `changeSessionSettings` signals a reset to default with `undefined` today and must change. A unit test round-trips contract values through JSON to keep it that way.
+- **The same renderer build runs in a browser.** The contract already travels over a WebSocket for the desktop window (see Remote access in HISTORY.md), so there is no separate mobile app and no second message model. The preload keeps only what is genuinely desktop-only (flushing edits on quit, native dialogs, the dock).
 - **Tailnet only, and paired.** Main's listener binds to 127.0.0.1; `tailscale serve` publishes it to the tailnet over HTTPS. Escritoire implements no login of its own. Tailscale alone is not enough: WebSockets ignore CORS, so any web page in the user's browser could connect to the loopback port, and agents on the same machine could connect and answer their own permission requests. So a client must also be paired once: the desktop shows a code or QR, and the browser keeps the resulting token. Nothing depends on Tailscale itself, so `ssh -L` works too.
   - The upgrade and the pairing endpoint check `Origin`.
   - A pairing code is single-use, short-lived and limited in attempts.
   - The token travels in the first message, never in the URL, where it would be logged.
   - Main stores only hashes of paired tokens, so reading the data directory yields nothing usable. An agent running as the user can still write to that directory, which is the same trust boundary as Claude Code's own.
   - The desktop lists paired devices and can revoke each.
-  - The port is fixed, since `tailscale serve` needs a stable target, and configurable, so a dev instance and the installed app don't collide.
+  - While remote access is on, the port is fixed, since `tailscale serve` needs a stable target, and configurable, so a dev instance and the installed app don't collide. With it off, the listener takes any free port.
   - Remote access is off by default. With it off the listener still carries the desktop window's API, but serves no pairing endpoint and no renderer files. That is the state on the work machine.
   - The `ts.net` hostname appears in public Certificate Transparency logs, which is accepted.
 - **Main owns everything; every client is a view.** Several clients may be connected at once: the desktop window, a phone, another computer. Any of them can send prompts and answer questions and permission requests. The first answer wins and the others see the request resolved. Viewing a session on any client marks it read. Drafts already live in main, so they follow the user between clients; the last write wins.
@@ -79,12 +78,11 @@ Use Escritoire from a phone, and later from another computer, over the user's Ta
 
 Build order:
 
-1. Move the desktop window's contract to the WebSocket, with no change in behaviour. This goes to both machines and exercises the protocol daily.
-2. Per-client state: active project, visibility and attachments, plus presence.
-3. Pairing, revocation and serving the renderer to a browser.
-4. The phone layout for sessions and attention.
-5. Web Push.
-6. Terminals and file editors on the phone.
+1. Per-client state: active project, visibility and attachments, plus presence.
+2. Pairing, revocation and serving the renderer to a browser.
+3. The phone layout for sessions and attention.
+4. Web Push.
+5. Terminals and file editors on the phone.
 
 ### Updating without losing work
 

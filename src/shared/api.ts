@@ -38,8 +38,8 @@ import type { ScreenOutput, ScreenSize, ScreenSnapshot } from './screen'
 import type { Connection, ProjectConnections, StatementResult } from './sql'
 
 /**
- * Everything the renderer can ask of the main process. Each method is one
- * `ipcRenderer.invoke` channel of the same name.
+ * Everything a client can ask of the main process, over the WebSocket
+ * protocol in `api-client.ts`. Values must come through JSON unchanged.
  */
 export type Api = {
   getState(): Promise<AppState>
@@ -65,7 +65,7 @@ export type Api = {
   sendMessage(session: SessionPointer, input: UserInput): Promise<void>
   interrupt(session: SessionPointer): Promise<void>
   getSettingChoices(projectId: string, agent: AgentKind): Promise<SettingChoices>
-  /** Only the settings given change; an `undefined` value goes back to the agent's default. */
+  /** Only the settings given change; `null` goes back to the agent's default. */
   changeSessionSettings(session: SessionPointer, settings: SessionSettings): Promise<void>
   stopTask(session: SessionPointer, taskId: string): Promise<void>
   respond(session: SessionPointer, requestId: string, response: RequestResponse): Promise<void>
@@ -203,7 +203,7 @@ const apiMethodSet: Record<keyof Api, true> = {
 
 export const apiMethods = Object.keys(apiMethodSet) as (keyof Api)[]
 
-/** Everything the main process pushes to the renderer. Each event is one channel of the same name. */
+/** Everything the main process pushes to clients. */
 export type Events = {
   sessionsChanged: SessionSummary[]
   sessionEvent: SessionEvent

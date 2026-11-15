@@ -215,7 +215,7 @@ class ClaudeRun implements AgentRun {
   async changeSettings(settings: SessionSettings): Promise<void> {
     const query = await this.started
     if (!query) return
-    if ('model' in settings) await query.setModel(settings.model)
+    if ('model' in settings) await query.setModel(settings.model ?? undefined)
     if ('effort' in settings) await query.applyFlagSettings({ effortLevel: (settings.effort as EffortLevel) ?? null })
     if (settings.permissionMode) await query.setPermissionMode(settings.permissionMode as PermissionMode)
   }
@@ -257,9 +257,9 @@ class ClaudeRun implements AgentRun {
           includePartialMessages: true,
           systemPrompt: { type: 'preset', preset: 'claude_code' },
           settingSources,
-          model,
-          effort: effort as EffortLevel | undefined,
-          permissionMode: permissionMode as PermissionMode | undefined,
+          model: model ?? undefined,
+          effort: (effort ?? undefined) as EffortLevel | undefined,
+          permissionMode: (permissionMode ?? undefined) as PermissionMode | undefined,
           // Without summaries, recent models return thinking blocks with no text.
           thinking: { type: 'adaptive', display: 'summarized' },
           canUseTool: this.canUseTool,

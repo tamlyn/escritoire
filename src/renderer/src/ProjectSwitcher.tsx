@@ -1,7 +1,7 @@
 import { FileIcon, FolderIcon, FolderOpenIcon } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import type { AppState, Project } from '../../shared/api'
-import { api } from './api'
+import { api, errorMessage } from './api'
 import {
   Command,
   CommandEmpty,
@@ -63,7 +63,7 @@ export function ProjectSwitcher(props: Props) {
       await props.onOpenPath(path)
       onOpenChange(false)
     } catch (e) {
-      setError(e instanceof Error ? e.message.replace(/^Error invoking remote method '\w+': /, '') : String(e))
+      setError(errorMessage(e))
     }
   }
 
