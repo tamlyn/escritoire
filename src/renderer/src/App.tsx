@@ -23,7 +23,7 @@ export function App() {
   return (
     <div className="flex h-full flex-col">
       <header
-        className={`bg-chrome flex h-10 shrink-0 items-center justify-center border-b [-webkit-app-region:drag] ${isMac ? 'pl-20' : ''}`}
+        className={`bg-chrome flex h-10 shrink-0 items-center border-b px-2 [-webkit-app-region:drag] ${isMac ? 'pl-20' : ''}`}
       >
         <button
           type="button"

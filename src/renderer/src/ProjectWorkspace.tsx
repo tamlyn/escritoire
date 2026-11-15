@@ -13,6 +13,7 @@ import {
   type WorkspaceNode,
   useDefaultLayout,
   useParentTabset,
+  useParentWorkspace,
   usePanelRef,
   useWorkspaceRef,
 } from 'react-resizable-panels'
@@ -29,6 +30,7 @@ import { ProcessList } from './process/ProcessList'
 import { ProcessStatusDot } from './process/ProcessStatusDot'
 import { useProcess } from './processes'
 import {
+  createDiffTab,
   createEmptyTab,
   createFileTab,
   createGitTab,
@@ -96,7 +98,10 @@ export function ProjectWorkspace({ project }: { project: Project }) {
         >
           <div className="flex h-full flex-col">
             <div className="min-h-0 flex-1">
-              <FileTree onOpenFile={(path) => workspaceRef.current?.addTab(createFileTab(path))} />
+              <FileTree
+                onOpenFile={(path) => workspaceRef.current?.addTab(createFileTab(path))}
+                onOpenDiff={(request) => workspaceRef.current?.addTab(createDiffTab(request))}
+              />
             </div>
             <ProcessList onOpen={(process) => workspaceRef.current?.addTab(createProcessTab(process))} />
             <GitStatusRow onOpen={() => workspaceRef.current?.addTab(createGitTab())} />
@@ -164,9 +169,18 @@ function renderTabContent(tab: Tab) {
 }
 
 function renderTab(tab: Tab, props: React.HTMLAttributes<HTMLElement>) {
+  return <TabHeader tab={tab} props={props} />
+}
+
+function TabHeader({ tab, props }: { tab: Tab; props: React.HTMLAttributes<HTMLElement> }) {
+  const workspace = useParentWorkspace<TabData>()
   return (
     <div
       {...props}
+      onAuxClick={(event) => {
+        props.onAuxClick?.(event)
+        if (event.button === 1) workspace?.closeTab(tab.id)
+      }}
       className={`${props.className ?? ''} group text-muted-foreground hover:text-foreground data-[tab-selected]:bg-background data-[tab-selected]:text-foreground flex max-w-56 cursor-default items-center gap-1.5 pr-1 pl-3`}
     >
       {tab.data.kind === 'session' ? (
