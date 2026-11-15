@@ -25,6 +25,9 @@ import { SessionManager } from './session-manager'
 import { SessionStore } from './session-store'
 import { loadShellEnv } from './shell-env'
 import { Supervisor } from './supervisor'
+import { ConnectionStore } from './sql/connection-store'
+import { Databases } from './sql/databases'
+import { movePasswordToPgpass } from './sql/pgpass'
 import { Terminals } from './terminals'
 import { Work } from './work'
 
@@ -35,21 +38,34 @@ type Services = {
   files: ProjectFiles
   terminals: Terminals
   supervisor: Supervisor
+  connections: ConnectionStore
+  databases: Databases
 }
 
-function createApi({ projects, sessions, sessionStore, files, terminals, supervisor }: Services): Api {
+function createApi({ projects, sessions, sessionStore, files, terminals, supervisor, connections, databases }: Services): Api {
   return {
     getState: async () => projects.getState(),
     openProject: (path) => projects.openProject(path),
     activateProject: (id) => projects.activateProject(id),
     closeProject: async (id) => {
       // Failing to save sessions or scrollback mustn't stop the project closing.
-      logFailures(await Promise.allSettled([sessions.closeProject(id), terminals.closeProject(id), supervisor.closeProject(id)]))
+      logFailures(await Promise.allSettled([
+        sessions.closeProject(id),
+        terminals.closeProject(id),
+        supervisor.closeProject(id),
+        databases.closeProject(id),
+      ]))
       return projects.closeProject(id)
     },
     removeProject: async (id) => {
       await sessions.closeProject(id).catch(console.error)
-      await Promise.all([sessionStore.deleteProject(id), terminals.deleteProject(id), supervisor.closeProject(id)])
+      await Promise.all([
+        sessionStore.deleteProject(id),
+        terminals.deleteProject(id),
+        supervisor.closeProject(id),
+        databases.closeProject(id),
+        connections.deleteProject(id),
+      ])
       return projects.removeProject(id)
     },
     loadLayout: (projectId) => projects.loadLayout(projectId),
@@ -98,6 +114,22 @@ function createApi({ projects, sessions, sessionStore, files, terminals, supervi
     switchGitBranch: (projectId, branch) => gitSwitch(projects.getProject(projectId).path, branch),
     pullGit: (projectId) => gitPull(projects.getProject(projectId).path),
     pushGit: (projectId) => gitPush(projects.getProject(projectId).path),
+    listConnections: (projectId) => connections.get(projects.getProject(projectId).id),
+    saveConnection: async (projectId, connection) => {
+      if (connection.type === 'postgres') connection = { ...connection, url: await movePasswordToPgpass(connection.url) }
+      const saved = await connections.save(projects.getProject(projectId).id, connection)
+      await databases.closeConnection(projectId, connection.id)
+      return saved
+    },
+    deleteConnection: async (projectId, connectionId) => {
+      await databases.closeConnection(projectId, connectionId)
+      return connections.delete(projects.getProject(projectId).id, connectionId)
+    },
+    setFileConnection: (projectId, path, connectionId) =>
+      connections.setFileConnection(projects.getProject(projectId).id, path, connectionId),
+    runSql: (projectId, connectionId, runId, statements) =>
+      databases.run(projects.getProject(projectId).id, connectionId, runId, statements),
+    cancelSql: (runId) => databases.cancel(runId),
   }
 }
 
@@ -208,6 +240,11 @@ void app.whenReady().then(async () => {
     projectPath: (projectId) => projects.getProject(projectId).path,
     send: (output) => send('screenOutput', output),
   })
+  const connections = new ConnectionStore(dataDir)
+  const databases = new Databases({
+    projectPath: (projectId) => projects.getProject(projectId).path,
+    connection: (projectId, connectionId) => connections.getConnection(projectId, connectionId),
+  })
   // Only the active project is watched.
   projects.onActiveChanged((projectId) => {
     files.watch(projectId)
@@ -238,7 +275,7 @@ void app.whenReady().then(async () => {
       await ipc.close()
       const sessionsClosed = await Promise.allSettled([sessions.close()])
       await ideServer.close()
-      logFailures(await Promise.allSettled([files.unwatch(), gitWatcher.unwatch(), terminals.closeAll(), supervisor.closeAll()]))
+      logFailures(await Promise.allSettled([files.unwatch(), gitWatcher.unwatch(), terminals.closeAll(), supervisor.closeAll(), databases.closeAll()]))
       if (sessionsClosed[0].status === 'rejected') {
         dialog.showErrorBox("Couldn't save sessions before quitting", String(sessionsClosed[0].reason))
       }
@@ -246,6 +283,6 @@ void app.whenReady().then(async () => {
       app.quit()
     })()
   })
-  registerApi(createApi({ projects, sessions, sessionStore, files, terminals, supervisor }), ipc)
+  registerApi(createApi({ projects, sessions, sessionStore, files, terminals, supervisor, connections, databases }), ipc)
   createWindow()
 })

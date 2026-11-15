@@ -8,11 +8,10 @@ This document captures direction, not an exhaustive specification. Build iterati
 
 Starting priorities, not fixed release gates. Try each increment and let actual use determine the next improvement.
 
-1. SQL query files.
-2. Attention across projects: the inbox, dock badge, OS notifications and switcher ordering.
-3. Ports in the process list.
-4. IDE context for agents.
-5. Remote access from a phone over Tailscale: the WebSocket transport, pairing, the phone layout for sessions and attention, then Web Push.
+1. Attention across projects: the inbox, dock badge, OS notifications and switcher ordering.
+2. Ports in the process list.
+3. IDE context for agents.
+4. Remote access from a phone over Tailscale: the WebSocket transport, pairing, the phone layout for sessions and attention, then Web Push.
 
 Agent session features from the VS Code extension that aren't yet built are added in the order they are missed, alongside these slices. Agent integrations are hardened from Orca alongside them too (see below).
 
@@ -33,13 +32,6 @@ Agent session features from the VS Code extension that aren't yet built are adde
 - **Reimplement in our structure rather than transplanting files.** Orca's adapters are tightly coupled to the rest of its runtime (its Claude adapter imports its chat layer over a hundred times), so copied files would drag that design in. Copying a self-contained function is fine under its MIT licence; keep Orca's copyright notice with it (see decision 9 in HISTORY.md).
 
 ## Features
-
-### SQL
-
-- Query files, not a console, as in DataGrip: a `.sql` file opens in an ordinary file tab with a saved connection attached.
-- Run the statement under the cursor, or a selection of several, and see results in a grid below.
-- SQLite and Postgres.
-- No autocomplete needed.
 
 ### Attention across projects
 

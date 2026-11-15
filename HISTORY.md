@@ -25,7 +25,7 @@ Existing tools each get part of this right and none gets all of it:
 2. **Codex is integrated through its native app-server** (`codex app-server`, JSON-RPC over stdio), not ACP. The current `codex-acp` adapter is itself a translation layer over app-server, so ACP adds a layer and a separately pinned Codex version without adding any capability. The spike (November 2026) proved history, resume, approvals, interrupt and per-thread MCP natively; see [docs/codex-app-server.md](docs/codex-app-server.md).
 3. **The IDE has its own internal agent abstraction**, with one adapter per agent. The shared core (messages, tool calls, permission requests, file changes, session state) must look and behave the same for both agents: the same tab type and the same chat component. ACP's shapes are a useful reference, but the abstraction should follow the needs of both integrations. Agent-specific extras are allowed as optional additions; they must not lower the shared core to the least capable agent.
 4. **Authentication uses the user's own existing logins** for Claude Code and Codex. The IDE must never implement its own Claude.ai login or handle subscription credentials itself, and must never misreport what it is to Anthropic's API. See "Platform notes" for how authentication differs by machine.
-5. **Everything is a tab.** Agent sessions, files, terminals, process output, git views and SQL consoles all live as normal tabs in the main area. No bottom panel for terminals.
+5. **Everything is a tab.** Agent sessions, files, terminals, process output, git views and SQL query files all live as normal tabs in the main area. No bottom panel for terminals.
 6. **The file tree is the one exception.** It is a side panel, not a tab, and can be collapsed.
 7. **Multiple projects in one window, one project in view at a time.** The window shows only the active project's tabs and file tree; tabs never mix across projects. Explicit opening and closing is a sufficient starting point; automatic resource reaping is an optional optimisation.
 8. **The IDE owns project processes** (see "Process supervision"). The design learns from the user's colleague's project, [The Running Man](https://github.com/elbeanio/the_running_man), but does not depend on it.
@@ -54,7 +54,7 @@ Check current versions and APIs against documentation when adding each one.
 | Git | The `git` CLI (`status --porcelain=v2 -z`, `log`, `diff --numstat`, `blame --porcelain`) | Uses the user's own config, credentials and hooks, which matters most for pull and push. isomorphic-git does its own auth and lacks blame of unsaved text; nodegit is another native module for EL8. The history graph's layout is ours: the known libraries draw illustrative diagrams rather than lay out a real log |
 | Persistence | JSON files in the app data directory | Workspace layouts and attention state are small. Add SQLite only if a real need appears |
 | Process logs | Bounded in-memory ring buffers per process | Meets bounded retention with no storage |
-| SQL | `better-sqlite3` for SQLite, `pg` for Postgres | Both widely used from Node. `better-sqlite3` is native, so it gets the same rebuild treatment as `node-pty` |
+| SQL | Electron's built-in `node:sqlite` for SQLite; `pg` and `pg-cursor` for Postgres | `node:sqlite` needs no native module on EL8. It is synchronous and can't be interrupted, so each SQLite connection runs in a child process that cancelling kills. The cursor fetches only the rows shown |
 | Remote access | A WebSocket server in main, published with `tailscale serve`; Web Push for notifications | Decision 12. `tailscale serve` provides the tailnet-only exposure and the HTTPS that a home-screen web app, its service worker and push require |
 | Tests | Vitest; Playwright driving Electron for end-to-end | Lets agents verify their own UI work |
 | Package manager | pnpm | |
@@ -62,7 +62,7 @@ Check current versions and APIs against documentation when adding each one.
 
 ### Platform notes
 
-- **Builds.** The Mac build is made locally, which avoids Gatekeeper quarantining an unsigned download. The RHEL build is made by GitHub Actions inside a Rocky or Alma Linux 8 container and downloaded as a release artefact; no development happens on the RHEL machine. Building in an EL8 container keeps native modules (`node-pty`, `@parcel/watcher`, `better-sqlite3`) linked against glibc 2.28. They must be rebuilt against Electron's Node ABI, which is expected to need a newer compiler than EL8's default GCC 8.5 (a `gcc-toolset`).
+- **Builds.** The Mac build is made locally, which avoids Gatekeeper quarantining an unsigned download. The RHEL build is made by GitHub Actions inside a Rocky or Alma Linux 8 container and downloaded as a release artefact; no development happens on the RHEL machine. Building in an EL8 container keeps native modules (`node-pty`, `@parcel/watcher`) linked against glibc 2.28. They must be rebuilt against Electron's Node ABI, which is expected to need a newer compiler than EL8's default GCC 8.5 (a `gcc-toolset`).
 - **Claude authentication differs by machine.** Work: Bedrock through a proxy, configured by environment, with no subscription involved. Mac: the user's Claude Code subscription login. **Unverified:** whether Anthropic's current terms allow subscription use through the Agent SDK for a personal tool, and how it is metered. Check before building the Claude session slice. An API key is the fallback and needs no design change, since authentication lives inside the Claude Code binary.
 - **Stock Claude Code behaviour is opt-in.** By default the SDK does not load Claude Code's system prompt, `CLAUDE.md` or the user's settings files. Enable the Claude Code preset and the settings sources so sessions behave like ordinary Claude Code.
 - **Use the agents' standard configuration.** Claude should use the user's existing `~/.claude/settings.json` and normal project settings, including the existing work provider/proxy setup. Codex uses `~/.codex/config.toml` and trusted project `.codex/config.toml` settings ([configuration documentation](https://developers.openai.com/codex/config-basic)). Respect custom configuration locations supported by the agents. Avoid a separate IDE configuration system for these; verify that desktop-launched sessions receive any required environment variables.
@@ -155,6 +155,16 @@ Learnings from The Running Man carried over:
 - Closing a terminal tab or its project stops the shell; switching projects leaves it running. This provides explicit resource release without automatic terminal reaping.
 - On project close or normal app quit, save terminal scrollback and working directory for tabs that will be restored. Reopening starts a fresh shell with the old scrollback above a visible "restored" marker. Shell variables, activated virtualenvs and running jobs are not restored.
 
+### SQL
+
+- Query files, not a console, as in DataGrip: a `.sql` file opens in an ordinary file tab, with a connection picker and a Run button above the editor.
+- Mod-Enter or Run runs the statement under the cursor, or every statement a selection touches. Statements run in order and stop at the first error. Results appear in a pane below the editor, one per statement, showing at most 500 rows. Errors are shown in place of a result. A running query can be cancelled.
+- SQLite and Postgres. No autocomplete, schema browser or cell editing.
+- **Connections belong to a project** and are kept in the app data directory, not the project. Each file remembers its connection; if a project has only one, every file uses it.
+- **Escritoire stores no passwords.** Postgres uses `PGPASSWORD` or `~/.pgpass`, as git uses the user's own credentials, so psql shares them. A password typed in a connection's URL is moved to `~/.pgpass` (or `PGPASSFILE`) and the URL saved without it. The line goes first in the file so it wins over wildcard lines, replacing any for the same connection. Escritoire reads the file itself, since `pg` drops its own support in version 9.
+- The dialog asks for the URL or file first, and names the connection after it (`database@host`, or the file's name) until the user names it.
+- Each connection stays open between runs, so a transaction, `SET` or temporary table carries over, as in psql. Cancelling a SQLite query closes its connection, which rolls back any open transaction. Results aren't kept across restarts.
+
 ## Slices built
 
 All in November 2026, each tried on macOS and, from slice 2, on RHEL 8 through the GitHub-built release.
@@ -165,3 +175,4 @@ All in November 2026, each tried on macOS and, from slice 2, on RHEL 8 through t
 4. Terminal tabs and process supervision, with agent access to the supervisor through the IDE's MCP server.
 5. Git overview, then the history graph, commits, blame, switch, pull and push, and change markers in the editor.
 6. Codex through app-server.
+7. SQL query files.

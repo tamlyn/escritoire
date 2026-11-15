@@ -28,3 +28,9 @@ window.flushEdits = async () => {
   }
 }
 export const subscribe = window.subscribe
+
+/** IPC prefixes a remote error with the channel name, which means nothing to the user. */
+export function errorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  return message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
+}

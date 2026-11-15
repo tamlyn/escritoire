@@ -2,7 +2,8 @@ import { useParentWorkspace } from 'react-resizable-panels'
 import { useProject } from '../project-context'
 import { Centred, createCommitTab, createDiffTab, type TabData } from '../tabs'
 import { ChangeGroup } from './ChangeGroup'
-import { errorMessage, useGitCommit } from './git'
+import { errorMessage } from '../api'
+import { useGitCommit } from './git'
 import { RefLabels } from './RefLabels'
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })

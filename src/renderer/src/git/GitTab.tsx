@@ -11,12 +11,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { api } from '../api'
+import { api, errorMessage } from '../api'
 import { relativeTime } from '../lib/time'
 import { useProject } from '../project-context'
 import { Centred, createCommitTab, createDiffTab, type TabData } from '../tabs'
 import { ChangeGroup } from './ChangeGroup'
-import { errorMessage, useGitHistory, useGitSummary } from './git'
+import { useGitHistory, useGitSummary } from './git'
 import { type GraphRow, layoutGraph } from './graph'
 import { RefLabels } from './RefLabels'
 

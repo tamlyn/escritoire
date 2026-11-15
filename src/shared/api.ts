@@ -35,6 +35,7 @@ import type {
 } from './git'
 import type { ProcessInfo, ProcessSpec } from './process'
 import type { ScreenOutput, ScreenSize, ScreenSnapshot } from './screen'
+import type { Connection, ProjectConnections, StatementResult } from './sql'
 
 /**
  * Everything the renderer can ask of the main process. Each method is one
@@ -115,6 +116,18 @@ export type Api = {
   switchGitBranch(projectId: string, branch: Pick<GitBranch, 'kind' | 'name'>): Promise<void>
   pullGit(projectId: string): Promise<void>
   pushGit(projectId: string): Promise<void>
+
+  listConnections(projectId: string): Promise<ProjectConnections>
+  /**
+   * Adds the connection, or replaces the one with its id, closing it if open.
+   * A password in a Postgres URL is moved to `~/.pgpass` rather than saved.
+   */
+  saveConnection(projectId: string, connection: Connection): Promise<ProjectConnections>
+  deleteConnection(projectId: string, connectionId: string): Promise<ProjectConnections>
+  setFileConnection(projectId: string, path: string, connectionId: string): Promise<ProjectConnections>
+  /** Runs the statements in order on the connection, stopping after the first error. */
+  runSql(projectId: string, connectionId: string, runId: string, statements: string[]): Promise<StatementResult[]>
+  cancelSql(runId: string): Promise<void>
 }
 
 // A record rather than an array so the compiler rejects a missing or misspelt method.
@@ -168,6 +181,12 @@ const apiMethodSet: Record<keyof Api, true> = {
   switchGitBranch: true,
   pullGit: true,
   pushGit: true,
+  listConnections: true,
+  saveConnection: true,
+  deleteConnection: true,
+  setFileConnection: true,
+  runSql: true,
+  cancelSql: true,
 }
 
 export const apiMethods = Object.keys(apiMethodSet) as (keyof Api)[]

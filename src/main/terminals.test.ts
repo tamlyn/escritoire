@@ -48,7 +48,8 @@ test('runs a shell in the project and keeps its screen for reattaching', async (
 test('saves scrollback and directory when the project closes, and restores them once', async () => {
   await terminals.attach('p', 't', size)
   terminals.write('t', 'mkdir sub && cd sub && echo before-close\r')
-  await vi.waitFor(() => expect(received()).toContain('before-close'))
+  // The output line, not the echo of the command, so the shell has changed directory.
+  await vi.waitFor(() => expect(received()).toMatch(/\r\nbefore-close/))
   await terminals.closeProject('p')
 
   terminals = newTerminals()
