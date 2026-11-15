@@ -5,6 +5,7 @@ import { useProcess } from '../processes'
 import { useProject } from '../project-context'
 import { ScreenView } from '../screen/ScreenView'
 import { Centred } from '../tabs'
+import { ProcessPorts } from './ProcessPorts'
 import { ProcessStatusDot } from './ProcessStatusDot'
 
 type ProcessTabProps = { processId: string; command: string; cwd: string; task?: TaskRef }
@@ -25,6 +26,7 @@ export function ProcessTab({ processId, command, cwd, task }: ProcessTabProps) {
         <code className="min-w-0 truncate">{command}</code>
         {cwd && <span className="text-muted-foreground shrink-0">in {cwd}</span>}
         <span className="text-muted-foreground shrink-0">{process ? describe(process) : 'Not running'}</span>
+        {process && <ProcessPorts ports={process.ports} />}
         <div className="ml-auto flex shrink-0 gap-1">
           {process?.status === 'running' ? (
             <>

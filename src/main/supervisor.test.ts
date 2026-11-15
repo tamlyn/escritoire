@@ -13,7 +13,7 @@ let supervisor: Supervisor
 beforeEach(async () => {
   root = await realpath(await mkdtemp(join(tmpdir(), 'escritoire-supervisor-')))
   await mkdir(join(root, 'web'))
-  supervisor = new Supervisor({ projectPath: () => root, send: () => {}, onChanged: () => {} })
+  supervisor = new Supervisor({ projectPath: () => root, send: () => {}, onChanged: () => {}, portScanMs: 100 })
 })
 
 afterEach(async () => {
@@ -59,6 +59,30 @@ test('one process per directory and command, however the directory is written', 
   const outside = await supervisor.start('p', { command: 'pwd; sleep 30', cwd: '..' })
   expect(outside.process.cwd).toBe(join(root, '..'))
   expect(() => supervisor.output('other', first.id, 1)).toThrow('No process')
+})
+
+test("shows the ports a process's tree listens on, with a URL for HTTP", async () => {
+  const servers = `
+    const http = require('node:http'), net = require('node:net')
+    http.createServer((req, res) => res.end()).listen(0, '127.0.0.1', function () { console.log('http ' + this.address().port) })
+    net.createServer((socket) => socket.end('not http')).listen(0, '127.0.0.1', function () { console.log('tcp ' + this.address().port) })
+  `
+  await writeFile(join(root, 'servers.js'), servers)
+  // Run from a shell that doesn't exec it, so the listener is a child.
+  const { process } = await supervisor.start('p', { command: `"${globalThis.process.execPath}" servers.js; true` })
+  const port = (kind: string) => Number(outputOf(process.id).find((l) => l.startsWith(kind))?.split(' ')[1])
+  await vi.waitFor(() => expect(port('tcp')).toBeGreaterThan(0))
+
+  await vi.waitFor(() => expect(supervisor.list('p')[0]?.ports).toHaveLength(2), { timeout: 5000 })
+  expect(supervisor.list('p')[0]?.ports).toEqual(
+    expect.arrayContaining([
+      { port: port('http'), url: `http://localhost:${port('http')}/` },
+      { port: port('tcp'), url: null },
+    ]),
+  )
+
+  await supervisor.stop('p', process.id)
+  expect(supervisor.list('p')[0]?.ports).toEqual([])
 })
 
 test('stop ends the whole process group', async () => {

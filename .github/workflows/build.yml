@@ -15,7 +15,8 @@ jobs:
     # Build on EL8 so the app and its native modules link against RHEL 8's glibc 2.28.
     container: almalinux:8
     steps:
-      - run: dnf install -y git tar gzip which libatomic
+      # iproute (ss) and procps-ng (ps) are on every real install, which the port scan relies on.
+      - run: dnf install -y git tar gzip which libatomic iproute procps-ng
 
       - uses: actions/checkout@v7
 

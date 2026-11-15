@@ -18,7 +18,8 @@ export function registerSupervisorTools(server: McpServer, supervisor: Superviso
     'list_processes',
     {
       description:
-        'List the processes the IDE supervises in this project (dev servers, watchers, builds), with their status. ' +
+        'List the processes the IDE supervises in this project (dev servers, watchers, builds), with their status ' +
+        'and the TCP ports they listen on, with a URL for those that serve HTTP. ' +
         'Check this before starting a process: it may already be running.',
       annotations: { readOnlyHint: true },
     },
@@ -120,7 +121,11 @@ function describe(process: ProcessInfo): string {
     process.status === 'running'
       ? `running since ${time(process.startedAt)}`
       : `${process.status} at ${time(process.endedAt!)}${process.exitCode === null ? '' : ` with exit code ${process.exitCode}`}`
-  return [`id: ${process.id}`, `command: ${process.command}`, `cwd: ${process.cwd || '.'}`, `status: ${status}`].join('\n')
+  const lines = [`id: ${process.id}`, `command: ${process.command}`, `cwd: ${process.cwd || '.'}`, `status: ${status}`]
+  if (process.ports.length > 0) {
+    lines.push(`listening on: ${process.ports.map((p) => (p.url ? `${p.port} (${p.url})` : p.port)).join(', ')}`)
+  }
+  return lines.join('\n')
 }
 
 function describeWithOutput(supervisor: Supervisor, projectId: string, id: string): string {

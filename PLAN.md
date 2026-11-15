@@ -9,9 +9,8 @@ This document captures direction, not an exhaustive specification. Build iterati
 Starting priorities, not fixed release gates. Try each increment and let actual use determine the next improvement.
 
 1. Attention across projects: the inbox, dock badge, OS notifications and switcher ordering.
-2. Ports in the process list.
-3. IDE context for agents.
-4. Remote access from a phone over Tailscale: the WebSocket transport, pairing, the phone layout for sessions and attention, then Web Push.
+2. IDE context for agents.
+3. Remote access from a phone over Tailscale: the WebSocket transport, pairing, the phone layout for sessions and attention, then Web Push.
 
 Agent session features from the VS Code extension that aren't yet built are added in the order they are missed, alongside these slices. Agent integrations are hardened from Orca alongside them too (see below).
 
@@ -41,12 +40,6 @@ The user must be able to tell when another project needs them, without a persist
 - When the window is unfocused, also a dock badge and an OS notification.
 - **Project switcher** orders projects needing attention first, then the rest by recency. Each row shows state at a glance: agents working or waiting, processes running or crashed.
 - No jump-to-next-project shortcut is needed.
-
-### Ports in the process list
-
-- Each supervised process shows the TCP ports its process tree is listening on, in the process list and its process tab.
-- A port that serves HTTP has an action to open it in the default browser.
-- Agents see the same ports through the supervisor's MCP tools.
 
 ### IDE context for agents
 

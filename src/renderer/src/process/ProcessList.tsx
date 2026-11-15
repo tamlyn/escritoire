@@ -3,6 +3,7 @@ import type { ProcessInfo } from '../../../shared/process'
 import { api } from '../api'
 import { useProcesses } from '../processes'
 import { useProject } from '../project-context'
+import { ProcessPorts } from './ProcessPorts'
 import { ProcessStatusDot } from './ProcessStatusDot'
 
 /** The project's processes, including those agents started; hidden when there are none. */
@@ -31,6 +32,11 @@ export function ProcessList({ onOpen }: { onOpen: (process: ProcessInfo) => void
               </span>
               {process.cwd && <span className="text-muted-foreground shrink-0 text-xs">{process.cwd}</span>}
             </button>
+            {process.ports.length > 0 && (
+              <span className="flex shrink-0 gap-1.5 px-1">
+                <ProcessPorts ports={process.ports} />
+              </span>
+            )}
             {process.status !== 'running' && (
               <button
                 type="button"

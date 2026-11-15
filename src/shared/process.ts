@@ -29,4 +29,9 @@ export type ProcessInfo = {
   exitCode: number | null
   startedAt: number
   endedAt: number | null
+  /** The TCP ports its process tree is listening on, in order, while it runs. */
+  ports: Port[]
 }
+
+/** `url` is set when the port answers HTTP, so it can be opened in a browser. */
+export type Port = { port: number; url: string | null }

@@ -194,7 +194,11 @@ function createWindow(): void {
     if (!allowClose) { event.preventDefault(); app.quit() }
   })
   window.once('ready-to-show', () => window.show())
-  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  // Links that open a new window (a process's port, say) go to the default browser.
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//.test(url)) void shell.openExternal(url)
+    return { action: 'deny' }
+  })
 
   const devServerUrl = process.env.ELECTRON_RENDERER_URL
   if (devServerUrl) {

@@ -4,16 +4,19 @@ import { isAbsolute, relative, resolve } from 'node:path'
 import type { ProcessInfo, ProcessSpec, TaskRef } from '../shared/process'
 import type { ScreenOutput, ScreenSize, ScreenSnapshot } from '../shared/screen'
 import { type LogError, type LogLine, ProcessLog } from './process-log'
+import { descendants, httpUrl, type ListeningSocket, listeningSockets, processChildren } from './ports'
 import { notice, PtyScreen } from './screen'
 import { taskCommand } from './tasks'
 
 const stopGraceMs = 5000
+const defaultPortScanMs = 2000
 const defaultSize: ScreenSize = { cols: 120, rows: 30 }
 
 type SupervisorOptions = {
   projectPath: (projectId: string) => string
   send: (output: ScreenOutput) => void
   onChanged: (processes: ProcessInfo[]) => void
+  portScanMs?: number
 }
 
 export type ProcessError = LogError & { processId: string; command: string }
@@ -26,6 +29,7 @@ export type ProcessError = LogError & { processId: string; command: string }
  */
 export class Supervisor {
   private readonly processes = new Map<string, SupervisedProcess>()
+  private portScan: NodeJS.Timeout | null = null
 
   constructor(private readonly options: SupervisorOptions) {}
 
@@ -43,7 +47,7 @@ export class Supervisor {
     const alreadyRunning = supervised?.running ?? false
     if (!supervised) {
       supervised = new SupervisedProcess(
-        { id, projectId, command, cwd, task, status: 'running', exitCode: null, startedAt: 0, endedAt: null },
+        { id, projectId, command, cwd, task, status: 'running', exitCode: null, startedAt: 0, endedAt: null, ports: [] },
         absoluteCwd,
         (data, seq) => this.options.send({ screenId: id, data, seq }),
         () => this.changed(),
@@ -122,6 +126,7 @@ export class Supervisor {
   async closeAll(): Promise<void> {
     const projectIds = new Set([...this.processes.values()].map((p) => p.info.projectId))
     await Promise.all([...projectIds].map((projectId) => this.closeProject(projectId)))
+    if (this.portScan) clearTimeout(this.portScan)
   }
 
   private get(projectId: string, id: string): SupervisedProcess {
@@ -151,7 +156,27 @@ export class Supervisor {
   }
 
   private changed(): void {
+    this.scheduleScan()
     this.options.onChanged(this.list())
+  }
+
+  /** Polls for ports while anything runs: no OS notifies us when a process starts listening. */
+  private scheduleScan(): void {
+    const running = () => [...this.processes.values()].filter((p) => p.running)
+    if (this.portScan || running().length === 0) return
+    this.portScan = setTimeout(async () => {
+      try {
+        const [sockets, children] = await Promise.all([listeningSockets(), processChildren()])
+        const updates = await Promise.all(running().map((p) => p.updatePorts(sockets, children)))
+        this.portScan = null
+        if (updates.includes(true)) this.changed()
+        else this.scheduleScan()
+      } catch {
+        this.portScan = null
+        this.scheduleScan()
+      }
+    }, this.options.portScanMs ?? defaultPortScanMs)
+    this.portScan.unref()
   }
 }
 
@@ -216,11 +241,33 @@ class SupervisedProcess {
     })
   }
 
+  /** Whether the ports changed. A port already known keeps its URL rather than being probed again. */
+  async updatePorts(sockets: ListeningSocket[], children: Map<number, number[]>): Promise<boolean> {
+    const pid = this.screen.pid
+    if (pid === undefined) return false
+    const tree = descendants(children, pid)
+    const addresses = new Map<number, string[]>()
+    for (const socket of sockets.filter((s) => tree.has(s.pid))) {
+      addresses.set(socket.port, [...(addresses.get(socket.port) ?? []), socket.address])
+    }
+    const known = this.info.ports
+    const ports = await Promise.all(
+      [...addresses]
+        .sort(([a], [b]) => a - b)
+        .map(async ([port, at]) => known.find((p) => p.port === port) ?? { port, url: await httpUrl(at, port) }),
+    )
+    // It may have ended, or been restarted, while probing.
+    if (this.screen.pid !== pid || this.info.ports !== known) return false
+    if (ports.length === known.length && ports.every((p, i) => p === known[i])) return false
+    this.info.ports = ports
+    return true
+  }
+
   private exited(exitCode: number, signal: number | undefined): void {
     // The pty's process led its group; take anything it left behind with it.
     if (this.stopRequested && this.pid !== null) signalGroup(this.pid, 'SIGKILL')
     const status = this.stopRequested ? 'stopped' : exitCode === 0 && !signal ? 'exited' : 'failed'
-    Object.assign(this.info, { status, exitCode, endedAt: Date.now() })
+    Object.assign(this.info, { status, exitCode, endedAt: Date.now(), ports: [] })
     this.note(status === 'stopped' ? 'Stopped' : `Exited with code ${exitCode}`)
     for (const resolve of this.exitWaiters.splice(0)) resolve()
     this.onChanged()
