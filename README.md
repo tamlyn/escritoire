@@ -1,23 +1,38 @@
-<img src="docs/images/escritoire.png" alt="Engraving of a writing desk with a fold-out top and many drawers" width="240" align="right">
+<center>
 
 # Escritoire
 
-An IDE for people who direct coding agents rather than write code themselves.
+<img src="docs/images/escritoire.png" alt="Engraving of a writing desk with a fold-out top and many drawers" width="120">
 
-Most of my day is now spent telling Claude (and sometimes Codex) what to do across several projects, checking what they changed, restarting the dev server and tweaking a config file. Existing editors are built around typing code, so the agent is squeezed into a side panel. Escritoire turns that around. Agent sessions are the main thing and everything else is there to support them.
+</center>
 
-It's a personal tool. It runs on macOS and RHEL 8, because those are the machines I use.
 
-## What it does
+Yet another vibe coded agentic IDE.
 
-- Claude and Codex sessions as tabs, with the same chat interface for both. Each tab shows whether its agent is working, waiting for you or finished.
-- Several projects open at once, one in view at a time, each remembering its own tabs and layout.
-- Project processes owned by the IDE rather than by a terminal or an agent. Click the run icon next to a script in `package.json` and the agents can see its output, errors and status too.
-- A file tree showing what changed, plus an editor for config files.
-- A git summary, history graph, diffs and blame.
-- Ordinary terminals, as tabs.
+## What's so special about this then?
 
-Claude and Codex use your existing logins and configuration. Escritoire never handles your credentials.
+- Integrated process manager so you can see the processes started by your agents, and they can see the logs of your processes
+- Client-server architecture so you can:
+  - Manage stuff from your mobile over Tailscale
+  - Run agents on remote machines
+- Open any number of projects and agent sessions with minimal memory use
+- Save and reload project state
+- Claude and Codex presented in the same GUI style
+- Run `.sql` files line-by-line against your database (DataGrip style)
+
+### And the usual stuff
+
+- Git viewer
+- Terminal tabs
+- Lightweight editor
+- Light and dark modes
+- Use your existing Claude and Codex subscription
+
+### But not this stuff
+
+- No plugins or themes
+- No code completion
+- No language servers
 
 ## Running it
 
@@ -29,7 +44,3 @@ pnpm dev
 ```
 
 `pnpm dist` packages the app for your machine into `dist/`. Linux builds come from GitHub Actions.
-
-## More
-
-[HISTORY.md](HISTORY.md) explains the decisions behind it and what's built. [PLAN.md](PLAN.md) is what's next. [CLAUDE.md](CLAUDE.md) is the guide for agents working on the code, and is useful for humans too.
