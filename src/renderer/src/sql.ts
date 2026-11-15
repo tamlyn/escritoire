@@ -46,7 +46,8 @@ export const saveConnection = (projectId: string, connection: Connection) =>
   update(projectId, api.saveConnection(projectId, connection))
 export const deleteConnection = (projectId: string, connectionId: string) =>
   update(projectId, api.deleteConnection(projectId, connectionId))
-export const setFileConnection = (projectId: string, path: string, connectionId: string) =>
+export const reloadConnections = (projectId: string) => update(projectId, api.listConnections(projectId))
+export const setFileConnection =(projectId: string, path: string, connectionId: string) =>
   update(projectId, api.setFileConnection(projectId, path, connectionId))
 
 const runKey = (projectId: string, path: string) => `${projectId}\0${path}`

@@ -49,6 +49,17 @@ export class ConnectionStore {
     })
   }
 
+  /** Follows a file, or every file in a directory, to where it has moved. */
+  moveFiles(projectId: string, from: string, to: string): Promise<ProjectConnections> {
+    return this.change(projectId, (state) => {
+      for (const [path, id] of Object.entries(state.files)) {
+        if (path !== from && !path.startsWith(`${from}/`)) continue
+        delete state.files[path]
+        state.files[to + path.slice(from.length)] = id
+      }
+    })
+  }
+
   async deleteProject(projectId: string): Promise<void> {
     this.cache.delete(projectId)
     await deleteJson(this.path(projectId))

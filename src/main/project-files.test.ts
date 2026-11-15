@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
@@ -12,7 +12,11 @@ let files: ProjectFiles
 beforeEach(async () => {
   root = await realpath(await mkdtemp(join(tmpdir(), 'escritoire-files-')))
   sent = []
-  files = new ProjectFiles({ projectPath: () => root, send: (payload) => sent.push(payload) })
+  files = new ProjectFiles({
+    projectPath: () => root,
+    send: (payload) => sent.push(payload),
+    trash: (path) => rm(path, { recursive: true }),
+  })
 })
 
 afterEach(async () => {
@@ -56,6 +60,46 @@ test('overwrites files in place but never creates them', async () => {
   expect(await readFile(join(root, 'config.yaml'), 'utf8')).toBe('short\n')
   expect(await files.writeFile('p', 'deleted.yaml', 'x')).toBe('missing')
   await expect(stat(join(root, 'deleted.yaml'))).rejects.toThrow('ENOENT')
+})
+
+test('creates files and the directories they need, but never replaces one', async () => {
+  await files.createFile('p', 'docs/notes/auth.md')
+  expect(await readFile(join(root, 'docs', 'notes', 'auth.md'), 'utf8')).toBe('')
+
+  await writeFile(join(root, 'docs', 'notes', 'auth.md'), 'kept')
+  await expect(files.createFile('p', 'docs/notes/auth.md')).rejects.toThrow('already exists')
+  expect(await readFile(join(root, 'docs', 'notes', 'auth.md'), 'utf8')).toBe('kept')
+  await expect(files.createFile('p', '../escaped.md')).rejects.toThrow('Outside the project')
+})
+
+test('names scratch files for when they were made', async () => {
+  const now = new Date(2026, 10, 5, 9, 7)
+  expect(await files.createScratchFile('p', 'sql', now)).toBe('.scratch/2026-11-05-0907.sql')
+  expect(await files.createScratchFile('p', 'sql', now)).toBe('.scratch/2026-11-05-0907-2.sql')
+  await expect(files.createScratchFile('p', '../x', now)).rejects.toThrow('Not a file extension')
+})
+
+test('renames and moves without replacing anything', async () => {
+  await writeFile(join(root, 'a.md'), 'a')
+  await writeFile(join(root, 'b.md'), 'b')
+
+  await files.rename('p', 'a.md', 'notes/kept.md')
+  expect(await readFile(join(root, 'notes', 'kept.md'), 'utf8')).toBe('a')
+  await expect(files.rename('p', 'b.md', 'notes/kept.md')).rejects.toThrow('already exists')
+  expect(await readFile(join(root, 'notes', 'kept.md'), 'utf8')).toBe('a')
+
+  // A change of case alone, which a case-insensitive file system sees as the same name.
+  await files.rename('p', 'b.md', 'B.md')
+  expect(await readdir(root)).toContain('B.md')
+})
+
+test('trashes a symlink rather than what it links to', async () => {
+  await writeFile(join(root, 'target.md'), 'x')
+  await symlink(join(root, 'target.md'), join(root, 'link.md'))
+
+  await files.delete('p', 'link.md')
+  expect(await readdir(root)).toEqual(['target.md'])
+  await expect(files.delete('p', '')).rejects.toThrow('Not a file name')
 })
 
 test('refuses paths outside the project', async () => {

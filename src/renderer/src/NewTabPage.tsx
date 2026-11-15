@@ -1,11 +1,13 @@
-import { MessageSquarePlusIcon, SquareTerminalIcon } from 'lucide-react'
+import { FilePlusIcon, MessageSquarePlusIcon, SquareTerminalIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useParentTab, useParentWorkspace } from 'react-resizable-panels'
 import type { PastSession } from '../../shared/agent'
 import { api } from './api'
+import { useFileActions } from './file-actions'
 import { relativeTime } from './lib/time'
 import { useProject } from './project-context'
-import { createSessionTab, createTerminalTab, type Tab, type TabData } from './tabs'
+import { modifierLabel } from './shortcuts'
+import { createFileTab, createSessionTab, createTerminalTab, type Tab, type TabData } from './tabs'
 
 const maxPastSessions = 20
 const startButton =
@@ -16,6 +18,7 @@ export function NewTabPage({ tab }: { tab: Tab }) {
   const project = useProject()
   const workspace = useParentWorkspace<TabData>()
   const parentTab = useParentTab()
+  const fileActions = useFileActions()
   const [pastSessions, setPastSessions] = useState<PastSession[] | null>(null)
 
   useEffect(() => {
@@ -58,6 +61,15 @@ export function NewTabPage({ tab }: { tab: Tab }) {
         <button type="button" onClick={() => replaceWith(createTerminalTab())} className={startButton}>
           <SquareTerminalIcon className="text-muted-foreground size-5" />
           <span className="font-medium">New terminal</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => fileActions.newFile('', (path) => replaceWith(createFileTab(path)))}
+          className={startButton}
+        >
+          <FilePlusIcon className="text-muted-foreground size-5" />
+          <span className="font-medium">New file</span>
+          <span className="text-muted-foreground ml-auto text-xs">{modifierLabel}N</span>
         </button>
       </div>
 

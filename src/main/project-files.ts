@@ -1,5 +1,5 @@
-import { open, readdir, readFile, realpath, stat } from 'node:fs/promises'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { lstat, mkdir, open, readdir, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import watcher, { type AsyncSubscription } from '@parcel/watcher'
 import type { DirectoryEntry, FileContent, FilesChanged, WriteResult } from '../shared/files'
 
@@ -11,10 +11,13 @@ const unwatched = ['**/.git/**', '**/node_modules/**']
 const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
 const maxFileSize = 5 * 1024 * 1024
 const maxListedFiles = 20_000
+const scratchDirectory = '.scratch'
 
 type Options = {
   projectPath: (projectId: string) => string
   send: (payload: FilesChanged) => void
+  /** Moves an absolute path to the OS trash, so a deletion can be undone. */
+  trash: (path: string) => Promise<void>
   /** Any change in the watched project, including the IDE's own writes. */
   onAnyChange?: (projectId: string) => void
 }
@@ -148,6 +151,49 @@ export class ProjectFiles {
     return 'saved'
   }
 
+  /** Creates an empty file, and any directories it needs. Never replaces an existing file. */
+  async createFile(projectId: string, path: string): Promise<void> {
+    if (!(await this.createIfAbsent(projectId, path))) throw new Error(`${path} already exists`)
+  }
+
+  /** Creates an empty file in the scratch directory, named for when it was made. */
+  async createScratchFile(projectId: string, extension: string, now = new Date()): Promise<string> {
+    if (!/^[\w+-]+(\.[\w+-]+)*$/.test(extension)) throw new Error(`Not a file extension: ${extension}`)
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`
+    for (let n = 1; ; n++) {
+      const path = `${scratchDirectory}/${stamp}${n === 1 ? '' : `-${n}`}.${extension}`
+      if (await this.createIfAbsent(projectId, path)) return path
+    }
+  }
+
+  private async createIfAbsent(projectId: string, path: string): Promise<boolean> {
+    const file = await this.resolveEntry(projectId, path)
+    await mkdir(dirname(file), { recursive: true })
+    try {
+      await writeFile(file, '', { flag: 'wx' })
+      return true
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false
+      throw error
+    }
+  }
+
+  /** Moves a file or directory, creating directories as needed. Never replaces an existing entry. */
+  async rename(projectId: string, from: string, to: string): Promise<void> {
+    const source = await this.resolveEntry(projectId, from)
+    const target = await this.resolveEntry(projectId, to)
+    const existing = await lstat(target).catch(() => undefined)
+    // On a case-insensitive file system, a change of case finds the source itself.
+    if (existing && existing.ino !== (await lstat(source)).ino) throw new Error(`${to} already exists`)
+    await mkdir(dirname(target), { recursive: true })
+    await rename(source, target)
+  }
+
+  async delete(projectId: string, path: string): Promise<void> {
+    await this.options.trash(await this.resolveEntry(projectId, path))
+  }
+
   /** Watches the given project, replacing any previous watch. */
   watch(projectId: string | null): void {
     if (this.watched?.projectId === projectId) return
@@ -196,16 +242,30 @@ export class ProjectFiles {
 
   private async resolve(projectId: string, path: string): Promise<string> {
     const root = await realpath(this.options.projectPath(projectId))
-    const lexical = resolve(root, path)
-    const resolved = await realpath(lexical).catch(async (error) => {
-      if (error.code !== 'ENOENT') throw error
-      return join(await realpath(dirname(lexical)), lexical.slice(dirname(lexical).length + 1))
-    })
+    const resolved = await realpathAllowingMissing(resolve(root, path))
     const fromRoot = relative(root, resolved)
     if (fromRoot === '..' || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
       throw new Error(`Outside the project: ${path}`)
     }
     return resolved
+  }
+
+  /** The entry itself rather than what it links to, so a symlink is renamed or deleted, not its target. */
+  private async resolveEntry(projectId: string, path: string): Promise<string> {
+    const name = basename(path)
+    if (!name || name === '.' || name === '..') throw new Error(`Not a file name: ${path}`)
+    return join(await this.resolve(projectId, dirname(path)), name)
+  }
+}
+
+/** The real path of the deepest existing ancestor, followed by the rest of the path. */
+async function realpathAllowingMissing(path: string): Promise<string> {
+  try {
+    return await realpath(path)
+  } catch (error) {
+    const parent = dirname(path)
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || parent === path) throw error
+    return join(await realpathAllowingMissing(parent), basename(path))
   }
 }
 

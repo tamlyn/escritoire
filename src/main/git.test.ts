@@ -243,7 +243,7 @@ test('shows both sides of a staged or unstaged change', async () => {
   git('mv', 'old.txt', 'new.txt')
   await write('untracked.txt', 'new\n')
 
-  const files = new ProjectFiles({ projectPath: () => repo, send: () => {} })
+  const files = new ProjectFiles({ projectPath: () => repo, send: () => {}, trash: async () => {} })
   const diff = (path: string, staged: boolean, from?: string) =>
     gitDiff(repo, { path, staged, from }, (p) => files.readFile('p', p))
 

@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron'
 import { type Api, apiMethods, type Events } from '../shared/api'
 import { codexAdapter } from './agents/codex'
 import { claudeAdapter } from './agents/claude'
@@ -88,6 +88,13 @@ function createApi({ projects, sessions, sessionStore, files, terminals, supervi
     listDirectory: (projectId, path) => files.listDirectory(projectId, path),
     readFile: (projectId, path) => files.readFile(projectId, path),
     writeFile: (projectId, path, text, expected) => files.writeFile(projectId, path, text, expected),
+    createFile: (projectId, path) => files.createFile(projectId, path),
+    createScratchFile: (projectId, extension) => files.createScratchFile(projectId, extension),
+    renameFile: async (projectId, from, to) => {
+      await files.rename(projectId, from, to)
+      await connections.moveFiles(projects.getProject(projectId).id, from, to)
+    },
+    deleteFile: (projectId, path) => files.delete(projectId, path),
     listProjectFiles: async (projectId) =>
       (await gitFiles(projects.getProject(projectId).path)) ?? files.listAllFiles(projectId),
     attachTerminal: (projectId, terminalId, size) => terminals.attach(projectId, terminalId, size),
@@ -230,6 +237,7 @@ void app.whenReady().then(async () => {
     projectPath: (projectId) => projects.getProject(projectId).path,
     send: (payload) => send('filesChanged', payload),
     onAnyChange: (projectId) => send('gitChanged', { projectId }),
+    trash: (path) => shell.trashItem(path),
   })
   const gitWatcher = new GitWatcher({
     projectPath: (projectId) => projects.getProject(projectId).path,

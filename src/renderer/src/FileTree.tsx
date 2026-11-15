@@ -1,8 +1,15 @@
 import { ChevronRightIcon } from 'lucide-react'
-import { useState } from 'react'
-import type { DirectoryEntry } from '../../shared/files'
+import { useRef, useState } from 'react'
+import { type DirectoryEntry, parentPath } from '../../shared/files'
 import type { GitChange, GitDiffRequest, GitSummary } from '../../shared/git'
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from './components/ui/context-menu'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from './components/ui/context-menu'
+import { useFileActions } from './file-actions'
 import { useDirectory } from './files'
 import { useGitSummary } from './git/git'
 import { fileStatuses, pathStatus, statusColours, statusNames } from './git/status'
@@ -19,6 +26,8 @@ export function FileTree({
   onOpenDiff: (request: GitDiffRequest) => void
 }) {
   const project = useProject()
+  const actions = useFileActions()
+  const menu = useMenuActions()
   const [expanded, setExpanded] = useState(() => loadExpanded(project.id))
 
   function toggle(path: string) {
@@ -28,17 +37,25 @@ export function FileTree({
     saveExpanded(project.id, next)
   }
 
+  // Right-clicking below the files creates one at the root.
   return (
-    <div role="tree" aria-label="Files" className="h-full overflow-auto py-1 text-sm select-none">
-      <Directory
-        path=""
-        depth={0}
-        expanded={expanded}
-        onToggle={toggle}
-        onOpenFile={onOpenFile}
-        onOpenDiff={onOpenDiff}
-      />
-    </div>
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div role="tree" aria-label="Files" className="h-full overflow-auto py-1 text-sm select-none">
+          <Directory
+            path=""
+            depth={0}
+            expanded={expanded}
+            onToggle={toggle}
+            onOpenFile={onOpenFile}
+            onOpenDiff={onOpenDiff}
+          />
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent onCloseAutoFocus={menu.onCloseAutoFocus}>
+        <ContextMenuItem onSelect={menu.after(() => actions.newFile(''))}>New file…</ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   )
 }
 
@@ -67,6 +84,8 @@ function Entry({
   onOpenDiff,
 }: { entry: DirectoryEntry } & Omit<DirectoryProps, 'path'>) {
   const project = useProject()
+  const actions = useFileActions()
+  const menu = useMenuActions()
   const summary = useGitSummary(project.id)
   const status = summary ? pathStatus(fileStatuses(summary), entry.path, entry.isDirectory) : undefined
   const isExpanded = entry.isDirectory && expanded.has(entry.path)
@@ -104,20 +123,24 @@ function Entry({
 
   return (
     <>
-      {diffs.length === 0 ? (
-        row
-      ) : (
-        <ContextMenu>
-          <ContextMenuTrigger asChild>{row}</ContextMenuTrigger>
-          <ContextMenuContent>
-            {diffs.map((request) => (
-              <ContextMenuItem key={String(request.staged)} onSelect={() => onOpenDiff(request)}>
-                {request.staged ? 'View staged changes' : 'View changes'}
-              </ContextMenuItem>
-            ))}
-          </ContextMenuContent>
-        </ContextMenu>
-      )}
+      <ContextMenu>
+        <ContextMenuTrigger asChild>{row}</ContextMenuTrigger>
+        <ContextMenuContent onCloseAutoFocus={menu.onCloseAutoFocus}>
+          {diffs.map((request) => (
+            <ContextMenuItem key={String(request.staged)} onSelect={() => onOpenDiff(request)}>
+              {request.staged ? 'View staged changes' : 'View changes'}
+            </ContextMenuItem>
+          ))}
+          {diffs.length > 0 && <ContextMenuSeparator />}
+          <ContextMenuItem
+            onSelect={menu.after(() => actions.newFile(entry.isDirectory ? entry.path : parentPath(entry.path)))}
+          >
+            New file…
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={menu.after(() => actions.rename(entry))}>Rename…</ContextMenuItem>
+          <ContextMenuItem onSelect={menu.after(() => actions.remove(entry))}>Move to Trash</ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
       {isExpanded && (
         <Directory
           path={entry.path}
@@ -158,4 +181,24 @@ function loadExpanded(projectId: string): Set<string> {
 
 function saveExpanded(projectId: string, expanded: ReadonlySet<string>): void {
   localStorage.setItem(storageKey(projectId), JSON.stringify([...expanded]))
+}
+
+/**
+ * Defers an item's action until the menu has gone. A dialog opened sooner has
+ * its focus taken by the closing menu and given back with all its input selected.
+ */
+function useMenuActions() {
+  const pending = useRef<(() => void) | null>(null)
+  return {
+    after: (action: () => void) => () => {
+      pending.current = action
+    },
+    onCloseAutoFocus: (event: Event) => {
+      const action = pending.current
+      pending.current = null
+      if (!action) return
+      event.preventDefault()
+      action()
+    },
+  }
 }

@@ -21,6 +21,7 @@ import type { SessionSummary } from '../../shared/agent'
 import type { Project } from '../../shared/api'
 import { api } from './api'
 import { FileTree } from './FileTree'
+import { FileActionsProvider, useFileActions } from './file-actions'
 import { diffSide } from './git/DiffTab'
 import { GitStatusRow } from './git/GitStatusRow'
 import { ProjectContext } from './project-context'
@@ -81,60 +82,69 @@ export function ProjectWorkspace({ project }: { project: Project }) {
 
   return (
     <ProjectContext.Provider value={project}>
-      <Group
-        orientation="horizontal"
-        className="h-full"
-        defaultLayout={sidebarLayout.defaultLayout}
-        onLayoutChanged={sidebarLayout.onLayoutChanged}
-      >
-        <Panel
-          id="files"
-          panelRef={sidebarRef}
-          defaultSize={260}
-          minSize={160}
-          collapsible
-          groupResizeBehavior="preserve-pixel-size"
-          className="bg-chrome"
+      <FileActionsProvider workspaceRef={workspaceRef}>
+        <NewFileShortcut />
+        <Group
+          orientation="horizontal"
+          className="h-full"
+          defaultLayout={sidebarLayout.defaultLayout}
+          onLayoutChanged={sidebarLayout.onLayoutChanged}
         >
-          <div className="flex h-full flex-col">
-            <div className="min-h-0 flex-1">
-              <FileTree
-                onOpenFile={(path) => workspaceRef.current?.addTab(createFileTab(path))}
-                onOpenDiff={(request) => workspaceRef.current?.addTab(createDiffTab(request))}
-              />
+          <Panel
+            id="files"
+            panelRef={sidebarRef}
+            defaultSize={260}
+            minSize={160}
+            collapsible
+            groupResizeBehavior="preserve-pixel-size"
+            className="bg-chrome"
+          >
+            <div className="flex h-full flex-col">
+              <div className="min-h-0 flex-1">
+                <FileTree
+                  onOpenFile={(path) => workspaceRef.current?.addTab(createFileTab(path))}
+                  onOpenDiff={(request) => workspaceRef.current?.addTab(createDiffTab(request))}
+                />
+              </div>
+              <ProcessList onOpen={(process) => workspaceRef.current?.addTab(createProcessTab(process))} />
+              <GitStatusRow onOpen={() => workspaceRef.current?.addTab(createGitTab())} />
             </div>
-            <ProcessList onOpen={(process) => workspaceRef.current?.addTab(createProcessTab(process))} />
-            <GitStatusRow onOpen={() => workspaceRef.current?.addTab(createGitTab())} />
-          </div>
-        </Panel>
-        {renderSeparator()}
-        <Panel id="tabs">
-          <Workspace<TabData>
-            className="h-full"
-            classNames={classNames}
-            defaultModel={model}
-            workspaceRef={workspaceRef}
-            onModelChanged={(changed) => {
-              void api.saveLayout(project.id, changed)
-              // Closing a tab releases what it runs. Unmounting isn't the signal,
-              // since switching projects unmounts every tab.
-              const tabs = tabsIn(changed)
-              for (const [id, data] of openTabs.current) {
-                if (!tabs.has(id)) release(project.id, id, data)
-              }
-              openTabs.current = tabs
-            }}
-            renderTabContent={renderTabContent}
-            renderTab={renderTab}
-            renderTabsetToolbar={renderToolbar}
-            renderSeparator={renderSeparator}
-            renderEmptyTabset={renderEmpty}
-            tabRemovalSelectionBehavior="recent"
-          />
-        </Panel>
-      </Group>
+          </Panel>
+          {renderSeparator()}
+          <Panel id="tabs">
+            <Workspace<TabData>
+              className="h-full"
+              classNames={classNames}
+              defaultModel={model}
+              workspaceRef={workspaceRef}
+              onModelChanged={(changed) => {
+                void api.saveLayout(project.id, changed)
+                // Closing a tab releases what it runs. Unmounting isn't the signal,
+                // since switching projects unmounts every tab.
+                const tabs = tabsIn(changed)
+                for (const [id, data] of openTabs.current) {
+                  if (!tabs.has(id)) release(project.id, id, data)
+                }
+                openTabs.current = tabs
+              }}
+              renderTabContent={renderTabContent}
+              renderTab={renderTab}
+              renderTabsetToolbar={renderToolbar}
+              renderSeparator={renderSeparator}
+              renderEmptyTabset={renderEmpty}
+              tabRemovalSelectionBehavior="recent"
+            />
+          </Panel>
+        </Group>
+      </FileActionsProvider>
     </ProjectContext.Provider>
   )
+}
+
+function NewFileShortcut() {
+  const actions = useFileActions()
+  useShortcut('n', () => actions.newFile(''))
+  return null
 }
 
 function tabsIn(model: WorkspaceModel<TabData>): Map<string, TabData> {

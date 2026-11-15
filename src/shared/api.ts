@@ -77,8 +77,16 @@ export type Api = {
 
   listDirectory(projectId: string, path: string): Promise<DirectoryEntry[]>
   readFile(projectId: string, path: string): Promise<FileContent>
-  /** Overwrites the file; `missing` if it no longer exists, since the IDE never creates files. */
+  /** Overwrites the file; `missing` if it no longer exists, since saving never creates files. */
   writeFile(projectId: string, path: string, text: string, expected?: string): Promise<WriteResult>
+  /** Creates an empty file and any directories it needs; fails if it exists. */
+  createFile(projectId: string, path: string): Promise<void>
+  /** Creates an empty file in `.scratch/`, named for the time, and returns its path. */
+  createScratchFile(projectId: string, extension: string): Promise<string>
+  /** Moves a file or directory, and the SQL connections of the files it moves; fails if the target exists. */
+  renameFile(projectId: string, from: string, to: string): Promise<void>
+  /** Moves a file or directory to the trash. */
+  deleteFile(projectId: string, path: string): Promise<void>
   /** Every file in the project that git doesn't ignore, as relative paths. */
   listProjectFiles(projectId: string): Promise<string[]>
 
@@ -157,6 +165,10 @@ const apiMethodSet: Record<keyof Api, true> = {
   listDirectory: true,
   readFile: true,
   writeFile: true,
+  createFile: true,
+  createScratchFile: true,
+  renameFile: true,
+  deleteFile: true,
   listProjectFiles: true,
   attachTerminal: true,
   detachTerminal: true,
