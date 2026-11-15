@@ -92,7 +92,6 @@ test('serializes writes through canonical aliases and rejects stale saves', asyn
     files.writeFile('p', 'file.txt', 'a'.repeat(100000)),
     files.writeFile('p', 'alias.txt', 'last'),
   ])
-  await files.drain()
   expect(await readFile(join(root, 'file.txt'), 'utf8')).toBe('last')
   await expect(files.writeFile('p', 'file.txt', 'stale', 'original')).rejects.toThrow('changed on disk')
   expect(await readFile(join(root, 'file.txt'), 'utf8')).toBe('last')

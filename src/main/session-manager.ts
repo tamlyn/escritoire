@@ -18,6 +18,9 @@ import type { Events } from '../shared/api'
 import type { AgentAdapter, AgentRun } from './agents/types'
 import type { IdeServerConnection } from './ide-server'
 import type { SessionRecord, SessionStore } from './session-store'
+import { Work } from './work'
+
+type ProjectWork = { work: Work; loading: Map<string, Promise<Session>> }
 
 type Session = {
   projectId: string
@@ -52,16 +55,9 @@ const titleLength = 60
  */
 export class SessionManager {
   private readonly sessions = new Map<string, Session>()
-  private readonly generations = new Map<string, number>()
-  private readonly pending = new Set<Promise<void>>()
-
-  async drain(): Promise<void> {
-    while (this.pending.size) await Promise.all([...this.pending])
-    await Promise.all([...this.sessions.values()].map((session) =>
-      this.deps.store.put(session.projectId, session.pointer.agentSessionId, session.record)))
-  }
-
-  private readonly loading = new Map<string, Promise<Session>>()
+  /** Projects with sessions loading or loaded, until they close. */
+  private readonly projects = new Map<string, ProjectWork>()
+  private closed = false
   private readonly now: () => number
 
   constructor(private readonly deps: SessionManagerDeps) {
@@ -97,13 +93,15 @@ export class SessionManager {
     return lists.flatMap((r) => r.status === 'fulfilled' ? r.value : []).sort((a, b) => b.lastActiveAt - a.lastActiveAt)
   }
 
-  async createSession(projectId: string, agent: AgentKind): Promise<SessionPointer> {
-    const agentSessionId = await this.adapter(agent).createSession(
-      this.deps.projectPath(projectId),
-      this.deps.ideConnection?.(projectId),
-    )
-    await this.deps.store.put(projectId, agentSessionId, newRecord(agent))
-    return { agent, agentSessionId }
+  createSession(projectId: string, agent: AgentKind): Promise<SessionPointer> {
+    return this.project(projectId).work.run(async () => {
+      const agentSessionId = await this.adapter(agent).createSession(
+        this.deps.projectPath(projectId),
+        this.deps.ideConnection?.(projectId),
+      )
+      await this.deps.store.put(projectId, agentSessionId, newRecord(agent))
+      return { agent, agentSessionId }
+    })
   }
 
   async openSession(projectId: string, pointer: SessionPointer): Promise<OpenedSession> {
@@ -202,18 +200,24 @@ export class SessionManager {
     this.broadcastSummaries()
   }
 
-  closeProject(projectId: string): void {
-    this.generations.set(projectId, (this.generations.get(projectId) ?? 0) + 1)
-    for (const session of this.sessions.values()) {
-      if (session.projectId === projectId) this.closeSession(session.pointer)
-    }
+  /** Stops the project's agents, cancels its loads and waits for its saves. */
+  async closeProject(projectId: string): Promise<void> {
+    const project = this.projects.get(projectId)
+    this.projects.delete(projectId)
+    const closing = [...this.sessions.values()].filter((session) => session.projectId === projectId)
+    for (const session of closing) this.closeSession(session.pointer)
+    await project?.work.close()
+    // Saved once more in case an earlier save failed.
+    await Promise.all(closing.map((session) =>
+      this.deps.store.put(session.projectId, session.pointer.agentSessionId, session.record)))
   }
 
-  closeAll(): void {
-    for (const [projectId, generation] of this.generations) this.generations.set(projectId, generation + 1)
-    for (const session of this.sessions.values()) session.run?.close()
-    this.sessions.clear()
+  async close(): Promise<void> {
+    this.closed = true
+    const results = await Promise.allSettled([...this.projects.keys()].map((projectId) => this.closeProject(projectId)))
     for (const adapter of Object.values(this.deps.adapters)) adapter.dispose?.()
+    const failure = results.find((result) => result.status === 'rejected')
+    if (failure) throw failure.reason
   }
 
   private apply(session: Session, event: AgentEvent): void {
@@ -261,18 +265,18 @@ export class SessionManager {
     const id = pointer.agentSessionId
     const existing = this.sessions.get(id)
     if (existing) return existing
-    const loadingKey = `${projectId}:${this.generations.get(projectId) ?? 0}:${id}`
-    let loading = this.loading.get(loadingKey)
+    const project = this.project(projectId)
+    let loading = project.loading.get(id)
     if (!loading) {
-      loading = this.loadUncached(projectId, pointer).finally(() => this.loading.delete(loadingKey))
-      this.loading.set(loadingKey, loading)
+      loading = project.work
+        .run((signal) => this.loadUncached(projectId, pointer, signal))
+        .finally(() => project.loading.delete(id))
+      project.loading.set(id, loading)
     }
     return loading
   }
 
-  private async loadUncached(projectId: string, pointer: SessionPointer): Promise<Session> {
-    const generation = this.generations.get(projectId) ?? 0
-    this.generations.set(projectId, generation)
+  private async loadUncached(projectId: string, pointer: SessionPointer, signal: AbortSignal): Promise<Session> {
     const cwd = this.deps.projectPath(projectId)
     const record =
       (await this.deps.store.get(projectId, pointer.agentSessionId)) ?? newRecord(pointer.agent)
@@ -299,9 +303,19 @@ export class SessionManager {
       subscribed: false,
       visible: false,
     }
-    if ((this.generations.get(projectId) ?? 0) !== generation) throw new Error("Project closed while loading session")
+    signal.throwIfAborted()
     this.sessions.set(pointer.agentSessionId, session)
     return session
+  }
+
+  private project(projectId: string): ProjectWork {
+    if (this.closed) throw new Error('Closed')
+    let project = this.projects.get(projectId)
+    if (!project) {
+      project = { work: new Work(), loading: new Map() }
+      this.projects.set(projectId, project)
+    }
+    return project
   }
 
   private get(pointer: SessionPointer): Session {
@@ -311,12 +325,14 @@ export class SessionManager {
   }
 
   private save(session: Session): void {
-    const write = this.deps.store.put(session.projectId, session.pointer.agentSessionId, session.record)
-    this.pending.add(write)
-    void write.then(() => this.pending.delete(write), (error) => {
-      this.pending.delete(write)
-      this.apply(session, { type: 'itemUpserted', item: { kind: 'notice', id: 'persistence-error', level: 'error', text: `Couldn't save session: ${errorText(error)}` } })
-    })
+    // A closed project's sessions were saved as it closed, and its agents' late events don't matter.
+    const project = this.projects.get(session.projectId)
+    if (!project) return
+    project.work
+      .run(() => this.deps.store.put(session.projectId, session.pointer.agentSessionId, session.record))
+      .catch((error: unknown) => {
+        this.apply(session, { type: 'itemUpserted', item: { kind: 'notice', id: 'persistence-error', level: 'error', text: `Couldn't save session: ${errorText(error)}` } })
+      })
   }
 
   private broadcastSummaries(): void {

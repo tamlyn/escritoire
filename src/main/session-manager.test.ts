@@ -217,10 +217,11 @@ it('does not insert a session whose project closed during history loading', asyn
   }
   const manager = new SessionManager({ adapters: { claude: adapter }, store: new SessionStore(dataDir), projectPath: () => '/work', send: () => {} })
   const opened = manager.openSession('p', { agent: 'claude', agentSessionId: 'late' })
-  const rejected = expect(opened).rejects.toThrow('Project closed')
+  const rejected = expect(opened).rejects.toThrow('Closed')
   await loading
-  manager.closeProject('p')
+  const closing = manager.closeProject('p')
   finish()
   await rejected
+  await closing
   expect(manager.summaries()).toEqual([])
 })

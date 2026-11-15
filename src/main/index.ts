@@ -1,4 +1,3 @@
-import { drainPersistence } from './json-file'
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme } from 'electron'
 import { type Api, apiMethods, type Events } from '../shared/api'
@@ -27,6 +26,7 @@ import { SessionStore } from './session-store'
 import { loadShellEnv } from './shell-env'
 import { Supervisor } from './supervisor'
 import { Terminals } from './terminals'
+import { Work } from './work'
 
 type Services = {
   projects: ProjectStore
@@ -43,13 +43,12 @@ function createApi({ projects, sessions, sessionStore, files, terminals, supervi
     openProject: (path) => projects.openProject(path),
     activateProject: (id) => projects.activateProject(id),
     closeProject: async (id) => {
-      sessions.closeProject(id)
-      // Failing to save scrollback mustn't stop the project closing.
-      logFailures(await Promise.allSettled([terminals.closeProject(id), supervisor.closeProject(id)]))
+      // Failing to save sessions or scrollback mustn't stop the project closing.
+      logFailures(await Promise.allSettled([sessions.closeProject(id), terminals.closeProject(id), supervisor.closeProject(id)]))
       return projects.closeProject(id)
     },
     removeProject: async (id) => {
-      sessions.closeProject(id)
+      await sessions.closeProject(id).catch(console.error)
       await Promise.all([sessionStore.deleteProject(id), terminals.deleteProject(id), supervisor.closeProject(id)])
       return projects.removeProject(id)
     },
@@ -106,10 +105,10 @@ function logFailures(results: PromiseSettledResult<unknown>[]): void {
   for (const result of results) if (result.status === 'rejected') console.error(result.reason)
 }
 
-function registerApi(api: Api): void {
+function registerApi(api: Api, work: Work): void {
   for (const method of apiMethods) {
     const handler = api[method] as (...args: unknown[]) => Promise<unknown>
-    ipcMain.handle(method, (_event, ...args) => handler(...args))
+    ipcMain.handle(method, (_event, ...args) => work.run(() => handler(...args)))
   }
 }
 
@@ -215,6 +214,7 @@ void app.whenReady().then(async () => {
     gitWatcher.watch(projectId)
   })
 
+  const ipc = new Work()
   let shuttingDown = false
   app.on('before-quit', (event) => {
     if (allowClose) return
@@ -225,23 +225,27 @@ void app.whenReady().then(async () => {
       try {
         await Promise.all(BrowserWindow.getAllWindows().map((window) =>
           window.webContents.executeJavaScript('window.flushEdits()')))
-        await files.drain()
-        await sessions.drain()
-        await drainPersistence()
-        sessions.closeAll()
-        logFailures(await Promise.allSettled([files.unwatch(), gitWatcher.unwatch(), terminals.closeAll(), supervisor.closeAll(), ideServer.close()]))
-        await sessions.drain()
-        await drainPersistence()
-        allowClose = true
-        app.quit()
       } catch (error) {
+        // Unsaved edits are still in the editor, so the user can copy them before quitting again.
         shuttingDown = false
         await Promise.allSettled(BrowserWindow.getAllWindows().map((window) =>
           window.webContents.executeJavaScript('document.body.inert = false')))
         dialog.showErrorBox("Couldn't save before quitting", String(error))
+        return
       }
+      // In dependency order: the renderer starts work for everything, agents call
+      // the IDE server, and the IDE server starts processes.
+      await ipc.close()
+      const sessionsClosed = await Promise.allSettled([sessions.close()])
+      await ideServer.close()
+      logFailures(await Promise.allSettled([files.unwatch(), gitWatcher.unwatch(), terminals.closeAll(), supervisor.closeAll()]))
+      if (sessionsClosed[0].status === 'rejected') {
+        dialog.showErrorBox("Couldn't save sessions before quitting", String(sessionsClosed[0].reason))
+      }
+      allowClose = true
+      app.quit()
     })()
   })
-  registerApi(createApi({ projects, sessions, sessionStore, files, terminals, supervisor }))
+  registerApi(createApi({ projects, sessions, sessionStore, files, terminals, supervisor }), ipc)
   createWindow()
 })

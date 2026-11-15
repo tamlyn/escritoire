@@ -30,10 +30,6 @@ export class ProjectFiles {
   private resolving: Promise<void> = Promise.resolve()
   private readonly writes = new Map<string, Promise<WriteResult>>()
 
-  async drain(): Promise<void> {
-    while (this.writes.size) await Promise.all([...this.writes.values()])
-  }
-
   constructor(private readonly options: Options) {}
 
   async listDirectory(projectId: string, path: string): Promise<DirectoryEntry[]> {

@@ -19,32 +19,23 @@ export async function readJson(path: string): Promise<unknown> {
  */
 export function writeJson(path: string, value: unknown): Promise<void> {
   const serialized = JSON.stringify(value, null, 2)
-  const previous = pendingWrites.get(path) ?? Promise.resolve()
-  const write = previous
-    .catch(() => {})
-    .then(async () => {
-      await mkdir(dirname(path), { recursive: true })
-      const temporaryPath = `${path}.${randomUUID()}.tmp`
-      await writeFile(temporaryPath, serialized)
-      await rename(temporaryPath, path)
-    })
-  pendingWrites.set(path, write)
-  const cleanup = () => { if (pendingWrites.get(path) === write) pendingWrites.delete(path) }
-  void write.then(cleanup, cleanup)
-  return write
+  return queue(path, async () => {
+    await mkdir(dirname(path), { recursive: true })
+    const temporaryPath = `${path}.${randomUUID()}.tmp`
+    await writeFile(temporaryPath, serialized)
+    await rename(temporaryPath, path)
+  })
 }
 
 export function deleteJson(path: string): Promise<void> {
-  const previous = pendingWrites.get(path) ?? Promise.resolve()
-  const deletion = previous.catch(() => {}).then(() => rm(path, { force: true }))
-  pendingWrites.set(path, deletion)
-  return deletion
+  return queue(path, () => rm(path, { force: true }))
 }
 
-export async function drainPersistence(): Promise<void> {
-  while (pendingWrites.size) {
-    const writes = [...pendingWrites.entries()]
-    await Promise.all(writes.map(([, write]) => write))
-    for (const [path, write] of writes) if (pendingWrites.get(path) === write) pendingWrites.delete(path)
-  }
+function queue(path: string, change: () => Promise<void>): Promise<void> {
+  const previous = pendingWrites.get(path) ?? Promise.resolve()
+  const queued = previous.catch(() => {}).then(change)
+  pendingWrites.set(path, queued)
+  const cleanup = () => { if (pendingWrites.get(path) === queued) pendingWrites.delete(path) }
+  void queued.then(cleanup, cleanup)
+  return queued
 }

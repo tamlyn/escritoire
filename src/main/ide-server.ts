@@ -9,8 +9,11 @@ export type IdeServerConnection = { url: string; headers: Record<string, string>
 
 /**
  * The IDE's MCP server, which every session the IDE launches is given. It
- * listens on loopback only and requires a token that changes on every launch;
- * each project has its own URL, so tools only ever see that project.
+ * listens on loopback only and requires a token that changes on every launch.
+ * Each project has its own URL so its tools act on that project, but the token
+ * is shared: the URL routes, it doesn't authorise. Agents run as the user and
+ * can reach every project directly anyway, so per-project tokens wouldn't
+ * isolate anything until agents are sandboxed.
  */
 export class IdeServer {
   private readonly token = randomBytes(32).toString('base64url')
