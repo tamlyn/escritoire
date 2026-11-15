@@ -66,16 +66,16 @@ export class ConnectionStore {
   }
 
   private async change(projectId: string, update: (state: ProjectConnections) => void): Promise<ProjectConnections> {
-    const next = this.get(projectId).then((state) => {
+    const next = this.get(projectId).then(async (state) => {
       update(state)
+      await writeJson(this.path(projectId), state)
       return state
     })
-    // Later changes build on this one even before it has been written.
+    // Later changes build on this one, so they're written in order. If it fails,
+    // the next read goes back to what is on disk.
     this.cache.set(projectId, next)
     next.catch(() => this.cache.delete(projectId))
-    const state = await next
-    await writeJson(this.path(projectId), state)
-    return structuredClone(state)
+    return structuredClone(await next)
   }
 
   private path(projectId: string): string {

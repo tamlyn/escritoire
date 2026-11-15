@@ -11,10 +11,14 @@ test('anything else is a path in the project', () => {
   expect(newFileTarget('docs//notes/./auth.md')).toEqual({ kind: 'path', path: 'docs/notes/auth.md' })
   expect(newFileTarget('./.env')).toEqual({ kind: 'path', path: '.env' })
   expect(newFileTarget('config/.env')).toEqual({ kind: 'path', path: 'config/.env' })
+  expect(newFileTarget('src/../notes.md')).toEqual({ kind: 'path', path: 'notes.md' })
 })
 
-test('a directory or nothing is not a file', () => {
+test('a directory, nothing or a path outside the project is not a file', () => {
   expect(newFileTarget('')).toBeNull()
   expect(newFileTarget('docs/')).toBeNull()
   expect(normalizePath('./')).toBeNull()
+  expect(normalizePath('src/..')).toBeNull()
+  expect(normalizePath('../notes.md')).toBeNull()
+  expect(normalizePath('src/../../notes.md')).toBeNull()
 })

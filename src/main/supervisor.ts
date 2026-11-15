@@ -9,13 +9,16 @@ import { notice, PtyScreen } from './screen'
 import { taskCommand } from './tasks'
 
 const stopGraceMs = 5000
-const defaultPortScanMs = 2000
+const defaultPortScanMs = 1000
+/** Scans back off by doubling, stopping after the one this many times the first delay. */
+const portScanBackoff = 16
 const defaultSize: ScreenSize = { cols: 120, rows: 30 }
 
 type SupervisorOptions = {
   projectPath: (projectId: string) => string
   send: (output: ScreenOutput) => void
   onChanged: (processes: ProcessInfo[]) => void
+  /** The first delay before scanning for ports. */
   portScanMs?: number
 }
 
@@ -30,6 +33,9 @@ export type ProcessError = LogError & { processId: string; command: string }
 export class Supervisor {
   private readonly processes = new Map<string, SupervisedProcess>()
   private portScan: NodeJS.Timeout | null = null
+  private portScanning = false
+  /** `null` once a series of scans has ended. */
+  private portScanDelay: number | null = null
 
   constructor(private readonly options: SupervisorOptions) {}
 
@@ -51,11 +57,15 @@ export class Supervisor {
         absoluteCwd,
         (data, seq) => this.options.send({ screenId: id, data, seq }),
         () => this.changed(),
+        () => this.scanPortsSoon(false),
       )
       this.processes.set(id, supervised)
     }
     if (task) supervised.info.task = task
-    if (!alreadyRunning) supervised.start()
+    if (!alreadyRunning) {
+      supervised.start()
+      this.scanPortsSoon(true)
+    }
     this.changed()
     return { process: { ...supervised.info }, alreadyRunning }
   }
@@ -67,7 +77,10 @@ export class Supervisor {
   async restart(projectId: string, id: string): Promise<ProcessInfo> {
     const supervised = this.get(projectId, id)
     await supervised.stop()
-    if (!supervised.running) supervised.start()
+    if (!supervised.running) {
+      supervised.start()
+      this.scanPortsSoon(true)
+    }
     this.changed()
     return { ...supervised.info }
   }
@@ -127,6 +140,7 @@ export class Supervisor {
     const projectIds = new Set([...this.processes.values()].map((p) => p.info.projectId))
     await Promise.all([...projectIds].map((projectId) => this.closeProject(projectId)))
     if (this.portScan) clearTimeout(this.portScan)
+    this.portScanDelay = null
   }
 
   private get(projectId: string, id: string): SupervisedProcess {
@@ -156,27 +170,54 @@ export class Supervisor {
   }
 
   private changed(): void {
-    this.scheduleScan()
     this.options.onChanged(this.list())
   }
 
-  /** Polls for ports while anything runs: no OS notifies us when a process starts listening. */
-  private scheduleScan(): void {
-    const running = () => [...this.processes.values()].filter((p) => p.running)
-    if (this.portScan || running().length === 0) return
-    this.portScan = setTimeout(async () => {
-      try {
-        const [sockets, children] = await Promise.all([listeningSockets(), processChildren()])
-        const updates = await Promise.all(running().map((p) => p.updatePorts(sockets, children)))
-        this.portScan = null
-        if (updates.includes(true)) this.changed()
-        else this.scheduleScan()
-      } catch {
-        this.portScan = null
-        this.scheduleScan()
-      }
-    }, this.options.portScanMs ?? defaultPortScanMs)
+  /**
+   * No OS says when a process starts listening, so ports are polled. Scanning
+   * every process tree is costly, so it backs off and stops, starting again
+   * after a process starts or prints something: servers usually listen soon
+   * after starting, and say so when they do. `restart` begins a series afresh
+   * rather than leaving one under way to finish.
+   */
+  private scanPortsSoon(restart: boolean): void {
+    if (this.portScanDelay !== null && !restart) return
+    this.portScanDelay = this.options.portScanMs ?? defaultPortScanMs
+    if (!this.portScanning) this.waitToScanPorts()
+  }
+
+  private waitToScanPorts(): void {
+    if (this.portScan) clearTimeout(this.portScan)
+    this.portScan = null
+    const first = this.options.portScanMs ?? defaultPortScanMs
+    if (this.portScanDelay === null || this.portScanDelay > first * portScanBackoff || !this.running().length) {
+      this.portScanDelay = null
+      return
+    }
+    this.portScan = setTimeout(() => void this.scanPorts(), this.portScanDelay)
     this.portScan.unref()
+  }
+
+  private async scanPorts(): Promise<void> {
+    this.portScan = null
+    this.portScanning = true
+    let changed = false
+    try {
+      const [sockets, children] = await Promise.all([listeningSockets(), processChildren()])
+      changed = (await Promise.all(this.running().map((p) => p.updatePorts(sockets, children)))).includes(true)
+    } catch (error) {
+      console.error('Scanning for ports failed:', error)
+    }
+    this.portScanning = false
+    if (this.portScanDelay === null) return
+    // A server may open its ports one after another.
+    this.portScanDelay = changed ? (this.options.portScanMs ?? defaultPortScanMs) : this.portScanDelay * 2
+    if (changed) this.changed()
+    this.waitToScanPorts()
+  }
+
+  private running(): SupervisedProcess[] {
+    return [...this.processes.values()].filter((p) => p.running)
   }
 }
 
@@ -204,6 +245,7 @@ class SupervisedProcess {
     private readonly absoluteCwd: string,
     onOutput: (data: string, seq: number) => void,
     private readonly onChanged: () => void,
+    private readonly onActivity: () => void,
   ) {
     this.screen = new PtyScreen(defaultSize, onOutput)
   }
@@ -217,8 +259,15 @@ class SupervisedProcess {
     Object.assign(this.info, { status: 'running', exitCode: null, startedAt: Date.now(), endedAt: null })
     this.stopRequested = false
     try {
-      this.pid = this.screen.spawn('/bin/sh', ['-c', this.info.command], this.absoluteCwd, (data) => this.log.append(data), (exit) =>
-        this.exited(exit.exitCode, exit.signal),
+      this.pid = this.screen.spawn(
+        '/bin/sh',
+        ['-c', this.info.command],
+        this.absoluteCwd,
+        (data) => {
+          this.log.append(data)
+          this.onActivity()
+        },
+        (exit) => this.exited(exit.exitCode, exit.signal),
       )
     } catch (error) {
       Object.assign(this.info, { status: 'failed', endedAt: Date.now() })

@@ -2,6 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { DatabaseSync } from 'node:sqlite'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import pg from 'pg'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import type { Connection } from '../../shared/sql'
 import { Databases } from './databases'
@@ -98,6 +99,14 @@ describe('SQLite', () => {
     await databases.closeProject('p')
     expect((await run(["select count(*) from t where name = 'pending'"]))[0]).toMatchObject({ rows: [['0']] })
   })
+
+  test('closing stops a running query', async () => {
+    const forever = 'with recursive n(i) as (select 1 union all select i + 1 from n) select count(*) from n'
+    const running = run([forever])
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    await databases.closeAll()
+    expect(await running).toMatchObject([{ kind: 'error' }])
+  })
 })
 
 const pgUrl = process.env.ESCRITOIRE_TEST_PG_URL
@@ -138,6 +147,21 @@ describe.skipIf(!pgUrl)('Postgres', () => {
     expect(await running).toMatchObject([{ kind: 'error', message: expect.stringContaining('cancel') }])
     expect(await run(['select count(*) from kept'], 'pg')).toMatchObject([{ kind: 'rows', rows: [['0']] }])
   })
+
+  test('closing stops a running query on the server too', async () => {
+    const running = run(['select pg_sleep(30) -- closing'], 'pg')
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    await databases.closeAll()
+    expect(await running).toMatchObject([{ kind: 'error' }])
+    const client = new pg.Client({ connectionString: pgUrl })
+    await client.connect()
+    try {
+      const activity = await client.query("select 1 from pg_stat_activity where query like '%-- closing' and pid <> pg_backend_pid()")
+      expect(activity.rowCount).toBe(0)
+    } finally {
+      await client.end()
+    }
+  }, 5000)
 
   test('a connection failure is a result, and the next run tries again', async () => {
     connections.bad = { id: 'bad', name: 'Bad', type: 'postgres', url: 'postgres://nobody@127.0.0.1:1/none' }

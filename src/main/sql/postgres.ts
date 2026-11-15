@@ -16,6 +16,16 @@ export async function openPostgres(url: string, onLost: OnLost): Promise<Databas
   await client.connect()
   const pid = (await client.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid
   let running = false
+  const cancel = async () => {
+    if (!running) return
+    const canceller = newClient(url)
+    await canceller.connect()
+    try {
+      await canceller.query('select pg_cancel_backend($1)', [pid])
+    } finally {
+      await canceller.end()
+    }
+  }
 
   return {
     run: async (sql) => {
@@ -26,17 +36,12 @@ export async function openPostgres(url: string, onLost: OnLost): Promise<Databas
         running = false
       }
     },
-    cancel: async () => {
-      if (!running) return
-      const canceller = newClient(url)
-      await canceller.connect()
-      try {
-        await canceller.query('select pg_cancel_backend($1)', [pid])
-      } finally {
-        await canceller.end()
-      }
+    cancel,
+    close: async () => {
+      // The server only reads the request to disconnect between queries.
+      await cancel().catch(() => {})
+      await client.end()
     },
-    close: () => client.end(),
   }
 }
 

@@ -28,24 +28,24 @@ export function pgpassKey(url: string): PgpassKey {
 }
 
 /**
- * Moves a password in a Postgres URL, as `user:password@` or `?password=`, to
- * the file, and returns the URL without it.
+ * Takes a password out of a Postgres URL, as `user:password@` or `?password=`.
+ * `save` puts it in the file, once whatever uses the URL has accepted it.
  */
-export async function movePasswordToPgpass(url: string, path = pgpassPath()): Promise<string> {
+export function separatePassword(url: string, path = pgpassPath()): { url: string; save: () => Promise<void> } {
+  const none = { url, save: async () => {} }
   let parsed: URL
   try {
     parsed = new URL(url)
   } catch {
-    return url
+    return none
   }
-  if (parsed.protocol !== 'postgres:' && parsed.protocol !== 'postgresql:') return url
+  if (parsed.protocol !== 'postgres:' && parsed.protocol !== 'postgresql:') return none
   const password = parsed.password ? decodeURIComponent(parsed.password) : parsed.searchParams.get('password')
-  if (!password) return url
+  if (!password) return none
   parsed.password = ''
   parsed.searchParams.delete('password')
   const stripped = parsed.toString()
-  await savePassword(pgpassKey(stripped), password, path)
-  return stripped
+  return { url: stripped, save: () => savePassword(pgpassKey(stripped), password, path) }
 }
 
 /** As libpq does: `PGPASSWORD`, else the first matching line of the file. */

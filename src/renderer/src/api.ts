@@ -9,9 +9,12 @@ declare global {
 }
 
 const pending = new Set<Promise<unknown>>()
+// A query can run for hours, and quitting closes its connection anyway.
+const unflushed = new Set<string>(['runSql'])
 export const flushers = new Set<() => Promise<void>>()
 export const api = Object.fromEntries(Object.entries(window.api).map(([name, method]) => [name, (...args: unknown[]) => {
   const call = (method as (...args: unknown[]) => Promise<unknown>)(...args)
+  if (unflushed.has(name)) return call
   pending.add(call)
   const cleanup = () => { pending.delete(call) }
   void call.then(cleanup, cleanup)

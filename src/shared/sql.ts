@@ -90,7 +90,9 @@ export function splitStatements(text: string): StatementRange[] {
     } else if (char === '/' && next === '*') {
       i = blockCommentEnd(text, i)
     } else if (char === "'" || char === '"' || char === '`') {
-      const end = quoteEnd(text, i, char)
+      // In a Postgres escape string, E'…', a backslash escapes a quote too.
+      const escapeString = char === "'" && /[Ee]/.test(text[i - 1] ?? '') && !isIdentifierChar(text[i - 2])
+      const end = quoteEnd(text, i, char, escapeString)
       code(i, end)
       i = end
     } else if (char === '$' && !isIdentifierChar(text[i - 1])) {
@@ -127,10 +129,12 @@ export function statementsToRun(text: string, from: number, to: number): Stateme
   return chosen ? [chosen] : []
 }
 
-function quoteEnd(text: string, start: number, quote: string): number {
+function quoteEnd(text: string, start: number, quote: string, backslashEscapes: boolean): number {
   let i = start + 1
   while (i < text.length) {
-    if (text[i] === quote) {
+    if (backslashEscapes && text[i] === '\\') {
+      i += 2
+    } else if (text[i] === quote) {
       // A doubled quote is an escaped one.
       if (text[i + 1] === quote) i += 2
       else return i + 1

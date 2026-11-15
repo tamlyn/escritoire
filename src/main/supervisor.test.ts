@@ -85,6 +85,15 @@ test("shows the ports a process's tree listens on, with a URL for HTTP", async (
   expect(supervisor.list('p')[0]?.ports).toEqual([])
 })
 
+test('scans for ports again when a process prints, after scanning has backed off', async () => {
+  // Scans at 20, 40, 80, 160 and 320ms, so they've ended before the server listens.
+  supervisor = new Supervisor({ projectPath: () => root, send: () => {}, onChanged: () => {}, portScanMs: 20 })
+  const server = `setTimeout(() => require('node:net').createServer().listen(0, '127.0.0.1', () => console.log('listening')), 1500)`
+  await writeFile(join(root, 'late.js'), server)
+  await supervisor.start('p', { command: `"${globalThis.process.execPath}" late.js` })
+  await vi.waitFor(() => expect(supervisor.list('p')[0]?.ports).toHaveLength(1), { timeout: 5000 })
+})
+
 test('stop ends the whole process group', async () => {
   const { process: info } = await supervisor.start('p', { command: 'sleep 300 & echo "child $!"; wait' })
   const pid = await vi.waitFor(() => {

@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import type { Connection, ProjectConnections, StatementResult } from '../../shared/sql'
-import { api } from './api'
+import { api, errorMessage } from './api'
 
 /** The latest run of a SQL file. `results` grows to match `statements` unless it stops early. */
 export type SqlRun = {
@@ -65,7 +65,7 @@ export async function runSql(projectId: string, path: string, connectionId: stri
   try {
     results = await api.runSql(projectId, connectionId, run.runId, statements)
   } catch (error) {
-    results = [{ kind: 'error', message: error instanceof Error ? error.message : String(error) }]
+    results = [{ kind: 'error', message: errorMessage(error) }]
   }
   // A newer run replaces this one, even while this one is still finishing.
   if (runs.get(key)?.runId !== run.runId) return

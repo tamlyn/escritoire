@@ -27,7 +27,7 @@ import { loadShellEnv } from './shell-env'
 import { Supervisor } from './supervisor'
 import { ConnectionStore } from './sql/connection-store'
 import { Databases } from './sql/databases'
-import { movePasswordToPgpass } from './sql/pgpass'
+import { separatePassword } from './sql/pgpass'
 import { Terminals } from './terminals'
 import { Work } from './work'
 
@@ -92,7 +92,8 @@ function createApi({ projects, sessions, sessionStore, files, terminals, supervi
     createScratchFile: (projectId, extension) => files.createScratchFile(projectId, extension),
     renameFile: async (projectId, from, to) => {
       await files.rename(projectId, from, to)
-      await connections.moveFiles(projects.getProject(projectId).id, from, to)
+      // The file has moved, so the rename succeeded even if its SQL connection is forgotten.
+      await connections.moveFiles(projects.getProject(projectId).id, from, to).catch(console.error)
     },
     deleteFile: (projectId, path) => files.delete(projectId, path),
     listProjectFiles: async (projectId) =>
@@ -123,8 +124,10 @@ function createApi({ projects, sessions, sessionStore, files, terminals, supervi
     pushGit: (projectId) => gitPush(projects.getProject(projectId).path),
     listConnections: (projectId) => connections.get(projects.getProject(projectId).id),
     saveConnection: async (projectId, connection) => {
-      if (connection.type === 'postgres') connection = { ...connection, url: await movePasswordToPgpass(connection.url) }
+      const password = connection.type === 'postgres' ? separatePassword(connection.url) : undefined
+      if (connection.type === 'postgres' && password) connection = { ...connection, url: password.url }
       const saved = await connections.save(projects.getProject(projectId).id, connection)
+      await password?.save()
       await databases.closeConnection(projectId, connection.id)
       return saved
     },
@@ -282,12 +285,14 @@ void app.whenReady().then(async () => {
         dialog.showErrorBox("Couldn't save before quitting", String(error))
         return
       }
+      // Closing the databases first stops any query, which the IPC call running it would otherwise wait for.
+      const databasesClosed = await Promise.allSettled([databases.closeAll()])
       // In dependency order: the renderer starts work for everything, agents call
       // the IDE server, and the IDE server starts processes.
       await ipc.close()
       const sessionsClosed = await Promise.allSettled([sessions.close()])
       await ideServer.close()
-      logFailures(await Promise.allSettled([files.unwatch(), gitWatcher.unwatch(), terminals.closeAll(), supervisor.closeAll(), databases.closeAll()]))
+      logFailures([...databasesClosed, ...(await Promise.allSettled([files.unwatch(), gitWatcher.unwatch(), terminals.closeAll(), supervisor.closeAll()]))])
       if (sessionsClosed[0].status === 'rejected') {
         dialog.showErrorBox("Couldn't save sessions before quitting", String(sessionsClosed[0].reason))
       }

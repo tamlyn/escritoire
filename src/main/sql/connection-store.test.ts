@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { chmod, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test } from 'vitest'
@@ -30,6 +30,18 @@ test('saves connections and file choices across restarts', async () => {
     files: { 'q.sql': 'b' },
   })
   expect(await store.get('other')).toEqual({ connections: [], files: {} })
+})
+
+test("forgets a change it couldn't write", async () => {
+  const store = new ConnectionStore(dataDir)
+  await store.save('p', lite)
+  await chmod(join(dataDir, 'connections'), 0o500)
+  try {
+    await expect(store.save('p', pg)).rejects.toThrow()
+  } finally {
+    await chmod(join(dataDir, 'connections'), 0o700)
+  }
+  expect(await store.get('p')).toEqual({ connections: [lite], files: {} })
 })
 
 test('deleting a connection forgets the files that used it', async () => {

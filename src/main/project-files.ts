@@ -1,4 +1,4 @@
-import { lstat, mkdir, open, readdir, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
+import { link, lstat, mkdir, open, readdir, readFile, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import watcher, { type AsyncSubscription } from '@parcel/watcher'
 import type { DirectoryEntry, FileContent, FilesChanged, WriteResult } from '../shared/files'
@@ -183,11 +183,26 @@ export class ProjectFiles {
   async rename(projectId: string, from: string, to: string): Promise<void> {
     const source = await this.resolveEntry(projectId, from)
     const target = await this.resolveEntry(projectId, to)
+    const stats = await lstat(source)
     const existing = await lstat(target).catch(() => undefined)
     // On a case-insensitive file system, a change of case finds the source itself.
-    if (existing && existing.ino !== (await lstat(source)).ino) throw new Error(`${to} already exists`)
+    if (existing && existing.ino !== stats.ino) throw new Error(`${to} already exists`)
     await mkdir(dirname(target), { recursive: true })
-    await rename(source, target)
+    // rename replaces a file that appears after the check; link refuses to. A
+    // directory can't be linked, but rename only replaces an empty one.
+    const linked =
+      !existing &&
+      stats.isFile() &&
+      (await link(source, target).then(
+        () => true,
+        (error: NodeJS.ErrnoException) => {
+          if (error.code === 'EEXIST') throw new Error(`${to} already exists`)
+          // Some file systems have no hard links.
+          return false
+        },
+      ))
+    if (linked) await unlink(source)
+    else await rename(source, target)
   }
 
   async delete(projectId: string, path: string): Promise<void> {

@@ -2,7 +2,7 @@ import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { lookupPassword, movePasswordToPgpass, pgpassKey, savePassword } from './pgpass'
+import { lookupPassword, pgpassKey, savePassword, separatePassword } from './pgpass'
 
 let dir: string
 let path: string
@@ -60,19 +60,24 @@ test('saving creates a private file, puts the line first and replaces the same c
   expect(await lookupPassword(key, path)).toBe('with:colon')
 })
 
-test('moves a password from the URL to the file', async () => {
-  expect(await movePasswordToPgpass('postgres://me:p%40ss@db.example.com/app?sslmode=require', path)).toBe(
-    'postgres://me@db.example.com/app?sslmode=require',
-  )
-  expect(await movePasswordToPgpass('postgres://me@db.example.com/other?password=q&sslmode=require', path)).toBe(
-    'postgres://me@db.example.com/other?sslmode=require',
-  )
+test('takes a password out of the URL, writing it to the file only when saved', async () => {
+  const inUser = separatePassword('postgres://me:p%40ss@db.example.com/app?sslmode=require', path)
+  const inQuery = separatePassword('postgres://me@db.example.com/other?password=q&sslmode=require', path)
+  expect(inUser.url).toBe('postgres://me@db.example.com/app?sslmode=require')
+  expect(inQuery.url).toBe('postgres://me@db.example.com/other?sslmode=require')
+  await expect(stat(path)).rejects.toThrow()
+  await inUser.save()
+  await inQuery.save()
   expect(await lookupPassword(key, path)).toBe('p@ss')
   expect(await lookupPassword({ ...key, database: 'other' }, path)).toBe('q')
 })
 
 test('leaves a URL without a password alone, and writes nothing', async () => {
-  expect(await movePasswordToPgpass('postgres://me@db.example.com/app', path)).toBe('postgres://me@db.example.com/app')
-  expect(await movePasswordToPgpass('not a url', path)).toBe('not a url')
+  const plain = separatePassword('postgres://me@db.example.com/app', path)
+  const notUrl = separatePassword('not a url', path)
+  expect(plain.url).toBe('postgres://me@db.example.com/app')
+  expect(notUrl.url).toBe('not a url')
+  await plain.save()
+  await notUrl.save()
   await expect(stat(path)).rejects.toThrow()
 })

@@ -15,6 +15,15 @@ test('ignores semicolons in quotes and identifiers', () => {
   expect(texts(`select 'a;''b'; select "x;y", \`z;\`;`)).toEqual([`select 'a;''b'`, 'select "x;y", `z;`'])
 })
 
+test('a backslash escapes a quote only in a Postgres escape string', () => {
+  expect(texts(String.raw`select E'it\'s; fine', e'\\'; select 2`)).toEqual([String.raw`select E'it\'s; fine', e'\\'`, 'select 2'])
+  expect(texts(String.raw`select 'C:\'; select 2; select name'; select 3`)).toEqual([
+    String.raw`select 'C:\'`,
+    'select 2',
+    "select name'; select 3",
+  ])
+})
+
 test('ignores semicolons in comments and leaves out leading comments', () => {
   expect(texts('-- first; still a comment\nselect 1 /* a; /* nested; */ b; */ + 1;\n-- trailing;')).toEqual([
     'select 1 /* a; /* nested; */ b; */ + 1',
