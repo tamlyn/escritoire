@@ -1,6 +1,6 @@
 # Escritoire
 
-Agentic IDE built with Electron. `PLAN.md` holds the direction, decisions and slice order.
+Agentic IDE built with Electron. `HISTORY.md` holds the decisions, tech stack and requirements of what's built; `PLAN.md` holds what's still to build and in what order. When a feature is built, move its requirements from the plan to the history.
 
 ## Commands
 
