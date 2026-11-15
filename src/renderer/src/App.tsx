@@ -1,7 +1,7 @@
 import { ChevronsUpDownIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { AppState } from '../../shared/api'
-import { api } from './api'
+import { api, subscribe } from './api'
 import { ProjectSwitcher } from './ProjectSwitcher'
 import { ProjectWorkspace, type ProjectWorkspaceHandle } from './ProjectWorkspace'
 import { isMac, modifierLabel, useShortcut } from './shortcuts'
@@ -12,7 +12,10 @@ export function App() {
   const workspaceRef = useRef<ProjectWorkspaceHandle>(null)
 
   useEffect(() => {
+    // Pushes and replies arrive in the order main sent them, so whichever comes last is current.
+    const unsubscribe = subscribe('stateChanged', setState)
     void api.getState().then(setState)
+    return unsubscribe
   }, [])
 
   useShortcut('o', () => setSwitcherOpen(true))

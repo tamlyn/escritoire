@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
 import { open } from 'node:fs/promises'
 import { join, posix } from 'node:path'
-import watcher, { type AsyncSubscription } from '@parcel/watcher'
+import watcher from '@parcel/watcher'
 import type { FileContent } from '../shared/files'
 import type {
   GitBlame,
@@ -15,6 +15,7 @@ import type {
   GitRef,
   GitSummary,
 } from '../shared/git'
+import { ProjectWatches } from './project-watches'
 
 const maxUntracked = 500
 const maxCountedSize = 1024 * 1024
@@ -207,20 +208,26 @@ function worktreeSide(content: FileContent): Side {
   }
 }
 
-/** Watches the active project's git directory, which changes when anyone stages, commits or switches branch. */
+/** Watches projects' git directories, which change when anyone stages, commits or switches branch. */
 export class GitWatcher {
-  private watched?: { projectId: string; subscription: Promise<AsyncSubscription | undefined> }
+  private readonly watches = new ProjectWatches((projectId) => this.subscribe(projectId))
 
   constructor(
     private readonly options: { projectPath: (projectId: string) => string; onChanged: (projectId: string) => void },
   ) {}
 
-  watch(projectId: string | null): void {
-    if (this.watched?.projectId === projectId) return
-    void this.unwatch()
-    if (!projectId) return
+  /** Watches exactly these projects. */
+  watch(projectIds: string[]): void {
+    this.watches.set(projectIds)
+  }
+
+  unwatch(): Promise<void> {
+    return this.watches.clear()
+  }
+
+  private subscribe(projectId: string) {
     const root = this.options.projectPath(projectId)
-    const subscription = git(root, ['rev-parse', '--absolute-git-dir'])
+    return git(root, ['rev-parse', '--absolute-git-dir'])
       .then((output) =>
         watcher.subscribe(
           output.toString().trim(),
@@ -235,13 +242,6 @@ export class GitWatcher {
         if (!(error instanceof NotARepository)) console.error(`Could not watch the git directory of ${root}:`, error)
         return undefined
       })
-    this.watched = { projectId, subscription }
-  }
-
-  unwatch(): Promise<void> {
-    const watched = this.watched
-    this.watched = undefined
-    return watched ? watched.subscription.then((s) => s?.unsubscribe()) : Promise.resolve()
   }
 }
 

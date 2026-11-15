@@ -10,7 +10,7 @@ A session is a **transcript of items**, a list of **pending requests** and a **s
 
 - **Adapters run in the main process.** Each agent already runs in its own child process (the SDK spawns Claude Code; Codex is `codex app-server`), so an agent crash is a child exit, which the adapter reports as an `errored` status. A `utilityProcess` would add a second IPC hop for little gain; revisit only if main shows jank.
 - **Main owns sessions.** `SessionManager` holds every loaded session across all projects, applies events, derives attention and persists the session store. It is plain Node, tested with a fake adapter.
-- **The renderer only views.** It subscribes to the sessions whose tabs are mounted, which means the active project's.
+- **The renderer only views.** It subscribes to the sessions whose tabs are mounted, which means its active project's. Each client (the desktop window, later a phone) subscribes separately; main combines them (`src/main/clients.ts`).
 
 ## Model rules
 

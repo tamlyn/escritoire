@@ -15,8 +15,16 @@ export type ApiServerOptions = {
    * and rely on their token alone.
    */
   origins: string[]
-  isAuthorised: (token: string) => boolean
+  /** Admits a client whose token is valid, saying how to serve it, or refuses it with `undefined`. */
+  connect: (token: string, send: SendEvent) => Connection | undefined
+}
+
+export type SendEvent = <K extends keyof Events>(name: K, payload: Events[K]) => void
+
+/** One admitted client. `close` is called once it disconnects. */
+export type Connection = {
   handle: (method: string, args: unknown[]) => Promise<unknown>
+  close: () => void
 }
 
 const apiPath = '/api'
@@ -25,11 +33,10 @@ const policyViolation = 1008
 
 /**
  * Main's API over a WebSocket on the loopback interface, speaking the protocol
- * in `shared/api-client.ts`. Events go to every client that has given a token.
+ * in `shared/api-client.ts`. What each client may do and is sent is up to `connect`.
  */
 export class ApiServer {
   private readonly sockets = new WebSocketServer({ noServer: true })
-  private readonly clients = new Set<WebSocket>()
 
   static async start(options: ApiServerOptions): Promise<ApiServer> {
     const http = createServer((_request, response) => { response.writeHead(404).end() })
@@ -59,42 +66,41 @@ export class ApiServer {
     return `ws://127.0.0.1:${(this.http.address() as AddressInfo).port}${apiPath}`
   }
 
-  send<K extends keyof Events>(name: K, payload: Events[K]): void {
-    const message = JSON.stringify({ event: name, payload } satisfies Push)
-    for (const client of this.clients) client.send(message)
-  }
-
   async close(): Promise<void> {
     for (const client of this.sockets.clients) client.terminate()
     await new Promise<void>((resolve) => this.http.close(() => resolve()))
   }
 
   private accept(client: WebSocket): void {
+    let connection: Connection | undefined
     const timeout = setTimeout(() => client.close(policyViolation, 'No token'), helloTimeoutMs)
     client.on('close', () => {
       clearTimeout(timeout)
-      this.clients.delete(client)
+      connection?.close()
     })
     // A malformed frame; the socket closes itself.
     client.on('error', (error) => console.error('API client:', error))
+    const send: SendEvent = (name, payload) => {
+      if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify({ event: name, payload } satisfies Push))
+    }
     client.on('message', (data, isBinary) => {
       const message = isBinary ? undefined : parse(data)
-      if (!this.clients.has(client)) {
+      if (!connection) {
         clearTimeout(timeout)
-        if (isHello(message) && this.options.isAuthorised(message.token)) this.clients.add(client)
-        else client.close(policyViolation, 'Not authorised')
+        connection = isHello(message) ? this.options.connect(message.token, send) : undefined
+        if (!connection) client.close(policyViolation, 'Not authorised')
       } else if (isRequest(message)) {
-        void this.reply(client, message)
+        void this.reply(client, connection, message)
       } else {
         client.close(policyViolation, 'Malformed request')
       }
     })
   }
 
-  private async reply(client: WebSocket, { id, method, args }: Request): Promise<void> {
+  private async reply(client: WebSocket, connection: Connection, { id, method, args }: Request): Promise<void> {
     let reply: string
     try {
-      reply = JSON.stringify({ id, result: await this.options.handle(method, args) } satisfies Reply)
+      reply = JSON.stringify({ id, result: await connection.handle(method, args) } satisfies Reply)
     } catch (error) {
       console.error(`Error in ${method}:`, error)
       reply = JSON.stringify({ id, error: error instanceof Error ? error.message : String(error) } satisfies Reply)

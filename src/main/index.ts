@@ -1,11 +1,12 @@
 import { randomBytes } from 'node:crypto'
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron'
-import { type Api, apiMethods, type Events } from '../shared/api'
+import { type Api, apiMethods } from '../shared/api'
 import type { ApiConnection } from '../shared/api-client'
 import { codexAdapter } from './agents/codex'
 import { claudeAdapter } from './agents/claude'
 import { ApiServer, tokensMatch } from './api-server'
+import { type Client, Clients, type ScreenHost } from './clients'
 import {
   gitBlame,
   gitCommit,
@@ -26,6 +27,7 @@ import { ProjectFiles } from './project-files'
 import { ProjectStore } from './project-store'
 import { SessionManager } from './session-manager'
 import { SessionStore } from './session-store'
+import { watchPresence } from './presence'
 import { loadShellEnv } from './shell-env'
 import { Supervisor } from './supervisor'
 import { ConnectionStore } from './sql/connection-store'
@@ -35,6 +37,7 @@ import { Terminals } from './terminals'
 import { Work } from './work'
 
 type Services = {
+  clients: Clients
   projects: ProjectStore
   sessions: SessionManager
   sessionStore: SessionStore
@@ -45,11 +48,24 @@ type Services = {
   databases: Databases
 }
 
-function createApi({ projects, sessions, sessionStore, files, terminals, supervisor, connections, databases }: Services): Api {
+/** The API as one client sees it. */
+function createApi(client: Client, { clients, projects, sessions, sessionStore, files, terminals, supervisor, connections, databases }: Services): Api {
+  const terminalHost: ScreenHost = {
+    attach: (projectId, terminalId, size) => terminals.attach(projectId, terminalId, size),
+    detach: (terminalId) => terminals.detach(terminalId),
+    write: (_projectId, terminalId, data) => terminals.write(terminalId, data),
+    resize: (_projectId, terminalId, size) => terminals.resize(terminalId, size),
+  }
+  const processHost: ScreenHost = {
+    attach: (projectId, processId, size) => supervisor.attach(projectId, processId, size),
+    detach: (processId) => supervisor.detach(processId),
+    write: (projectId, processId, data) => supervisor.write(projectId, processId, data),
+    resize: (projectId, processId, size) => supervisor.resize(projectId, processId, size),
+  }
   return {
-    getState: async () => projects.getState(),
-    openProject: (path) => projects.openProject(path),
-    activateProject: (id) => projects.activateProject(id),
+    getState: async () => clients.state(client, projects.getState()),
+    openProject: async (path) => clients.activate(client, await projects.openProject(path)),
+    activateProject: async (id) => clients.activate(client, await projects.activateProject(id)),
     closeProject: async (id) => {
       // Failing to save sessions or scrollback mustn't stop the project closing.
       logFailures(await Promise.allSettled([
@@ -58,7 +74,7 @@ function createApi({ projects, sessions, sessionStore, files, terminals, supervi
         supervisor.closeProject(id),
         databases.closeProject(id),
       ]))
-      return projects.closeProject(id)
+      return clients.projectsChanged(await projects.closeProject(id), client)
     },
     removeProject: async (id) => {
       await sessions.closeProject(id).catch(console.error)
@@ -69,7 +85,7 @@ function createApi({ projects, sessions, sessionStore, files, terminals, supervi
         databases.closeProject(id),
         connections.deleteProject(id),
       ])
-      return projects.removeProject(id)
+      return clients.projectsChanged(await projects.removeProject(id), client)
     },
     loadLayout: (projectId) => projects.loadLayout(projectId),
     saveLayout: (projectId, layout) => projects.saveLayout(projectId, layout),
@@ -77,8 +93,11 @@ function createApi({ projects, sessions, sessionStore, files, terminals, supervi
     getSessionSummaries: async () => sessions.summaries(),
     listPastSessions: (projectId) => sessions.listPastSessions(projectId),
     createSession: (projectId, agent) => sessions.createSession(projectId, agent),
-    openSession: (projectId, session) => sessions.openSession(projectId, session),
-    closeSessionView: async (session) => sessions.closeSessionView(session),
+    openSession: (projectId, session) => {
+      clients.openSessionView(client, session)
+      return sessions.openSession(projectId, session)
+    },
+    closeSessionView: async (session) => clients.closeSessionView(client, session),
     sendMessage: async (session, input) => sessions.sendMessage(session, input),
     interrupt: (session) => sessions.interrupt(session),
     getSettingChoices: (projectId, agent) => sessions.settingChoices(projectId, agent),
@@ -86,8 +105,11 @@ function createApi({ projects, sessions, sessionStore, files, terminals, supervi
     stopTask: (session, taskId) => sessions.stopTask(session, taskId),
     respond: async (session, requestId, response) => sessions.respond(session, requestId, response),
     saveDraft: async (session, draft) => sessions.saveDraft(session, draft),
-    setSessionVisible: async (session, visible) => sessions.setVisible(session, visible),
-    closeSession: async (session) => sessions.closeSession(session),
+    setSessionVisible: async (session, visible) => clients.setSessionVisible(client, session, visible),
+    closeSession: async (session) => {
+      sessions.closeSession(session)
+      clients.sessionClosed(session)
+    },
     listDirectory: (projectId, path) => files.listDirectory(projectId, path),
     readFile: (projectId, path) => files.readFile(projectId, path),
     writeFile: (projectId, path, text, expected) => files.writeFile(projectId, path, text, expected),
@@ -101,20 +123,26 @@ function createApi({ projects, sessions, sessionStore, files, terminals, supervi
     deleteFile: (projectId, path) => files.delete(projectId, path),
     listProjectFiles: async (projectId) =>
       (await gitFiles(projects.getProject(projectId).path)) ?? files.listAllFiles(projectId),
-    attachTerminal: (projectId, terminalId, size) => terminals.attach(projectId, terminalId, size),
-    detachTerminal: async (terminalId) => terminals.detach(terminalId),
-    writeTerminal: async (terminalId, data) => terminals.write(terminalId, data),
-    resizeTerminal: async (terminalId, size) => terminals.resize(terminalId, size),
-    closeTerminal: (projectId, terminalId) => terminals.close(projectId, terminalId),
+    attachTerminal: (projectId, terminalId, size) => clients.attachScreen(client, terminalHost, projectId, terminalId, size),
+    detachTerminal: async (terminalId) => clients.detachScreen(client, terminalId),
+    writeTerminal: async (terminalId, data) => clients.writeScreen(client, terminalId, data),
+    resizeTerminal: async (terminalId, size) => clients.resizeScreen(client, terminalId, size),
+    closeTerminal: async (projectId, terminalId) => {
+      clients.screenClosed(terminalId)
+      await terminals.close(projectId, terminalId)
+    },
     listProcesses: async () => supervisor.list(),
     startProcess: async (projectId, spec) => (await supervisor.start(projectId, spec)).process,
     stopProcess: (projectId, processId) => supervisor.stop(projectId, processId),
     restartProcess: async (projectId, processId) => void (await supervisor.restart(projectId, processId)),
-    removeProcess: async (projectId, processId) => supervisor.remove(projectId, processId),
-    attachProcess: (projectId, processId, size) => supervisor.attach(projectId, processId, size),
-    detachProcess: async (processId) => supervisor.detach(processId),
-    writeProcess: async (projectId, processId, data) => supervisor.write(projectId, processId, data),
-    resizeProcess: async (projectId, processId, size) => supervisor.resize(projectId, processId, size),
+    removeProcess: async (projectId, processId) => {
+      supervisor.remove(projectId, processId)
+      clients.screenClosed(processId)
+    },
+    attachProcess: (projectId, processId, size) => clients.attachScreen(client, processHost, projectId, processId, size),
+    detachProcess: async (processId) => clients.detachScreen(client, processId),
+    writeProcess: async (_projectId, processId, data) => clients.writeScreen(client, processId, data),
+    resizeProcess: async (_projectId, processId, size) => clients.resizeScreen(client, processId, size),
     getGitSummary: (projectId) => gitSummary(projects.getProject(projectId).path),
     getGitDiff: (projectId, request) =>
       gitDiff(projects.getProject(projectId).path, request, (path) => files.readFile(projectId, path)),
@@ -157,13 +185,6 @@ function handleApi(api: Api, work: Work): (method: string, args: unknown[]) => P
     const handler = api[method as keyof Api] as (...args: unknown[]) => Promise<unknown>
     return work.run(() => handler(...args))
   }
-}
-
-let apiServer: ApiServer | undefined
-
-// Events sent before the server starts have no one to go to.
-function send<K extends keyof Events>(name: K, payload: Events[K]): void {
-  apiServer?.send(name, payload)
 }
 
 // The window controls drawn over the header on Windows and Linux. Electron
@@ -232,6 +253,17 @@ void app.whenReady().then(async () => {
   const projects = await ProjectStore.load(dataDir)
   const sessionStore = new SessionStore(dataDir)
   await shellEnv
+  // Its dependencies are only used once a client connects, after they exist.
+  const clients = new Clients({
+    lastActiveProject: () => projects.getState().activeProjectId,
+    setSessionVisible: (session, visible) => sessions.setVisible(session, visible),
+    closeSessionView: (session) => sessions.closeSessionView(session),
+    watch: (projectIds) => {
+      files.watch(projectIds)
+      gitWatcher.watch(projectIds)
+    },
+  })
+  const send = clients.send
   const supervisor = new Supervisor({
     projectPath: (projectId) => projects.getProject(projectId).path,
     send: (output) => send('screenOutput', output),
@@ -268,11 +300,7 @@ void app.whenReady().then(async () => {
     projectPath: (projectId) => projects.getProject(projectId).path,
     connection: (projectId, connectionId) => connections.getConnection(projectId, connectionId),
   })
-  // Only the active project is watched.
-  projects.onActiveChanged((projectId) => {
-    files.watch(projectId)
-    gitWatcher.watch(projectId)
-  })
+  watchPresence((present) => clients.setDesktopPresent(present))
 
   const apiWork = new Work()
   // Never written down, so only the windows of this launch can know it.
@@ -281,10 +309,13 @@ void app.whenReady().then(async () => {
   const server = await ApiServer.start({
     port: 0,
     origins: [rendererUrl ? new URL(rendererUrl).origin : 'file://'],
-    isAuthorised: (token) => tokensMatch(token, desktopToken),
-    handle: handleApi(createApi({ projects, sessions, sessionStore, files, terminals, supervisor, connections, databases }), apiWork),
+    connect: (token, send) => {
+      if (!tokensMatch(token, desktopToken)) return undefined
+      const client = clients.connect(send, { desktop: true })
+      const api = createApi(client, { clients, projects, sessions, sessionStore, files, terminals, supervisor, connections, databases })
+      return { handle: handleApi(api, apiWork), close: () => clients.disconnect(client) }
+    },
   })
-  apiServer = server
 
   let shuttingDown = false
   app.on('before-quit', (event) => {

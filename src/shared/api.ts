@@ -207,14 +207,16 @@ export const apiMethods = Object.keys(apiMethodSet) as (keyof Api)[]
 export type Events = {
   sessionsChanged: SessionSummary[]
   sessionEvent: SessionEvent
-  /** Only for the active project, which is the only one watched. */
+  /** Only for projects that are some client's active one, which are the only ones watched. */
   filesChanged: FilesChanged
   /** Terminals and processes, keyed by terminal or process id. */
   screenOutput: ScreenOutput
   /** Every project's processes, whenever one changes. */
   processesChanged: ProcessInfo[]
-  /** The active project's files or git state may have changed: a hint to ask again. */
+  /** A watched project's files or git state may have changed: a hint to ask again. */
   gitChanged: { projectId: string }
+  /** The projects, or this client's active one, changed because of another client. */
+  stateChanged: AppState
 }
 
 const eventNameSet: Record<keyof Events, true> = {
@@ -224,6 +226,7 @@ const eventNameSet: Record<keyof Events, true> = {
   screenOutput: true,
   processesChanged: true,
   gitChanged: true,
+  stateChanged: true,
 }
 
 export const eventNames = Object.keys(eventNameSet) as (keyof Events)[]

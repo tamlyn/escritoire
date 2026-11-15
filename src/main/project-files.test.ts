@@ -110,7 +110,7 @@ test('refuses paths outside the project', async () => {
 test('reports changes made by others, but not its own writes or dependencies', async () => {
   await writeFile(join(root, 'mine.yaml'), 'a: 1')
   await mkdir(join(root, 'packages', 'a', 'node_modules', 'dep'), { recursive: true })
-  files.watch('p')
+  files.watch(['p'])
   // macOS replays events from just before the watch started.
   await new Promise((resolve) => setTimeout(resolve, 300))
   sent = []

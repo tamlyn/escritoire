@@ -54,7 +54,7 @@ Check current versions and APIs against documentation when adding each one.
 | Agent access to the IDE | `@modelcontextprotocol/sdk`: one MCP server over HTTP, bound to 127.0.0.1, token-protected | Both agents accept MCP servers, so the supervisor and IDE context tools are identical for Claude and Codex |
 | Terminal | `@xterm/xterm`, `@xterm/addon-serialize`, `node-pty` | Interactive terminals, with serialised scrollback for restore |
 | Config editing and diffs | CodeMirror 6, `@codemirror/merge` | Syntax highlighting and diffs without Monaco's weight; a full editor is a non-goal |
-| File watching | `@parcel/watcher` | Native, scales to large repos (VS Code uses it). Only the active project is watched |
+| File watching | `@parcel/watcher` | Native, scales to large repos (VS Code uses it). Only projects that are some client's active one are watched |
 | Git | The `git` CLI (`status --porcelain=v2 -z`, `log`, `diff --numstat`, `blame --porcelain`) | Uses the user's own config, credentials and hooks, which matters most for pull and push. isomorphic-git does its own auth and lacks blame of unsaved text; nodegit is another native module for EL8. The history graph's layout is ours: the known libraries draw illustrative diagrams rather than lay out a real log |
 | Persistence | JSON files in the app data directory | Workspace layouts and attention state are small. Add SQLite only if a real need appears |
 | Process logs | Bounded in-memory ring buffers per process | Meets bounded retention with no storage |
@@ -81,7 +81,7 @@ Check current versions and APIs against documentation when adding each one.
 - Each project remembers its own tabs and layout, across switches and across restarts.
 - **Explicit opening and closing.** Closing a project releases its agent sessions, terminals and supervised processes while keeping its layout available to reopen. Closing a session releases its runtime while keeping its conversation available to resume.
 - Switching away does not close a project or stop its work. Only the active project's UI is rendered; background projects retain the state needed for their sessions, terminals and drafts.
-- File watchers and git status polling run only for the active project, and refresh on switching in.
+- File watchers and git status polling run only for projects that are some client's active one, and refresh on switching in.
 - Supervised processes are never stopped merely by switching away or by inactivity. Closing the project or quitting the app stops them.
 - A user can remove a project from the list. This stops its processes and forgets its layout.
 - **Project switcher:** a keyboard-driven palette, by recency. Typing a path or fuzzy name in the same palette opens a new project; there is no separate "open project" UI.
@@ -181,7 +181,10 @@ The first step towards using Escritoire from a phone (see [Remote access](PLAN.m
 - **One contract, one transport.** Clients reach main only through `api` and `subscribe` (`src/shared/api.ts`), carried over a WebSocket for every client, the desktop window included. Electron IPC is left with what only the desktop needs: the preload gives the window the listener's address and a token. Quitting still waits for calls in flight.
 - **A small protocol of our own**, with no RPC library (decision 12). A client's first message is its token. Then requests `{id, method, args}` get replies `{id, result | error}`, and main pushes `{event, payload}`.
 - **Values travel as JSON**, which drops `undefined`. So `null` resets a session setting to the agent's default, a trailing `undefined` argument is left off rather than sent as `null`, and the contract fails to compile if any method or event carries a value JSON would change.
-- The listener binds to 127.0.0.1, on any free port until remote access can be turned on. The desktop's token is random per launch and never stored. A browser page from any origin but the window's own is refused, as is a client without the token. Every event goes to every client until state is per client.
+- The listener binds to 127.0.0.1, on any free port until remote access can be turned on. The desktop's token is random per launch and never stored. A browser page from any origin but the window's own is refused, as is a client without the token.
+- **State per client, not per app.** Each connection is a client with its own active project, open session views, visibility and attached screens, released when it disconnects (`src/main/clients.ts`). Switching project in one client doesn't switch another; a client whose project another closes moves to the most recently active open one, and every client hears when the projects change. A new client starts in the project most recently active in any client, which is also where the desktop opens after a restart. Session events and screen output go only to the clients showing them.
+- **A session is visible if any client whose user is there shows it**, which marks its turns read. The desktop stops counting as viewing when the screen locks or the system has been idle for five minutes, so walking away with Escritoire frontmost doesn't mark turns read.
+- **A screen keeps the size it was given until another client types in it or resizes it**, so attaching a phone doesn't shrink the desktop's terminal. Only a client attached to a screen can type in it or resize it.
 
 ## Slices built
 
@@ -196,3 +199,4 @@ All in November 2026, each tried on macOS and, from slice 2, on RHEL 8 through t
 7. SQL query files.
 8. Ports in the process list.
 9. Remote access, step 1: the desktop window's contract over a WebSocket.
+10. Remote access, step 2: state per client, and presence at the desktop.

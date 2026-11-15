@@ -1,7 +1,8 @@
 import { link, lstat, mkdir, open, readdir, readFile, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import watcher, { type AsyncSubscription } from '@parcel/watcher'
+import watcher from '@parcel/watcher'
 import type { DirectoryEntry, FileContent, FilesChanged, WriteResult } from '../shared/files'
+import { ProjectWatches } from './project-watches'
 
 const hiddenNames = new Set(['.git', '.DS_Store'])
 // node_modules can hold tens of thousands of directories, which on Linux means
@@ -22,9 +23,9 @@ type Options = {
   onAnyChange?: (projectId: string) => void
 }
 
-/** The files of each project, and a watcher on the active project only. */
+/** The files of each project, and watchers on the projects that are some client's active one. */
 export class ProjectFiles {
-  private watched?: { projectId: string; subscription: Promise<AsyncSubscription | undefined> }
+  private readonly watches = new ProjectWatches((projectId) => this.subscribe(projectId))
   // What the IDE last wrote to each file, to tell its own writes from others'
   // when the watcher reports them. A time window would hide an agent's edit
   // made just after an autosave.
@@ -209,13 +210,19 @@ export class ProjectFiles {
     await this.options.trash(await this.resolveEntry(projectId, path))
   }
 
-  /** Watches the given project, replacing any previous watch. */
-  watch(projectId: string | null): void {
-    if (this.watched?.projectId === projectId) return
-    this.unwatch()
-    if (!projectId) return
+  /** Watches exactly these projects. */
+  watch(projectIds: string[]): void {
+    this.watches.set(projectIds)
+  }
+
+  unwatch(): Promise<void> {
+    this.ownWrites.clear()
+    return this.watches.clear()
+  }
+
+  private subscribe(projectId: string) {
     const root = this.options.projectPath(projectId)
-    const subscription = watcher
+    return watcher
       .subscribe(
         root,
         async (error, events) => {
@@ -236,14 +243,6 @@ export class ProjectFiles {
         console.error(`Could not watch ${root}:`, error)
         return undefined
       })
-    this.watched = { projectId, subscription }
-  }
-
-  unwatch(): Promise<void> {
-    const watched = this.watched
-    this.watched = undefined
-    this.ownWrites.clear()
-    return watched ? watched.subscription.then((s) => s?.unsubscribe()) : Promise.resolve()
   }
 
   private async isOwnWrite(file: string): Promise<boolean> {

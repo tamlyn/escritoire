@@ -2,25 +2,36 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { WebSocket as WsClient } from 'ws'
 import type { ProcessInfo } from '../shared/process'
 import { type ApiClient, connectApi } from '../shared/api-client'
-import { ApiServer, tokensMatch } from './api-server'
+import { ApiServer, type SendEvent, tokensMatch } from './api-server'
 
 const token = 'secret'
 let server: ApiServer
 let handled: { method: string; args: unknown[] }[]
+type Connected = { send: SendEvent; closed: boolean }
+let connected: Connected[]
 const clients: ApiClient[] = []
 
 beforeEach(async () => {
   handled = []
+  // Each test's own, as connections from the last test can still be closing.
+  const connections: Connected[] = (connected = [])
   server = await ApiServer.start({
     port: 0,
     origins: ['file://'],
-    isAuthorised: (given) => tokensMatch(given, token),
-    handle: async (method, args) => {
-      handled.push({ method, args })
-      if (method === 'readFile') throw new Error('No such file')
-      if (method === 'getState') return { projects: [], activeProjectId: null }
-      if (method === 'interrupt') return new Promise(() => {})
-      return undefined
+    connect: (given, send) => {
+      if (!tokensMatch(given, token)) return undefined
+      const connection = { send, closed: false }
+      connections.push(connection)
+      return {
+        handle: async (method, args) => {
+          handled.push({ method, args })
+          if (method === 'readFile') throw new Error('No such file')
+          if (method === 'getState') return { projects: [], activeProjectId: null }
+          if (method === 'interrupt') return new Promise(() => {})
+          return undefined
+        },
+        close: () => { connection.closed = true },
+      }
     },
   })
   vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -61,21 +72,28 @@ test('keeps arguments as they were given', async () => {
   ])
 })
 
-test('sends events to every client with a token', async () => {
+test('sends each client its own events', async () => {
   const first = connect()
   const second = connect()
-  const refused = connect('wrong')
   const received: string[] = []
   first.subscribe('processesChanged', () => received.push('first'))
   second.subscribe('processesChanged', () => received.push('second'))
-  refused.subscribe('processesChanged', () => received.push('refused'))
-  await Promise.all([first.api.listProcesses(), second.api.listProcesses()])
-
-  server.send('processesChanged', [] as ProcessInfo[])
   await first.api.listProcesses()
   await second.api.listProcesses()
 
-  expect(received.sort()).toEqual(['first', 'second'])
+  connected[1]!.send('processesChanged', [] as ProcessInfo[])
+  await first.api.listProcesses()
+  await second.api.listProcesses()
+
+  expect(received).toEqual(['second'])
+})
+
+test('closes a connection when its client disconnects', async () => {
+  const client = connect()
+  await client.api.listProcesses()
+
+  client.close()
+  await vi.waitFor(() => expect(connected[0]!.closed).toBe(true))
 })
 
 test('refuses a client with the wrong token', async () => {

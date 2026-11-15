@@ -65,8 +65,6 @@ Use Escritoire from a phone, and later from another computer, over the user's Ta
   - Remote access is off by default. With it off the listener still carries the desktop window's API, but serves no pairing endpoint and no renderer files. That is the state on the work machine.
   - The `ts.net` hostname appears in public Certificate Transparency logs, which is accepted.
 - **Main owns everything; every client is a view.** Several clients may be connected at once: the desktop window, a phone, another computer. Any of them can send prompts and answer questions and permission requests. The first answer wins and the others see the request resolved. Viewing a session on any client marks it read. Drafts already live in main, so they follow the user between clients; the last write wins.
-- **Viewing means the user is there.** Today a session is read when its tab is visible and the window focused, so walking away with Escritoire frontmost would mark turns read and leave the phone silent. The desktop stops counting as viewing when the screen locks or the system has been idle for a few minutes.
-- **State per client, not per app.** Today the active project, a session's `visible` flag and a terminal's `attached` flag and size are each one value for the app, and events go to every window. Each connection becomes a client that holds its own active project, open session views, visibility and terminal attachments, and releases them when it disconnects. Switching project on the phone doesn't switch the desktop. Main watches the files and git state of every project that is some client's active one. A session is visible if any client shows it. A terminal takes the size of the client that last typed in it or resized it, so attaching a phone doesn't shrink the desktop's terminal.
 - **Reconnect by snapshot.** Phones drop connections often. On reconnect a client reopens what it shows and gets fresh snapshots, as it does on first open; no replay log until that proves too slow. Requests pending when the connection drops fail and are never retried automatically: the composer keeps its text, and the fresh snapshot shows whether the message arrived. A client whose send buffer grows past a threshold is disconnected and recovers the same way, which covers screen output and session events with one rule.
 - **Images are downscaled on the client** before sending, since phone photos are large and the models cap image size anyway. Other attachments, or uploads into the project, get an HTTP upload on the same listener only when needed.
 - **The phone is for driving agent sessions.** Its layout covers the attention loop first: the inbox, the project switcher, and session tabs (read, send, answer, interrupt, switch model and mode). Terminals and file editors are an occasional convenience there, added after the session loop works; git and processes come only when missed.
@@ -78,11 +76,10 @@ Use Escritoire from a phone, and later from another computer, over the user's Ta
 
 Build order:
 
-1. Per-client state: active project, visibility and attachments, plus presence.
-2. Pairing, revocation and serving the renderer to a browser.
-3. The phone layout for sessions and attention.
-4. Web Push.
-5. Terminals and file editors on the phone.
+1. Pairing, revocation and serving the renderer to a browser.
+2. The phone layout for sessions and attention.
+3. Web Push.
+4. Terminals and file editors on the phone.
 
 ### Updating without losing work
 

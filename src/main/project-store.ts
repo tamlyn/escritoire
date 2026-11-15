@@ -6,8 +6,8 @@ import { deleteJson, readJson, writeJson } from './json-file'
 import { expandHome } from './paths'
 
 export class ProjectStore {
+  /** `activeProjectId` is the open project most recently active in any client, where a new client starts. */
   private state: AppState = { projects: [], activeProjectId: null }
-  private readonly activeListeners = new Set<(projectId: string | null) => void>()
 
   private constructor(private readonly dataDir: string) {}
 
@@ -20,12 +20,6 @@ export class ProjectStore {
 
   getState(): AppState {
     return structuredClone(this.state)
-  }
-
-  /** Calls the listener with the active project now and whenever it changes. */
-  onActiveChanged(listener: (projectId: string | null) => void): void {
-    this.activeListeners.add(listener)
-    listener(this.state.activeProjectId)
   }
 
   getProject(id: string): Project {
@@ -97,7 +91,6 @@ export class ProjectStore {
   }
 
   private async save(): Promise<AppState> {
-    for (const listener of this.activeListeners) listener(this.state.activeProjectId)
     await writeJson(this.statePath, this.state)
     return this.getState()
   }
