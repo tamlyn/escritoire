@@ -2,6 +2,7 @@ import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { extname, resolve, sep } from 'node:path'
+import { pipeline } from 'node:stream/promises'
 
 const contentTypes: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -34,6 +35,7 @@ export async function serveFile(root: string, request: IncomingMessage, response
     'Content-Length': stats.size,
     'Cache-Control': relative.startsWith('assets/') ? 'public, max-age=31536000, immutable' : 'no-cache',
   })
-  if (request.method === 'HEAD') response.end()
-  else createReadStream(file).pipe(response)
+  if (request.method === 'HEAD') return void response.end()
+  // Either end can fail midway, as when a rebuild removes the file or the browser goes; the response just ends.
+  await pipeline(createReadStream(file), response).catch(() => {})
 }

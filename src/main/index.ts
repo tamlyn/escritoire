@@ -114,7 +114,12 @@ function createApi(client: Client, { clients, remote, projects, sessions, sessio
     },
     listDirectory: (projectId, path) => files.listDirectory(projectId, path),
     readFile: (projectId, path) => files.readFile(projectId, path),
-    writeFile: (projectId, path, text, expected) => files.writeFile(projectId, path, text, expected),
+    writeFile: async (projectId, path, text, expected) => {
+      const result = await files.writeFile(projectId, path, text, expected)
+      // The watcher ignores the IDE's own writes, but other clients may have the file open.
+      if (result === 'saved') clients.sendToOthers(client, 'filesChanged', { projectId, paths: [path] })
+      return result
+    },
     createFile: (projectId, path) => files.createFile(projectId, path),
     createScratchFile: (projectId, extension) => files.createScratchFile(projectId, extension),
     renameFile: async (projectId, from, to) => {
@@ -173,11 +178,17 @@ function createApi(client: Client, { clients, remote, projects, sessions, sessio
     runSql: (projectId, connectionId, runId, statements) =>
       databases.run(projects.getProject(projectId).id, connectionId, runId, statements),
     cancelSql: (runId) => databases.cancel(runId),
-    getRemoteAccess: async () => remote.state(),
-    changeRemoteAccess: (settings) => remote.configure(settings),
-    startPairing: async () => remote.startPairing(),
-    revokeDevice: (deviceId) => remote.revoke(deviceId),
+    // Otherwise a paired device could pair others, which would outlive revoking it.
+    getRemoteAccess: async () => desktopOnly(client, () => remote.state()),
+    changeRemoteAccess: async (settings) => desktopOnly(client, () => remote.configure(settings)),
+    startPairing: async () => desktopOnly(client, () => remote.startPairing()),
+    revokeDevice: async (deviceId) => desktopOnly(client, () => remote.revoke(deviceId)),
   }
+}
+
+function desktopOnly<T>(client: Client, action: () => T): T {
+  if (!client.desktop) throw new Error('Only the desktop can manage remote access.')
+  return action()
 }
 
 function logFailures(results: PromiseSettledResult<unknown>[]): void {
@@ -359,7 +370,9 @@ void app.whenReady().then(async () => {
       await apiWork.close()
       const sessionsClosed = await Promise.allSettled([sessions.close()])
       await ideServer.close()
-      logFailures([...databasesClosed, ...(await Promise.allSettled([files.unwatch(), gitWatcher.unwatch(), terminals.closeAll(), supervisor.closeAll(), server.close(), remote.close()]))])
+      // Clients first: each one disconnecting changes what's watched.
+      const disconnected = await Promise.allSettled([server.close(), remote.close()])
+      logFailures([...databasesClosed, ...disconnected, ...(await Promise.allSettled([files.unwatch(), gitWatcher.unwatch(), terminals.closeAll(), supervisor.closeAll()]))])
       if (sessionsClosed[0].status === 'rejected') {
         dialog.showErrorBox("Couldn't save sessions before quitting", String(sessionsClosed[0].reason))
       }

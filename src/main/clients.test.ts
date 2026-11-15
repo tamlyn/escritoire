@@ -65,6 +65,28 @@ describe('projects', () => {
   })
 })
 
+describe('events', () => {
+  it('sends remote access, with its pairing code, only to the desktop', () => {
+    const desktop = connect()
+    const phone = connect(false)
+
+    clients.send('remoteAccessChanged', { enabled: true, port: 1, error: null, pairing: { code: '123456', expiresAt: 0 }, devices: [] })
+
+    expect(desktop.received.map((r) => r.name)).toEqual(['remoteAccessChanged'])
+    expect(phone.received).toEqual([])
+  })
+
+  it("tells other clients what one did, but not that one", () => {
+    const desktop = connect()
+    const phone = connect(false)
+
+    clients.sendToOthers(desktop.client, 'filesChanged', { projectId: 'a', paths: ['x'] })
+
+    expect(desktop.received).toEqual([])
+    expect(phone.received.map((r) => r.name)).toEqual(['filesChanged'])
+  })
+})
+
 describe('sessions', () => {
   const pointer: SessionPointer = { agent: 'claude', agentSessionId: 's1' }
   const event: Events['sessionEvent'] = { agentSessionId: 's1', seq: 1, event: { type: 'tasksChanged', tasks: [] } }
@@ -181,6 +203,18 @@ describe('screens', () => {
     expect(desktop.received).toEqual([])
     expect(phone.received.map((r) => r.name)).toEqual(['screenOutput'])
     expect(calls.at(-1)).toBe('detach t1')
+  })
+
+  it('fits a shared screen back to the client still showing it', async () => {
+    const desktop = connect()
+    const phone = connect(false)
+    await clients.attachScreen(desktop.client, host, 'a', 't1', desktopSize)
+    await clients.attachScreen(phone.client, host, 'a', 't1', phoneSize)
+    clients.writeScreen(phone.client, 't1', 'ls')
+
+    clients.disconnect(phone.client)
+
+    expect(calls.slice(-2)).toEqual(['write t1 ls', 'resize t1 120'])
   })
 
   it('ignores input from a client not attached to the screen', async () => {

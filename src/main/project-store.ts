@@ -90,8 +90,10 @@ export class ProjectStore {
     this.state.activeProjectId = next?.id ?? null
   }
 
+  /** The state as this change left it, which a concurrent change may have moved on from by the time it's saved. */
   private async save(): Promise<AppState> {
+    const state = this.getState()
     await writeJson(this.statePath, this.state)
-    return this.getState()
+    return state
   }
 }

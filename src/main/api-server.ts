@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net'
 import type { Duplex } from 'node:stream'
 import { type RawData, WebSocket, WebSocketServer } from 'ws'
 import type { Events } from '../shared/api'
-import { type Hello, notAuthorised, type Push, type Reply, type Request } from '../shared/api-client'
+import { type Hello, notAuthorized, type Push, type Reply, type Request } from '../shared/api-client'
 
 export type ApiServerOptions = {
   /** 0 picks a free port. */
@@ -92,12 +92,14 @@ export class ApiServer {
       if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify({ event: name, payload } satisfies Push))
     }
     client.on('message', (data, isBinary) => {
+      // Once revoked, a client could keep sending until ws gives up waiting for it to close.
+      if (client.readyState !== WebSocket.OPEN) return
       const message = isBinary ? undefined : parse(data)
       if (!connection) {
         clearTimeout(timeout)
-        const disconnect = () => client.close(policyViolation, notAuthorised)
+        const disconnect = () => client.close(policyViolation, notAuthorized)
         connection = isHello(message) ? this.options.connect(message.token, send, disconnect) : undefined
-        if (!connection) client.close(policyViolation, notAuthorised)
+        if (!connection) client.close(policyViolation, notAuthorized)
       } else if (isRequest(message)) {
         void this.reply(client, connection, message)
       } else {

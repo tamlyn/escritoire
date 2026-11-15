@@ -12,7 +12,7 @@ export type Reply = { id: number; result?: unknown } | { id: number; error: stri
 export type Push = { event: string; payload: unknown }
 
 /** Why main closes the connection of a client whose token it doesn't know, such as a revoked one. */
-export const notAuthorised = 'Not authorised'
+export const notAuthorized = 'Not authorised'
 
 /** Where to reach main's API, and the token that admits this client. */
 export type ApiConnection = { url: string; token: string }
@@ -22,7 +22,7 @@ export type ApiClient = { api: Api; subscribe: EventSubscriber; close(): void }
 /**
  * Calls made before the socket opens wait for it, in order. Once the
  * connection is lost, calls in flight and all later ones fail, and `onLost`
- * says why: `notAuthorised` if main doesn't know the token.
+ * says why: `notAuthorized` if main doesn't know the token.
  */
 export function connectApi(connection: Promise<ApiConnection>, { onLost }: { onLost?: (error: Error) => void } = {}): ApiClient {
   const calls = new Map<number, { resolve: (result: unknown) => void; reject: (error: Error) => void }>()

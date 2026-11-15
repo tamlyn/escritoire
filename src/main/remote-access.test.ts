@@ -4,7 +4,7 @@ import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { type ApiClient, connectApi, notAuthorised } from '../shared/api-client'
+import { type ApiClient, connectApi, notAuthorized } from '../shared/api-client'
 import type { RemoteAccess as RemoteAccessState } from '../shared/remote'
 import { RemoteAccess } from './remote-access'
 
@@ -128,7 +128,7 @@ test('gives up on a code after a few wrong attempts', async () => {
 })
 
 test('refuses unknown tokens, and disconnects a revoked device', async () => {
-  await expect(connect('made-up').api.getState()).rejects.toThrow(notAuthorised)
+  await expect(connect('made-up').api.getState()).rejects.toThrow(notAuthorized)
 
   const { token } = JSON.parse((await pair(remote.startPairing().pairing!.code)).body) as { token: string }
   const client = connect(token)
@@ -136,7 +136,7 @@ test('refuses unknown tokens, and disconnects a revoked device', async () => {
 
   const revoked = remote.revoke(remote.state().devices[0]!.id)
   await revoked
-  await expect(client.api.getState()).rejects.toThrow(notAuthorised)
+  await expect(client.api.getState()).rejects.toThrow(notAuthorized)
   expect(remote.state().devices).toEqual([])
 })
 

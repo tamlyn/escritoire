@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import type { Api } from '../../shared/api'
-import { type ApiConnection, connectApi, notAuthorised } from '../../shared/api-client'
+import { type ApiConnection, connectApi, notAuthorized } from '../../shared/api-client'
 
 declare global {
   interface Window {
@@ -41,7 +41,7 @@ const lostListeners = new Set<() => void>()
 
 const client = connectApi(connection(), {
   onLost: (error) => {
-    if (!isDesktop && error.message === notAuthorised) {
+    if (!isDesktop && error.message === notAuthorized) {
       // Revoked: pair again.
       try { localStorage.removeItem(tokenKey) } catch { /* Nothing to forget. */ }
       location.reload()

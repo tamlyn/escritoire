@@ -25,11 +25,14 @@ type Options = {
 
 /** The files of each project, and watchers on the projects that are some client's active one. */
 export class ProjectFiles {
-  private readonly watches = new ProjectWatches((projectId) => this.subscribe(projectId))
+  private readonly watches = new ProjectWatches(
+    (projectId) => this.subscribe(projectId),
+    (projectId) => this.ownWrites.delete(projectId),
+  )
   // What the IDE last wrote to each file, to tell its own writes from others'
   // when the watcher reports them. A time window would hide an agent's edit
-  // made just after an autosave.
-  private readonly ownWrites = new Map<string, string>()
+  // made just after an autosave. By project, so they're forgotten when it's no longer watched.
+  private readonly ownWrites = new Map<string, Map<string, string>>()
 
   private resolving: Promise<void> = Promise.resolve()
   private readonly writes = new Map<string, Promise<WriteResult>>()
@@ -122,7 +125,7 @@ export class ProjectFiles {
         if (current === undefined) return 'missing' as const
         if (current !== expected) throw new Error('File changed on disk. Reopen the tab to load it; copy your edits first.')
       }
-      return this.writeQueued(file, text)
+      return this.writeQueued(projectId, file, text)
     })
     this.writes.set(file, write)
     const cleanup = () => { if (this.writes.get(file) === write) this.writes.delete(file) }
@@ -130,7 +133,7 @@ export class ProjectFiles {
     return write
   }
 
-  private async writeQueued(file: string, text: string): Promise<WriteResult> {
+  private async writeQueued(projectId: string, file: string, text: string): Promise<WriteResult> {
     let handle
     try {
       // In place rather than via a rename, so hard links, permissions and other
@@ -142,7 +145,9 @@ export class ProjectFiles {
     }
     try {
       // Keyed by the real path, which is what the watcher reports.
-      this.ownWrites.set(await realpath(file), text)
+      const written = this.ownWrites.get(projectId) ?? new Map<string, string>()
+      this.ownWrites.set(projectId, written)
+      written.set(await realpath(file), text)
       const data = Buffer.from(text)
       await handle.writeFile(data)
       await handle.truncate(data.length)
@@ -216,7 +221,6 @@ export class ProjectFiles {
   }
 
   unwatch(): Promise<void> {
-    this.ownWrites.clear()
     return this.watches.clear()
   }
 
@@ -232,7 +236,7 @@ export class ProjectFiles {
           }
           this.options.onAnyChange?.(projectId)
           const others = await Promise.all(
-            events.map(async ({ path }) => (path !== root && !(await this.isOwnWrite(path)) ? path : null)),
+            events.map(async ({ path }) => (path !== root && !(await this.isOwnWrite(projectId, path)) ? path : null)),
           )
           const paths = others.filter((path) => path !== null).map((path) => toProjectPath(root, path))
           if (paths.length > 0) this.options.send({ projectId, paths })
@@ -245,8 +249,8 @@ export class ProjectFiles {
       })
   }
 
-  private async isOwnWrite(file: string): Promise<boolean> {
-    const written = this.ownWrites.get(file)
+  private async isOwnWrite(projectId: string, file: string): Promise<boolean> {
+    const written = this.ownWrites.get(projectId)?.get(file)
     if (written === undefined) return false
     // Kept after a mismatch: the watcher can report a write part-way through,
     // and the finished write must still be recognised.

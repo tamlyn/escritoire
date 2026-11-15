@@ -78,6 +78,11 @@ export class Clients {
     for (const client of this.clients) if (wants(client, name, payload)) client.send(name, payload)
   }
 
+  /** Tells the other clients about something this one did, which it already knows. */
+  sendToOthers<K extends keyof Events>(sender: Client, name: K, payload: Events[K]): void {
+    for (const client of this.clients) if (client !== sender && wants(client, name, payload)) client.send(name, payload)
+  }
+
   /** The app's state as this client sees it. */
   state(client: Client, app: AppState): AppState {
     return { ...app, activeProjectId: client.activeProjectId }
@@ -147,7 +152,13 @@ export class Clients {
     const attachment = client.screens.get(screenId)
     if (!attachment) return
     client.screens.delete(screenId)
-    if (this.attachedClients(screenId).length > 0) return
+    const [remaining] = this.attachedClients(screenId)
+    if (remaining) {
+      // Fits the screen back to a client still showing it, rather than one that's gone.
+      const { size } = remaining.screens.get(screenId)!
+      if (!sameSize(size, this.screenSizes.get(screenId))) this.resizeScreen(remaining, screenId, size)
+      return
+    }
     this.screenSizes.delete(screenId)
     attachment.host.detach(screenId)
   }
@@ -205,6 +216,8 @@ export class Clients {
 function wants<K extends keyof Events>(client: Client, name: K, payload: Events[K]): boolean {
   if (name === 'sessionEvent') return client.sessions.has((payload as Events['sessionEvent']).agentSessionId)
   if (name === 'screenOutput') return client.screens.has((payload as Events['screenOutput']).screenId)
+  // It carries the pairing code.
+  if (name === 'remoteAccessChanged') return client.desktop
   return true
 }
 
