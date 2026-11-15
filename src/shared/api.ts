@@ -34,6 +34,7 @@ import type {
   GitSummary,
 } from './git'
 import type { ProcessInfo, ProcessSpec } from './process'
+import type { RemoteAccess } from './remote'
 import type { ScreenOutput, ScreenSize, ScreenSnapshot } from './screen'
 import type { Connection, ProjectConnections, StatementResult } from './sql'
 
@@ -136,6 +137,13 @@ export type Api = {
   /** Runs the statements in order on the connection, stopping after the first error. */
   runSql(projectId: string, connectionId: string, runId: string, statements: string[]): Promise<StatementResult[]>
   cancelSql(runId: string): Promise<void>
+
+  getRemoteAccess(): Promise<RemoteAccess>
+  /** Turning it off, or changing the port, disconnects every paired device. */
+  changeRemoteAccess(settings: Pick<RemoteAccess, 'enabled' | 'port'>): Promise<RemoteAccess>
+  /** Shows a new pairing code, replacing any other. */
+  startPairing(): Promise<RemoteAccess>
+  revokeDevice(deviceId: string): Promise<RemoteAccess>
 }
 
 // A record rather than an array so the compiler rejects a missing or misspelt method.
@@ -199,6 +207,10 @@ const apiMethodSet: Record<keyof Api, true> = {
   setFileConnection: true,
   runSql: true,
   cancelSql: true,
+  getRemoteAccess: true,
+  changeRemoteAccess: true,
+  startPairing: true,
+  revokeDevice: true,
 }
 
 export const apiMethods = Object.keys(apiMethodSet) as (keyof Api)[]
@@ -217,6 +229,7 @@ export type Events = {
   gitChanged: { projectId: string }
   /** The projects, or this client's active one, changed because of another client. */
   stateChanged: AppState
+  remoteAccessChanged: RemoteAccess
 }
 
 const eventNameSet: Record<keyof Events, true> = {
@@ -227,6 +240,7 @@ const eventNameSet: Record<keyof Events, true> = {
   processesChanged: true,
   gitChanged: true,
   stateChanged: true,
+  remoteAccessChanged: true,
 }
 
 export const eventNames = Object.keys(eventNameSet) as (keyof Events)[]

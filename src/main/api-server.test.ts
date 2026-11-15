@@ -17,7 +17,7 @@ beforeEach(async () => {
   const connections: Connected[] = (connected = [])
   server = await ApiServer.start({
     port: 0,
-    origins: ['file://'],
+    admits: (request) => request.headers.origin === undefined || request.headers.origin === 'file://',
     connect: (given, send) => {
       if (!tokensMatch(given, token)) return undefined
       const connection = { send, closed: false }

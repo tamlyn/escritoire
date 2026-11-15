@@ -181,10 +181,20 @@ The first step towards using Escritoire from a phone (see [Remote access](PLAN.m
 - **One contract, one transport.** Clients reach main only through `api` and `subscribe` (`src/shared/api.ts`), carried over a WebSocket for every client, the desktop window included. Electron IPC is left with what only the desktop needs: the preload gives the window the listener's address and a token. Quitting still waits for calls in flight.
 - **A small protocol of our own**, with no RPC library (decision 12). A client's first message is its token. Then requests `{id, method, args}` get replies `{id, result | error}`, and main pushes `{event, payload}`.
 - **Values travel as JSON**, which drops `undefined`. So `null` resets a session setting to the agent's default, a trailing `undefined` argument is left off rather than sent as `null`, and the contract fails to compile if any method or event carries a value JSON would change.
-- The listener binds to 127.0.0.1, on any free port until remote access can be turned on. The desktop's token is random per launch and never stored. A browser page from any origin but the window's own is refused, as is a client without the token.
+- Listeners bind to 127.0.0.1 only. The desktop's token is random per launch and never stored. A browser page from any origin but the window's own is refused, as is a client without the token.
 - **State per client, not per app.** Each connection is a client with its own active project, open session views, visibility and attached screens, released when it disconnects (`src/main/clients.ts`). Switching project in one client doesn't switch another; a client whose project another closes moves to the most recently active open one, and every client hears when the projects change. A new client starts in the project most recently active in any client, which is also where the desktop opens after a restart. Session events and screen output go only to the clients showing them.
 - **A session is visible if any client whose user is there shows it**, which marks its turns read. The desktop stops counting as viewing when the screen locks or the system has been idle for five minutes, so walking away with Escritoire frontmost doesn't mark turns read.
 - **A screen keeps the size it was given until another client types in it or resizes it**, so attaching a phone doesn't shrink the desktop's terminal. Only a client attached to a screen can type in it or resize it.
+- **The same renderer build runs in a browser.** There is no separate mobile app and no second message model. The preload keeps only what is genuinely desktop-only: the desktop's connection, and flushing edits on quit.
+- **Tailnet only, and paired.** `tailscale serve --bg <port>` publishes the remote listener to the tailnet over HTTPS; nothing depends on Tailscale itself, so `ssh -L` works too. Escritoire implements no login of its own, but Tailscale alone isn't enough: WebSockets ignore CORS, so any web page in the user's browser could connect to the loopback port, and agents on the same machine could connect and answer their own permission requests. So a browser pairs once, by typing a code the desktop shows, and keeps the resulting token.
+  - **Two listeners.** The desktop window has its own, on any free port, which admits only the desktop's token and serves nothing else. Remote access adds a second on a fixed, configurable port (4729 by default), which serves the renderer's files, pairing and the API, and admits only paired tokens. Turning remote access on or off, or changing its port, disconnects every paired device but never the desktop. Remote access is off by default, when nothing listens on that port; that is the state on the work machine.
+  - The remote listener refuses any `Host` but loopback names and `*.ts.net` (`tailscale serve` passes the original `Host` through), which stops a page whose DNS is rebound to this machine. A browser's `Origin` must match the `Host` it connects to, for the WebSocket and for pairing.
+  - A pairing code is six digits, single-use, lasts five minutes and allows five wrong attempts.
+  - The token travels in the first message, never in the URL, where it would be logged. A browser keeps it in local storage.
+  - Main stores only hashes of paired tokens (`remote-access.json`), so reading the data directory yields nothing usable. An agent running as the user can still write to that directory, which is the same trust boundary as Claude Code's own.
+  - The desktop's header has a remote access button, showing how many devices are connected. Its dialog turns remote access on and off, shows a pairing code, and lists paired devices, each of which can be revoked. Revoking disconnects the device, which then asks to pair again.
+  - The `ts.net` hostname appears in public Certificate Transparency logs, which is accepted.
+- **Links to a process's port** point at the host's localhost, so they are plain text on a remote client.
 
 ## Slices built
 
@@ -200,3 +210,4 @@ All in November 2026, each tried on macOS and, from slice 2, on RHEL 8 through t
 8. Ports in the process list.
 9. Remote access, step 1: the desktop window's contract over a WebSocket.
 10. Remote access, step 2: state per client, and presence at the desktop.
+11. Remote access, step 3: pairing, revocation and serving the renderer to a browser.

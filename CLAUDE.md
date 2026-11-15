@@ -7,7 +7,7 @@ Agentic IDE built with Electron. `HISTORY.md` holds the decisions, tech stack an
 - `pnpm dev`: run with hot reload
 - `pnpm typecheck`
 - `pnpm test`: Vitest unit tests (`src/**/*.test.ts`)
-- `pnpm test:e2e`: builds, then drives the real app with Playwright (`e2e/`). Use `launchApp()` from `e2e/app.ts`, which isolates the user data directory.
+- `pnpm test:e2e`: builds, then drives the real app with Playwright (`e2e/`). Use `launchApp()` from `e2e/app.ts`, which isolates the user data directory. The remote access tests also drive Chromium and WebKit, so after Playwright updates run `npx playwright install chromium webkit`. Don't type into the app's windows while the tests run.
 - `pnpm dist`: packages the app for this machine into `dist/`. The RHEL 8 build comes from GitHub Actions (`.github/workflows/build.yml`), built in an EL8 container; tag `v*` to publish a release.
 
 ## Packaging
@@ -34,6 +34,7 @@ Agentic IDE built with Electron. `HISTORY.md` holds the decisions, tech stack an
 - `src/shared/api.ts`: the client ↔ main contract. Add a method to the `Api` type and the method record, implement it in `src/main/index.ts`, and it becomes `api.<method>` in the renderer (`renderer/src/api.ts`). Pushes from main go the other way through the `Events` map: main calls `send(name, payload)`, the renderer `subscribe(name, listener)`.
 - `src/main/api-server.ts` and `src/shared/api-client.ts`: that contract over a WebSocket on 127.0.0.1, for every client including the desktop window (not Electron IPC). Values travel as JSON, so they must survive it: `null`, never `undefined`, for a value that means something. `api-client.ts` fails to compile if a method or event can't. The desktop's token is random per launch and never stored.
 - `src/main/clients.ts`: each connection's own state (active project, open session views and their visibility, attached screens and their sizes, presence), combined into what the services see: a session is visible if any present client shows it, a screen attached while any client is. It routes session events and screen output only to the clients showing them, and releases a client's state when it disconnects. `createApi` in `src/main/index.ts` builds the API for one client. `presence.ts` says whether the user is at the desktop.
+- `src/main/remote-access.ts`: remote access from a paired browser: its own listener on a fixed port for `tailscale serve`, serving the renderer (`static-files.ts`), pairing and the API, plus the paired devices (token hashes only). The renderer tells the desktop from a browser with `isDesktop` (`renderer/src/api.ts`); a browser that hasn't paired shows `remote/Pairing.tsx`.
 - `src/renderer`: React UI. `ProjectWorkspace` is our wrapper around `react-resizable-panels`' `Workspace`: render `Workspace` and its layout model only there. Tab content may use the library's `useParent*` hooks. `components/ui` is shadcn source we own. `components/ai-elements` is AI Elements source adapted to our session model: it must not import the `ai` package. Add further components selectively (AI Elements is moving into the shadcn registry) and fix their imports the same way.
 
 ## Gotchas

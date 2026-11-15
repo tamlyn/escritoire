@@ -1,22 +1,27 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
-import { createServer, type Server } from 'node:http'
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import type { Duplex } from 'node:stream'
 import { type RawData, WebSocket, WebSocketServer } from 'ws'
 import type { Events } from '../shared/api'
-import type { Hello, Push, Reply, Request } from '../shared/api-client'
+import { type Hello, notAuthorised, type Push, type Reply, type Request } from '../shared/api-client'
 
 export type ApiServerOptions = {
   /** 0 picks a free port. */
   port: number
   /**
-   * The pages allowed to connect. Browsers always send their page's origin, so
-   * this stops any other page in them using the API. Other clients send none
-   * and rely on their token alone.
+   * Whether to serve a request at all, from its `Host` and `Origin`. Browsers
+   * always send their page's origin, so this stops other pages in them using
+   * the server. Other clients send none and rely on their token alone.
    */
-  origins: string[]
-  /** Admits a client whose token is valid, saying how to serve it, or refuses it with `undefined`. */
-  connect: (token: string, send: SendEvent) => Connection | undefined
+  admits: (request: IncomingMessage) => boolean
+  /**
+   * Admits a client whose token is valid, saying how to serve it, or refuses
+   * it with `undefined`. `disconnect` closes its connection once its token is revoked.
+   */
+  connect: (token: string, send: SendEvent, disconnect: () => void) => Connection | undefined
+  /** Plain HTTP requests, such as for files. Without it they get 404. */
+  request?: (request: IncomingMessage, response: ServerResponse) => void
 }
 
 export type SendEvent = <K extends keyof Events>(name: K, payload: Events[K]) => void
@@ -39,7 +44,11 @@ export class ApiServer {
   private readonly sockets = new WebSocketServer({ noServer: true })
 
   static async start(options: ApiServerOptions): Promise<ApiServer> {
-    const http = createServer((_request, response) => { response.writeHead(404).end() })
+    const http = createServer((request, response) => {
+      if (!options.request) response.writeHead(404).end()
+      else if (!options.admits(request)) response.writeHead(403).end()
+      else options.request(request, response)
+    })
     await new Promise<void>((resolve, reject) => {
       http.once('error', reject)
       http.listen(options.port, '127.0.0.1', () => {
@@ -56,8 +65,7 @@ export class ApiServer {
   ) {
     http.on('upgrade', (request, socket, head) => {
       if (new URL(request.url ?? '', 'http://localhost').pathname !== apiPath) return refuse(socket, '404 Not Found')
-      const origin = request.headers.origin
-      if (origin !== undefined && !options.origins.includes(origin)) return refuse(socket, '403 Forbidden')
+      if (!options.admits(request)) return refuse(socket, '403 Forbidden')
       this.sockets.handleUpgrade(request, socket, head, (client) => this.accept(client))
     })
   }
@@ -87,8 +95,9 @@ export class ApiServer {
       const message = isBinary ? undefined : parse(data)
       if (!connection) {
         clearTimeout(timeout)
-        connection = isHello(message) ? this.options.connect(message.token, send) : undefined
-        if (!connection) client.close(policyViolation, 'Not authorised')
+        const disconnect = () => client.close(policyViolation, notAuthorised)
+        connection = isHello(message) ? this.options.connect(message.token, send, disconnect) : undefined
+        if (!connection) client.close(policyViolation, notAuthorised)
       } else if (isRequest(message)) {
         void this.reply(client, connection, message)
       } else {

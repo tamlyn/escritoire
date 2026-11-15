@@ -1,9 +1,10 @@
 import { ChevronsUpDownIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { AppState } from '../../shared/api'
-import { api, subscribe } from './api'
+import { api, isDesktop, subscribe } from './api'
 import { ProjectSwitcher } from './ProjectSwitcher'
 import { ProjectWorkspace, type ProjectWorkspaceHandle } from './ProjectWorkspace'
+import { RemoteAccessButton } from './remote/RemoteAccessButton'
 import { isMac, modifierLabel, useShortcut } from './shortcuts'
 
 export function App() {
@@ -27,7 +28,9 @@ export function App() {
   return (
     <div className="flex h-full flex-col">
       <header
-        className={`bg-chrome flex h-10 shrink-0 items-center border-b px-2 [-webkit-app-region:drag] ${isMac ? 'pl-20' : ''}`}
+        className={`bg-chrome flex h-10 shrink-0 items-center border-b px-2 [-webkit-app-region:drag] ${isDesktop && isMac ? 'pl-20' : ''}`}
+        // Clear of the window controls drawn over the header on Windows and Linux.
+        style={isDesktop ? { paddingRight: 'calc(100% - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100%) + 0.5rem)' } : undefined}
       >
         <button
           type="button"
@@ -38,6 +41,11 @@ export function App() {
           {activeProject?.name ?? 'No project'}
           <ChevronsUpDownIcon className="text-muted-foreground size-3.5" />
         </button>
+        {isDesktop && (
+          <div className="ml-auto">
+            <RemoteAccessButton />
+          </div>
+        )}
       </header>
       <main className="min-h-0 flex-1">
         {activeProject ? (

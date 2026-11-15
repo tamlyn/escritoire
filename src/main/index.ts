@@ -5,7 +5,7 @@ import { type Api, apiMethods } from '../shared/api'
 import type { ApiConnection } from '../shared/api-client'
 import { codexAdapter } from './agents/codex'
 import { claudeAdapter } from './agents/claude'
-import { ApiServer, tokensMatch } from './api-server'
+import { ApiServer, type Connection, tokensMatch } from './api-server'
 import { type Client, Clients, type ScreenHost } from './clients'
 import {
   gitBlame,
@@ -28,6 +28,7 @@ import { ProjectStore } from './project-store'
 import { SessionManager } from './session-manager'
 import { SessionStore } from './session-store'
 import { watchPresence } from './presence'
+import { RemoteAccess } from './remote-access'
 import { loadShellEnv } from './shell-env'
 import { Supervisor } from './supervisor'
 import { ConnectionStore } from './sql/connection-store'
@@ -38,6 +39,7 @@ import { Work } from './work'
 
 type Services = {
   clients: Clients
+  remote: RemoteAccess
   projects: ProjectStore
   sessions: SessionManager
   sessionStore: SessionStore
@@ -49,7 +51,7 @@ type Services = {
 }
 
 /** The API as one client sees it. */
-function createApi(client: Client, { clients, projects, sessions, sessionStore, files, terminals, supervisor, connections, databases }: Services): Api {
+function createApi(client: Client, { clients, remote, projects, sessions, sessionStore, files, terminals, supervisor, connections, databases }: Services): Api {
   const terminalHost: ScreenHost = {
     attach: (projectId, terminalId, size) => terminals.attach(projectId, terminalId, size),
     detach: (terminalId) => terminals.detach(terminalId),
@@ -171,6 +173,10 @@ function createApi(client: Client, { clients, projects, sessions, sessionStore, 
     runSql: (projectId, connectionId, runId, statements) =>
       databases.run(projects.getProject(projectId).id, connectionId, runId, statements),
     cancelSql: (runId) => databases.cancel(runId),
+    getRemoteAccess: async () => remote.state(),
+    changeRemoteAccess: (settings) => remote.configure(settings),
+    startPairing: async () => remote.startPairing(),
+    revokeDevice: (deviceId) => remote.revoke(deviceId),
   }
 }
 
@@ -303,19 +309,30 @@ void app.whenReady().then(async () => {
   watchPresence((present) => clients.setDesktopPresent(present))
 
   const apiWork = new Work()
-  // Never written down, so only the windows of this launch can know it.
+  const remote = await RemoteAccess.load({
+    dataDir,
+    rendererDir: join(import.meta.dirname, '../renderer'),
+    connect: (send) => serve(clients.connect(send, { desktop: false })),
+    onChange: (state) => send('remoteAccessChanged', state),
+  })
+  const services: Services = { clients, remote, projects, sessions, sessionStore, files, terminals, supervisor, connections, databases }
+  // The API work belongs to the app rather than the connection, so quitting waits for it all.
+  function serve(client: Client): Connection {
+    return { handle: handleApi(createApi(client, services), apiWork), close: () => clients.disconnect(client) }
+  }
+
+  // The desktop window has a listener of its own, so turning remote access on
+  // or off, or changing its port, never disconnects it.
+  // Its token is never written down, so only the windows of this launch can know it.
   const desktopToken = randomBytes(32).toString('base64url')
   const rendererUrl = process.env.ELECTRON_RENDERER_URL
+  const desktopOrigin = rendererUrl ? new URL(rendererUrl).origin : 'file://'
   const server = await ApiServer.start({
     port: 0,
-    origins: [rendererUrl ? new URL(rendererUrl).origin : 'file://'],
-    connect: (token, send) => {
-      if (!tokensMatch(token, desktopToken)) return undefined
-      const client = clients.connect(send, { desktop: true })
-      const api = createApi(client, { clients, projects, sessions, sessionStore, files, terminals, supervisor, connections, databases })
-      return { handle: handleApi(api, apiWork), close: () => clients.disconnect(client) }
-    },
+    admits: (request) => request.headers.origin === undefined || request.headers.origin === desktopOrigin,
+    connect: (token, send) => tokensMatch(token, desktopToken) ? serve(clients.connect(send, { desktop: true })) : undefined,
   })
+  await remote.start()
 
   let shuttingDown = false
   app.on('before-quit', (event) => {
@@ -342,7 +359,7 @@ void app.whenReady().then(async () => {
       await apiWork.close()
       const sessionsClosed = await Promise.allSettled([sessions.close()])
       await ideServer.close()
-      logFailures([...databasesClosed, ...(await Promise.allSettled([files.unwatch(), gitWatcher.unwatch(), terminals.closeAll(), supervisor.closeAll(), server.close()]))])
+      logFailures([...databasesClosed, ...(await Promise.allSettled([files.unwatch(), gitWatcher.unwatch(), terminals.closeAll(), supervisor.closeAll(), server.close(), remote.close()]))])
       if (sessionsClosed[0].status === 'rejected') {
         dialog.showErrorBox("Couldn't save sessions before quitting", String(sessionsClosed[0].reason))
       }
