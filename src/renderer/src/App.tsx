@@ -1,14 +1,15 @@
 import { ChevronsUpDownIcon } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { AppState } from '../../shared/api'
 import { api } from './api'
 import { ProjectSwitcher } from './ProjectSwitcher'
-import { ProjectWorkspace } from './ProjectWorkspace'
+import { ProjectWorkspace, type ProjectWorkspaceHandle } from './ProjectWorkspace'
 import { isMac, modifierLabel, useShortcut } from './shortcuts'
 
 export function App() {
   const [state, setState] = useState<AppState | null>(null)
   const [switcherOpen, setSwitcherOpen] = useState(false)
+  const workspaceRef = useRef<ProjectWorkspaceHandle>(null)
 
   useEffect(() => {
     void api.getState().then(setState)
@@ -28,7 +29,7 @@ export function App() {
         <button
           type="button"
           onClick={() => setSwitcherOpen(true)}
-          title={`Switch project (${modifierLabel}O)`}
+          title={`Switch project or open a file (${modifierLabel}O)`}
           className="hover:bg-accent flex items-center gap-1.5 rounded-md px-2.5 py-1 font-medium [-webkit-app-region:no-drag]"
         >
           {activeProject?.name ?? 'No project'}
@@ -37,7 +38,7 @@ export function App() {
       </header>
       <main className="min-h-0 flex-1">
         {activeProject ? (
-          <ProjectWorkspace key={activeProject.id} project={activeProject} />
+          <ProjectWorkspace key={activeProject.id} project={activeProject} ref={workspaceRef} />
         ) : (
           <div className="text-muted-foreground flex h-full items-center justify-center">
             Press {modifierLabel}O to open a project
@@ -50,6 +51,7 @@ export function App() {
         onOpenChange={setSwitcherOpen}
         onActivate={(id) => void api.activateProject(id).then(setState)}
         onOpenPath={(path) => api.openProject(path).then(setState)}
+        onOpenFile={(path) => workspaceRef.current?.openFile(path)}
         onClose={(id) => void api.closeProject(id).then(setState)}
         onRemove={(id) => void api.removeProject(id).then(setState)}
       />

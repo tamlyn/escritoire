@@ -60,6 +60,7 @@ Check current versions and APIs against documentation when adding each one.
 | Process logs | Bounded in-memory ring buffers per process | Meets bounded retention with no storage |
 | SQL | Electron's built-in `node:sqlite` for SQLite; `pg` and `pg-cursor` for Postgres | `node:sqlite` needs no native module on EL8. It is synchronous and can't be interrupted, so each SQLite connection runs in a child process that cancelling kills. The cursor fetches only the rows shown |
 | Remote access | A WebSocket server in main, published with `tailscale serve`; Web Push for notifications | Decision 12. `tailscale serve` provides the tailnet-only exposure and the HTTPS that a home-screen web app, its service worker and push require |
+| Fuzzy matching | `fzf` (a JS port of fzf's algorithm), bundled into the renderer | fzf's ranking and match positions without needing the `fzf` binary on each machine or a process per keystroke. Used by the palette and @-mentions |
 | Tests | Vitest; Playwright driving Electron for end-to-end | Lets agents verify their own UI work |
 | Package manager | pnpm | |
 | Node | Managed with `asdf` | Development happens on the Mac only |
@@ -84,6 +85,7 @@ Check current versions and APIs against documentation when adding each one.
 - Supervised processes are never stopped merely by switching away or by inactivity. Closing the project or quitting the app stops them.
 - A user can remove a project from the list. This stops its processes and forgets its layout.
 - **Project switcher:** a keyboard-driven palette, by recency. Typing a path or fuzzy name in the same palette opens a new project; there is no separate "open project" UI.
+- **Opening files:** the same palette also matches the active project's files by fuzzy name, in a group below the matching projects. The list is fetched afresh each time the palette opens (git's tracked and untracked files, or a capped walk outside git), so there is no index to build or keep current.
 
 ### Attention within a project
 

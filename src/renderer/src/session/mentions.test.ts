@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { activeMention, insertMention, matchFiles } from './mentions'
+import { activeMention, insertMention } from './mentions'
 
 describe('activeMention', () => {
   it('finds an @ at the start of a word up to the caret', () => {
@@ -20,17 +20,5 @@ describe('insertMention', () => {
       text: 'see @src/main.ts please',
       caret: 17,
     })
-  })
-})
-
-describe('matchFiles', () => {
-  const files = ['src/main/index.ts', 'src/renderer/src/main.tsx', 'docs/maintenance.md', 'package.json']
-
-  it('ranks file name matches above path matches', () => {
-    expect(matchFiles(files, 'main', 10)).toEqual(['docs/maintenance.md', 'src/renderer/src/main.tsx', 'src/main/index.ts'])
-  })
-
-  it('matches characters in order', () => {
-    expect(matchFiles(files, 'pkjs', 10)).toEqual(['package.json'])
   })
 })

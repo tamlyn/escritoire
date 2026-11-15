@@ -50,6 +50,7 @@
     "electron": "45.2.3",
     "electron-builder": "^26.18.0",
     "electron-vite": "6.0.0",
+    "fzf": "0.5.2",
     "lucide-react": "^1.72.0",
     "radix-ui": "^1.8.1",
     "react": "19.3.1",

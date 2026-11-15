@@ -1,5 +1,5 @@
 import { FileDiffIcon, GitCommitHorizontalIcon, LoaderCircleIcon, PlusIcon, XIcon } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { type Ref, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import {
   Group,
   normalizeWorkspaceModel,
@@ -46,13 +46,17 @@ const emptyModel: WorkspaceModelInput<TabData> = {
   root: { type: 'tabset', tabs: [] },
 }
 
+/** What the rest of the window can do in the active project's tabs. */
+export type ProjectWorkspaceHandle = { openFile: (path: string) => void }
+
 /**
  * The file tree and tab area of one project. Mounted only while its project is
  * active; the tab layout is loaded on mount and saved on every change.
  */
-export function ProjectWorkspace({ project }: { project: Project }) {
+export function ProjectWorkspace({ project, ref }: { project: Project; ref?: Ref<ProjectWorkspaceHandle> }) {
   const [model, setModel] = useState<WorkspaceModelInput<TabData> | null>(null)
   const workspaceRef = useWorkspaceRef<TabData>()
+  useImperativeHandle(ref, () => ({ openFile: (path) => workspaceRef.current?.addTab(createFileTab(path)) }), [workspaceRef])
   const openTabs = useRef(new Map<string, TabData>())
   const sidebarRef = usePanelRef()
   // The sidebar's width is shared by all projects.

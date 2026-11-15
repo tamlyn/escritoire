@@ -5,7 +5,8 @@ import type { ImageAttachment, SessionPointer, SessionSettings, SettingChoices }
 import { baseName, parentPath } from '../../../shared/files'
 import { api, flushers } from '../api'
 import { imageFiles, toAttachment } from './images'
-import { activeMention, insertMention, type Mention, matchFiles } from './mentions'
+import { fuzzyFinder } from '../fuzzy'
+import { activeMention, insertMention, type Mention } from './mentions'
 import { nextPermissionMode } from './SessionControls'
 import { imageUrl } from './Transcript'
 
@@ -53,9 +54,13 @@ export function Composer({
   }, [pointer.agentSessionId])
 
   const query = mention?.query
+  const findFiles = useMemo(
+    () => (files ? fuzzyFinder(files, { path: (path) => path, limit: mentionLimit }) : null),
+    [files],
+  )
   const matches = useMemo(
-    () => (query !== undefined && files ? matchFiles(files, query, mentionLimit) : []),
-    [files, query],
+    () => (query !== undefined && findFiles ? findFiles(query).map((match) => match.item) : []),
+    [findFiles, query],
   )
   const canSend = text.trim() !== '' || images.length > 0
 

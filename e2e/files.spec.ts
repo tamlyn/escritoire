@@ -123,3 +123,30 @@ test('creates scratch and named files, and renames them', async () => {
   await close()
   await rm(root, { recursive: true, force: true })
 })
+
+test('opens a project file from the switcher by fuzzy name', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'escritoire-e2e-')))
+  const dataDir = join(root, 'data')
+  const project = join(root, 'project')
+  await mkdir(join(project, 'src', 'server'), { recursive: true })
+  await writeFile(join(project, 'src', 'server', 'routes.ts'), 'export const routes = []\n')
+  await writeFile(join(project, 'README.md'), '# Hello\n')
+
+  const { page, close } = await launchApp(dataDir)
+  await page.keyboard.press(`${modifier}+o`)
+  await page.getByRole('combobox').fill(`${project}/`)
+  await page.getByRole('option', { name: `Open ${project}/` }).click()
+  await page.locator('[data-workspace]').waitFor()
+
+  await page.keyboard.press(`${modifier}+o`)
+  await page.getByRole('combobox').fill('srvrt')
+  await expect(page.getByRole('group', { name: 'Files' }).getByRole('option')).toHaveText(['src/server/routes.ts'])
+  await page.screenshot({ path: 'test-results/open-file.png' })
+  await page.keyboard.press('Enter')
+
+  await expect(page.getByRole('tab', { name: 'routes.ts' })).toBeVisible()
+  await expect(page.locator('.cm-content:visible')).toContainText('export const routes')
+
+  await close()
+  await rm(root, { recursive: true, force: true })
+})
