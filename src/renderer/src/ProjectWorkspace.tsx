@@ -155,11 +155,11 @@ function release(projectId: string, tabId: string, data: TabData): void {
 
 const classNames: WorkspaceClassNames = {
   tabset: 'flex h-full flex-col',
-  header: 'flex h-9 shrink-0 bg-chrome',
-  tabList: 'flex min-w-0 flex-1 overflow-x-auto',
+  header: 'flex min-h-9 shrink-0 bg-chrome',
+  tabList: 'flex min-w-0 flex-1 flex-wrap',
   tabPanels: 'relative min-h-0 flex-1 bg-background',
   tabContent: 'h-full',
-  toolbar: 'flex items-center px-1',
+  toolbar: 'flex h-9 items-center px-1',
   dropIndicator: 'rounded-md border border-ring/60 bg-ring/15 transition-[inset] duration-150',
   dragPreview: 'rounded-md bg-popover px-3 py-1.5 shadow-lg',
 }
@@ -181,7 +181,7 @@ function TabHeader({ tab, props }: { tab: Tab; props: React.HTMLAttributes<HTMLE
         props.onAuxClick?.(event)
         if (event.button === 1) workspace?.closeTab(tab.id)
       }}
-      className={`${props.className ?? ''} group text-muted-foreground hover:text-foreground data-[tab-selected]:bg-background data-[tab-selected]:text-foreground flex max-w-56 cursor-default items-center gap-1.5 pr-1 pl-3`}
+      className={`${props.className ?? ''} group text-muted-foreground hover:text-foreground data-[tab-selected]:bg-background data-[tab-selected]:text-foreground flex h-9 max-w-56 cursor-default items-center gap-1.5 pr-1 pl-3`}
     >
       {tab.data.kind === 'session' ? (
         <SessionTabLabel tab={tab} agentSessionId={tab.data.agentSessionId} />

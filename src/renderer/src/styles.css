@@ -6,6 +6,7 @@
 @custom-variant dark (@media (prefers-color-scheme: dark));
 
 :root {
+  color-scheme: light dark;
   --radius: 0.5rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -95,6 +96,7 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    scrollbar-color: color-mix(in oklch, var(--muted-foreground) 40%, transparent) transparent;
   }
   html,
   body,
@@ -191,10 +193,6 @@
 
 .cm-blame:hover {
   color: var(--foreground);
-}
-
-.cm-scroller {
-  scrollbar-color: color-mix(in oklch, var(--muted-foreground) 40%, transparent) transparent;
 }
 
 .cm-change-gutter {
