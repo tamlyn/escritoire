@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test } from 'vitest'
@@ -35,13 +35,20 @@ test('saves connections and file choices across restarts', async () => {
 test("forgets a change it couldn't write", async () => {
   const store = new ConnectionStore(dataDir)
   await store.save('p', lite)
-  await chmod(join(dataDir, 'connections'), 0o500)
+  const directory = join(dataDir, 'connections')
+  const backup = join(dataDir, 'connections-backup')
+  // A file blocks directory creation even when the tests run as root in CI.
+  await rename(directory, backup)
+  await writeFile(directory, '')
   try {
     await expect(store.save('p', pg)).rejects.toThrow()
   } finally {
-    await chmod(join(dataDir, 'connections'), 0o700)
+    await rm(directory)
+    await rename(backup, directory)
   }
   expect(await store.get('p')).toEqual({ connections: [lite], files: {} })
+  expect(await new ConnectionStore(dataDir).get('p')).toEqual({ connections: [lite], files: {} })
+  expect(await store.save('p', pg)).toEqual({ connections: [lite, pg], files: {} })
 })
 
 test('deleting a connection forgets the files that used it', async () => {
