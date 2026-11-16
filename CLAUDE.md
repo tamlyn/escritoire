@@ -6,9 +6,10 @@ Agentic IDE built with Electron. `HISTORY.md` holds the decisions, tech stack an
 
 - `pnpm dev`: run with hot reload
 - `pnpm typecheck`
+- `pnpm release`: create a local `vYYYY.M.D` tag at HEAD using today's local date; does not push.
 - `pnpm test`: Vitest unit tests (`src/**/*.test.ts`)
 - `pnpm test:e2e`: builds, then drives the real app with Playwright (`e2e/`). Use `launchApp()` from `e2e/app.ts`, which isolates the user data directory. The remote access tests also drive Chromium and WebKit, so after Playwright updates run `npx playwright install chromium webkit`. Don't type into the app's windows while the tests run.
-- `pnpm dist`: packages the app for this machine into `dist/`. The RHEL 8 build comes from GitHub Actions (`.github/workflows/build.yml`), built in an EL8 container; tag `v*` to publish a release.
+- `pnpm dist`: packages the app for this machine into `dist/`. The RHEL 8 build comes from GitHub Actions (`.github/workflows/build.yml`), built in an EL8 container; push a `vYYYY.M.D` tag (no leading zeros) to publish a release. CI sets the app version from the tag.
 
 ## Packaging
 

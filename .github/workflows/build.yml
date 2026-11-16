@@ -27,6 +27,20 @@ jobs:
 
       - uses: pnpm/action-setup@v6
 
+      - name: Set release version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const version = process.env.GITHUB_REF_NAME.slice(1);
+          if (!/^[1-9][0-9]{3}\.([1-9]|1[0-2])\.([1-9]|[12][0-9]|3[01])$/.test(version)) {
+            throw new Error('Release tags must use vYYYY.M.D, without leading zeros');
+          }
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          pkg.version = version;
+          fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          NODE
+
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm typecheck
