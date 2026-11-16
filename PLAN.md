@@ -8,11 +8,48 @@ This document captures direction, not an exhaustive specification. Build iterati
 
 Starting priorities, not fixed release gates. Try each increment and let actual use determine the next improvement.
 
-1. Attention across projects: the inbox, dock badge, OS notifications and switcher ordering.
-2. The Orca review pass (see below).
-3. Remote access from a phone over Tailscale, in the build order given in that section.
+1. The bugs and Codex fixes under "From use", below.
+2. Attention across projects: the inbox, dock badge, OS notifications and switcher ordering.
+3. The Orca review pass (see below).
+4. Remote access from a phone over Tailscale, in the build order given in that section.
 
-Agent session features from the VS Code extension that aren't yet built are added in the order they are missed, alongside these slices.
+The other items under "From use", and agent session features from the VS Code extension that aren't yet built, are added in the order they are missed, alongside these slices.
+
+## From use
+
+Noticed using Escritoire day to day (November 2026).
+
+### Bugs
+
+- The new tab page's scrollbar should sit at the right edge of the tab, as in a session tab.
+- ⌘O and @-mentions offer a deleted file that the file tree no longer shows. `git ls-files --cached` lists tracked files deleted from the working tree until the deletion is staged.
+- Resizing or splitting a terminal tab vertically gives double scrollbars, because the terminal doesn't refit to its new height.
+- Terminals open before the system switches between light and dark keep the old theme; they read it only once, when created.
+
+### Codex
+
+- **Modes set the sandbox as well as approvals.** Escritoire passes only an approval policy, so the sandbox comes from Codex's own config and folder trust. That explains "Ask when needed" asking before editing project files while running `curl` or `python` without asking: the project gets a read-only sandbox, in which those commands run unasked. Offer Codex's presets instead, each a sandbox and an approval policy together: read only; auto (write the workspace, ask to go beyond it), which is the auto mode wanted; and full access. Check the current app-server docs for both settings.
+- **Starting a session must fail visibly.** With the Codex CLI not installed, the new session button does nothing. Show why, in the tab. Claude's binary is bundled with the SDK, but a wrong `ESCRITOIRE_CLAUDE_CODE_PATH` or a failed login needs the same.
+- **Show progress while a session starts.** Starting Codex from cold can take a few seconds.
+
+### Agent sessions
+
+- **Esc doesn't interrupt**: it's too easy to hit by accident. The stop button does.
+- **Slash commands** in the composer, for both agents.
+- **Subscription usage** (five-hour and weekly) beside context usage. The Agent SDK reports Claude's plan limits when they apply, not for an API key or Bedrock; check what app-server reports for Codex.
+- **File links in agent messages open in the editor**, including a line number (`/path/to/PLAN.md:83`). Paths outside the project open too.
+- **Thinking is collapsed by default.**
+- **Queued messages are shown above the composer** until sent, where each can be edited or cancelled. Today Claude's look like sent messages and Codex's aren't shown at all.
+
+### Workspace and editor
+
+- **Several windows**, each showing one project. Per-client state already makes each window just another client. This amends decision 7 (one project in view per window rather than per app), which HISTORY.md should say when built.
+- Dropping a file from the tree onto the tabs opens it where it was dropped, including in a new split, as if it had been opened and its tab dragged there.
+- A rendered Markdown view, a simple image viewer, and wrapping long lines in the editor.
+
+### Remote access
+
+- **Offer to run `tailscale serve`** from the remote access dialog when the `tailscale` CLI is found, and show the resulting URL; otherwise show the command to run.
 
 ## Agent integration hardening from Orca
 
