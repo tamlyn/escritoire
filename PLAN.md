@@ -9,10 +9,8 @@ This document captures direction, not an exhaustive specification. Build iterati
 Starting priorities, not fixed release gates. Try each increment and let actual use determine the next improvement.
 
 1. Attention across projects: the inbox, dock badge, OS notifications and switcher ordering.
-2. IDE context for agents.
-3. The Orca review pass (see below).
-4. Remote access from a phone over Tailscale, in the build order given in that section.
-5. Updating without losing work.
+2. The Orca review pass (see below).
+3. Remote access from a phone over Tailscale, in the build order given in that section.
 
 Agent session features from the VS Code extension that aren't yet built are added in the order they are missed, alongside these slices.
 
@@ -40,15 +38,9 @@ The user must be able to tell when another project needs them, without a persist
 
 - **Inbox in the top bar:** one small control beside the active project's name, showing a count of sessions in other projects that need attention. It opens a list of those sessions, waiting for input first, then unread finished turns, each with its project. Choosing one switches to that project and focuses the session. This is the one persistent attention indicator.
 - When the window is unfocused, also a dock badge and an OS notification.
+- **Away means absent, not unfocused.** Web Push to a phone depends on whether the user is at the desktop (presence, in HISTORY.md), not on window focus, so walking away with Escritoire focused still notifies the phone. Treat the user as away after one minute idle rather than five.
 - **Project switcher** orders projects needing attention first, then the rest by recency. Each row shows state at a glance: agents working or waiting, processes running or crashed.
 - No jump-to-next-project shortcut is needed.
-
-### IDE context for agents
-
-- IDE context is always scoped to the agent session's project, even while the user is viewing another project. Return that project's last active file editor tab and its selection, or no file if none has been viewed. With several clients connected, that is the most recently active across them.
-- No open-file inventory or change inventory is needed from MCP; agents use git to inspect changes. Supervisor tools are likewise scoped to the session's project.
-- Agents can show a change to the user for review.
-- **Same for both agents.** This must be available to Claude and Codex identically.
 
 ### Remote access
 
@@ -56,13 +48,11 @@ Use Escritoire from a phone, and later from another computer, over the user's Ta
 
 Pairing, revocation and serving the renderer to a browser are built (see Remote access in HISTORY.md).
 
-- **Main owns everything; every client is a view.** Several clients may be connected at once: the desktop window, a phone, another computer. Any of them can send prompts and answer questions and permission requests. The first answer wins and the others see the request resolved. Viewing a session on any client marks it read. Drafts already live in main, so they follow the user between clients; the last write wins.
-- **Reconnect by snapshot.** Phones drop connections often. For now a lost connection shows a Reconnect button that reloads the page. On reconnect a client reopens what it shows and gets fresh snapshots, as it does on first open; no replay log until that proves too slow. Requests pending when the connection drops fail and are never retried automatically: the composer keeps its text, and the fresh snapshot shows whether the message arrived. A client whose send buffer grows past a threshold is disconnected and recovers the same way, which covers screen output and session events with one rule.
-- **Images are downscaled on the client** before sending, since phone photos are large and the models cap image size anyway. Other attachments, or uploads into the project, get an HTTP upload on the same listener only when needed.
+- **Reconnect by snapshot.** A client that reconnects reopens what it shows and gets fresh snapshots, as on first open; no replay log until that proves too slow. A client whose send buffer grows past a threshold is disconnected and recovers the same way, which covers screen output and session events with one rule.
+- **Attachments other than images**, or uploads into the project, get an HTTP upload on the same listener only when needed.
 - **The phone is for driving agent sessions.** Its layout covers the attention loop first: the inbox, the project switcher, and session tabs (read, send, answer, interrupt, switch model and mode). Terminals and file editors are an occasional convenience there, added after the session loop works; git and processes come only when missed.
 - **The phone keeps no workspace layout.** A project's saved layout belongs to the desktop. The phone derives its view from the session list and opens anything else as a transient view, so it never overwrites the desktop's tabs.
-- **Notifications:** Web Push to paired phones under the same rules as the dock badge and OS notifications, which stay with the desktop shell. On iOS this needs the web app added to the home screen.
-- **Electron stays at the edge.** API methods must not depend on native dialogs, the dock or a local window, so every method works from a remote client.
+- **Notifications:** Web Push to paired phones when the user is away from the desktop (see Attention across projects). The dock badge and OS notifications stay with the desktop shell. On iOS this needs the web app added to the home screen.
 - **Remote sessions between computers come later.** The same transport lets Escritoire on one computer view a project hosted by Escritoire on another, so agents keep running while a laptop sleeps. Paths, processes, terminals and agents then belong to the host, not the viewing machine. Running main headless (without a window) belongs to that later slice.
 
 Build order:
@@ -71,15 +61,28 @@ Build order:
 2. Web Push.
 3. Terminals and file editors on the phone.
 
+## Later, if use shows a need
+
+Nice to have, not scheduled.
+
 ### Updating without losing work
 
 Installing a new version must not cost the user an agent's turn. See decision 13.
 
+- Nothing yet tells the running app an update exists: the mac build is a bare app directory and Linux a tarball, with no updater. Decide how an update is installed and noticed first. With `asar` off, overwriting the app's files while it runs may break modules it loads later.
 - When an update is ready, say so, and restart once no session is mid-turn or waiting for input. Sessions resume from their transcripts when next sent a message, as after any restart. A permission request left overnight would block that indefinitely, so the user can also restart at once.
-- Start again the supervised processes that were running before the restart. This restores what was running rather than configuring restarts per process, so it doesn't contradict the non-goal below.
+- Start again the supervised processes that were running before the restart. This restores what was running rather than configuring restarts per process, so it doesn't contradict the non-goal below. Restarting still interrupts one-off processes mid-run, such as a migration, and running SQL queries.
 - Shells restart with their scrollback and directory, as now. Keeping them alive across a restart needs a long-lived process holding the ptys (VS Code's pty host); build it only if losing shells proves painful.
 
-### Later, if use shows a need
+### IDE context for agents
+
+Rarely needed: the user @-mentions files instead.
+
+- The active file and selection, scoped to the agent session's project even while the user views another: that project's last active file editor tab and its selection, from the most recently active client.
+- Agents show the user a diff only when asked to, never unprompted.
+- The same for Claude and Codex.
+
+### Other
 
 - **Relate changes to the agent session that made them**, in the git view.
 - **Automatic session reaping.** Only reap finished sessions, never working sessions or sessions waiting for input. Preserve history, read state and unsent drafts. Choose a timeout through use rather than promising token-cost equivalence.

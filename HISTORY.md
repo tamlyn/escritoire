@@ -194,6 +194,10 @@ The first step towards using Escritoire from a phone (see [Remote access](PLAN.m
   - Main stores only hashes of paired tokens (`remote-access.json`), so reading the data directory yields nothing usable. An agent running as the user can still write to that directory, which is the same trust boundary as Claude Code's own.
   - The desktop's header has a remote access button, showing how many devices are connected. Its dialog turns remote access on and off, shows a pairing code, and lists paired devices, each of which can be revoked. Revoking disconnects the device, which then asks to pair again.
   - The `ts.net` hostname appears in public Certificate Transparency logs, which is accepted.
+- **Main owns everything; every client is a view.** Any connected client can send prompts and answer questions and permission requests. The first answer wins: an answer to a request already settled is ignored, and the others see it resolved. Drafts live in main, so they follow the user between clients; the last write wins.
+- **A lost connection fails the requests in flight** and shows a Reconnect button that reloads the page. Nothing is retried automatically: the composer keeps its text, and the fresh snapshot shows whether the message arrived.
+- **Images are downscaled on the client** before sending (`renderer/src/session/images.ts`), since phone photos are large and Claude scales them down anyway.
+- **Electron stays at the edge.** API methods don't depend on native dialogs, the dock or a local window, so every method works from a remote client.
 - **Links to a process's port** point at the host's localhost, so they are plain text on a remote client.
 
 ## Slices built

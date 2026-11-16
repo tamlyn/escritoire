@@ -1,22 +1,24 @@
-<center>
+<h1 align="center">Escritoire</h1>
 
-# Escritoire
-
-<img src="docs/images/escritoire.png" alt="Engraving of a writing desk with a fold-out top and many drawers" width="120">
-
-</center>
-
-
-Yet another vibe coded agentic IDE.
+<p align="center">
+  <img src="docs/images/escritoire.png" alt="Engraving of a writing desk with a fold-out top and many drawers" width="120">
+  <br><br>
+  You're a writer now. Here is your writing desk.
+</p>
 
 ## What's so special about this then?
 
-- Integrated process manager so you can see the processes started by your agents, and they can see the logs of your processes
-- Client-server architecture so you can:
-  - Manage stuff from your mobile over Tailscale
-  - Run agents on remote machines
+- Integrated process manager
+  - You can see the processes started by your agents
+  - Agents can see the logs of your processes
+  - Single click start/stop/restart
+  - Keep track of which processes are using which ports
+- Client-server architecture
+  - Looks like a normal Electron app
+  - Manage stuff from your mobile over Tailscale or SSH
+  - Run agents on remote machines with exactly the same UI as local
 - Open any number of projects and agent sessions with minimal memory use
-- Save and reload project state
+- Project state (tabs, agent sessions, terminals) persisted automatically
 - Claude and Codex presented in the same GUI style
 - Run `.sql` files line-by-line against your database (DataGrip style)
 
@@ -28,11 +30,12 @@ Yet another vibe coded agentic IDE.
 - Light and dark modes
 - Use your existing Claude and Codex subscription
 
-### But not this stuff
+### But not this
 
 - No plugins or themes
 - No code completion
 - No language servers
+- No file indexing
 
 ## Running it
 
