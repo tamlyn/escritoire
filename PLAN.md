@@ -21,11 +21,7 @@ Noticed using Escritoire day to day (November 2026).
 
 ### Agent sessions
 
-- **Esc shouldn't interrupt**: it's too easy to hit by accident. The stop button does.
 - **Subscription usage** (five-hour and weekly) beside context usage. The Agent SDK reports Claude's plan limits when they apply, not for an API key or Bedrock; check what app-server reports for Codex.
-- **File links in agent messages open in the editor**, including a line number (`/path/to/PLAN.md:83`). Paths outside the project open too.
-- **Thinking is collapsed by default.**
-- **Queued messages are shown above the composer** until sent, where each can be edited or cancelled. Today Claude's look like sent messages and Codex's aren't shown at all.
 
 ### Workspace and editor
 

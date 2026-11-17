@@ -9,6 +9,7 @@ import { api, flushers, subscribe } from '../api'
 import { blameGutter } from './blame'
 import { changeMarkers } from './change-markers'
 import { changeFromDisk, editorTheme, loadLanguage } from './editor'
+import { followReveals } from './reveal'
 import { runGutter, setRunningTasks } from './run-gutter'
 
 const saveDelayMs = 500
@@ -153,9 +154,10 @@ export function Editor({
     })
     viewRef.current = view
     loadLanguage(view, language, baseName(path))
-
+    const stopFollowing = followReveals(view, projectId, path)
 
     return () => {
+      stopFollowing()
       flushers.delete(flush)
       clearTimeout(scrollTimer)
       save()

@@ -8,6 +8,8 @@ import { useSession, useSessionSummary, useSettingChoices } from '../sessions'
 import { createSessionTab, type Tab, type TabData } from '../tabs'
 import { BackgroundTasks } from './BackgroundTasks'
 import { Composer } from './Composer'
+import { FileLinksProvider } from './FileLinks'
+import { QueuedMessages } from './QueuedMessages'
 import { Requests } from './Requests'
 import { SessionControls } from './SessionControls'
 import { Transcript } from './Transcript'
@@ -61,11 +63,14 @@ export function SessionTab({ tab, pointer }: { tab: Tab; pointer: SessionPointer
 
   return (
     <div className="flex h-full flex-col">
-      <Transcript items={view.items} working={working} />
+      <FileLinksProvider working={working}>
+        <Transcript items={view.items} working={working} />
+      </FileLinksProvider>
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-2 px-4 pb-4">
         <StatusLine status={view.status} error={view.error} />
         <BackgroundTasks tasks={view.tasks} pointer={pointer} />
         <Requests requests={view.requests} pointer={pointer} />
+        <QueuedMessages queued={view.queued} pointer={pointer} />
         <Composer
           projectId={project.id}
           pointer={pointer}

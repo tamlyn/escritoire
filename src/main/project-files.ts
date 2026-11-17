@@ -87,7 +87,7 @@ export class ProjectFiles {
   }
 
   async readFile(projectId: string, path: string): Promise<FileContent> {
-    const file = await this.resolve(projectId, path)
+    const file = await this.resolveFile(projectId, path)
     try {
       const info = await stat(file)
       if (!info.isFile()) return { kind: 'missing' }
@@ -112,11 +112,11 @@ export class ProjectFiles {
    * bring back a file an agent has just deleted.
    */
   async writeFile(projectId: string, path: string, text: string, expected?: string): Promise<WriteResult> {
-    const resolution = this.resolving.then(() => this.resolve(projectId, path))
+    const resolution = this.resolving.then(() => this.resolveFile(projectId, path))
     this.resolving = resolution.then(() => {}, () => {})
     const file = await resolution
     const write = (this.writes.get(file) ?? Promise.resolve()).catch(() => {}).then(async () => {
-      await this.resolve(projectId, path)
+      await this.resolveFile(projectId, path)
       if (expected !== undefined) {
         const current = await readFile(file, 'utf8').catch((error) => {
           if (error.code === 'ENOENT') return undefined
@@ -256,6 +256,15 @@ export class ProjectFiles {
     // and the finished write must still be recognised.
     const current = await readFile(file, 'utf8').catch(() => undefined)
     return current === written
+  }
+
+  /**
+   * A file to read or edit may be outside the project, such as one an agent
+   * links to. Only the tree (listing, creating, moving, deleting) is confined to
+   * the project. Clients can run shells, so this gives them nothing new.
+   */
+  private async resolveFile(projectId: string, path: string): Promise<string> {
+    return realpathAllowingMissing(resolve(await realpath(this.options.projectPath(projectId)), path))
   }
 
   private async resolve(projectId: string, path: string): Promise<string> {

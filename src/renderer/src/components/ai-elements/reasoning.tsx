@@ -98,9 +98,11 @@ export const Reasoning = memo(
       }
     }, [isStreaming, isOpen, setIsOpen, isExplicitlyClosed]);
 
-    // Auto-close when streaming ends (once only, and only if it ever streamed)
+    // Auto-close when streaming ends (once only, and only if it ever streamed),
+    // unless it started closed, when only the user opened it.
     useEffect(() => {
       if (
+        !isExplicitlyClosed &&
         hasEverStreamedRef.current &&
         !isStreaming &&
         isOpen &&
@@ -113,7 +115,7 @@ export const Reasoning = memo(
 
         return () => clearTimeout(timer);
       }
-    }, [isStreaming, isOpen, setIsOpen, hasAutoClosed]);
+    }, [isStreaming, isOpen, setIsOpen, hasAutoClosed, isExplicitlyClosed]);
 
     const handleOpenChange = useCallback(
       (newOpen: boolean) => {

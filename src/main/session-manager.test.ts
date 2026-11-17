@@ -107,6 +107,7 @@ describe('SessionManager', () => {
     runs[0]!.emit({ type: 'conversationReset', agentSessionId: 'session-2' })
 
     expect(sent.at(-2)!.payload).toMatchObject({ agentSessionId: 'session-1', event: { type: 'conversationReset' } })
+    runs[0]!.emit({ type: 'statusChanged', status: 'idle' })
     const moved = { agent: 'claude' as const, agentSessionId: 'session-2' }
     expect((await manager.openSession('p1', moved)).view.items).toEqual([])
     manager.sendMessage(moved, say('What number?'))
@@ -229,6 +230,31 @@ describe('SessionManager', () => {
     runs[0]!.emit({ type: 'statusChanged', status: 'errored', error: 'Claude Code exited.' })
     manager.sendMessage(pointer, say('Again'))
     expect(runs[1]!.options.settings).toEqual({})
+  })
+
+  it('queues messages sent during a turn and sends them one per turn', async () => {
+    const { manager, runs } = await setup()
+    const pointer = await manager.createSession('p1', 'claude')
+    await manager.openSession('p1', pointer)
+    manager.sendMessage(pointer, say('First'))
+    manager.sendMessage(pointer, say('Second'))
+    manager.sendMessage(pointer, say('Third'))
+    manager.sendMessage(pointer, say('Fourth'))
+
+    const queued = () => manager.openSession('p1', pointer).then(({ view }) => view.queued)
+    const [second, third, fourth] = await queued()
+    expect(runs[0]!.sent).toEqual(['First'])
+    manager.editQueuedMessage(pointer, second!.id, 'Second, edited')
+    manager.cancelQueuedMessage(pointer, third!.id)
+
+    runs[0]!.emit({ type: 'statusChanged', status: 'idle' })
+    expect(runs[0]!.sent).toEqual(['First', 'Second, edited'])
+    expect(await queued()).toEqual([fourth])
+
+    // An interrupted or failed turn ends too.
+    runs[0]!.emit({ type: 'statusChanged', status: 'errored', error: 'Claude Code exited.' })
+    expect(runs[1]!.sent).toEqual(['Fourth'])
+    expect(await queued()).toEqual([])
   })
 
   it('continues in the mode the agent switched to', async () => {

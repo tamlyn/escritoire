@@ -166,9 +166,6 @@ export function Composer({
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
       send()
-    } else if (event.key === 'Escape' && working) {
-      event.preventDefault()
-      void api.interrupt(pointer)
     } else if (event.key === 'Tab' && event.shiftKey) {
       const mode = nextPermissionMode(choices, settings.permissionMode)
       if (mode) {
@@ -271,13 +268,13 @@ export function Composer({
             onPaste={onPaste}
             autoFocus={autoFocus}
             rows={1}
-            placeholder={working ? 'Queue a message (Esc to interrupt)' : 'Message agent, @ to mention a file, / for commands'}
+            placeholder={working ? 'Queue a message for when the agent finishes' : 'Message agent, @ to mention a file, / for commands'}
             className="placeholder:text-muted-foreground field-sizing-content max-h-60 min-h-9 flex-1 resize-none bg-transparent px-2 py-1.5 outline-none"
           />
           {working && !canSend ? (
             <button
               type="button"
-              title="Interrupt (Esc)"
+              title="Interrupt"
               onClick={() => void api.interrupt(pointer)}
               className="bg-primary text-primary-foreground flex size-8 shrink-0 items-center justify-center rounded-lg"
             >

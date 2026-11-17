@@ -13,6 +13,9 @@ export type ImageAttachment = { mediaType: string; data: string }
 
 export type UserInput = { text: string; images: ImageAttachment[] }
 
+/** A message the user sent during a turn, held by the IDE until the turn ends. */
+export type QueuedMessage = UserInput & { id: string }
+
 export type Item =
   | { kind: 'userMessage'; id: string; text: string; images?: ImageAttachment[] }
   | { kind: 'agentMessage'; id: string; parentId?: string; text: string }
@@ -128,6 +131,8 @@ export type AgentEvent =
    * on as a new session with an empty transcript. The old one stays resumable.
    */
   | { type: 'conversationReset'; agentSessionId: string }
+  /** The session's whole queue. From the session manager, not an adapter. */
+  | { type: 'queueChanged'; queued: QueuedMessage[] }
 
 export type SessionView = {
   status: SessionStatus
@@ -137,6 +142,7 @@ export type SessionView = {
   settings: SessionSettings
   usage?: ContextUsage
   tasks: BackgroundTask[]
+  queued: QueuedMessage[]
 }
 
 export const emptySessionView: SessionView = {
@@ -145,6 +151,7 @@ export const emptySessionView: SessionView = {
   requests: [],
   settings: {},
   tasks: [],
+  queued: [],
 }
 
 export function applyEvent(view: SessionView, event: AgentEvent): SessionView {
@@ -176,7 +183,9 @@ export function applyEvent(view: SessionView, event: AgentEvent): SessionView {
     case 'tasksChanged':
       return { ...view, tasks: event.tasks }
     case 'conversationReset':
-      return { ...emptySessionView, status: view.status, settings: view.settings, tasks: view.tasks }
+      return { ...emptySessionView, status: view.status, settings: view.settings, tasks: view.tasks, queued: view.queued }
+    case 'queueChanged':
+      return { ...view, queued: event.queued }
   }
 }
 

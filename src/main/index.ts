@@ -102,6 +102,8 @@ function createApi(client: Client, { clients, remote, projects, sessions, sessio
     },
     closeSessionView: async (session) => clients.closeSessionView(client, session),
     sendMessage: async (session, input) => sessions.sendMessage(session, input),
+    editQueuedMessage: async (session, id, text) => sessions.editQueuedMessage(session, id, text),
+    cancelQueuedMessage: async (session, id) => sessions.cancelQueuedMessage(session, id),
     interrupt: (session) => sessions.interrupt(session),
     getSettingChoices: (projectId, agent) => sessions.settingChoices(projectId, agent),
     listCommands: (projectId, agent) => sessions.listCommands(projectId, agent),

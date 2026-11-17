@@ -6,6 +6,7 @@ import {
   emptySessionView,
   type OpenedSession,
   type PastSession,
+  type QueuedMessage,
   type RequestResponse,
   type SessionPointer,
   type SessionSettings,
@@ -163,11 +164,49 @@ export class SessionManager {
     return current.latest ? Promise.resolve(current.latest) : current.loading!
   }
 
+  /**
+   * Sends the message, or during a turn queues it until the turn ends. Queued
+   * here rather than by the agent, so the user can see, edit and cancel it.
+   */
   sendMessage(pointer: SessionPointer, input: UserInput): void {
     const session = this.get(pointer)
+    session.record.draft = ''
+    this.save(session)
+    if (session.view.status === 'working') {
+      this.setQueue(session, [...session.view.queued, { ...input, id: randomUUID() }])
+    } else {
+      this.dispatch(session, input)
+    }
+  }
+
+  editQueuedMessage(pointer: SessionPointer, id: string, text: string): void {
+    const session = this.get(pointer)
+    this.setQueue(session, session.view.queued.map((message) => (message.id === id ? { ...message, text } : message)))
+  }
+
+  cancelQueuedMessage(pointer: SessionPointer, id: string): void {
+    const session = this.get(pointer)
+    this.setQueue(session, session.view.queued.filter((message) => message.id !== id))
+  }
+
+  private setQueue(session: Session, queued: QueuedMessage[]): void {
+    this.apply(session, { type: 'queueChanged', queued })
+  }
+
+  /** Whatever ended the turn, including an interruption or a failure, the next queued message goes. */
+  private sendQueued(session: Session): void {
+    const [next, ...rest] = session.view.queued
+    if (!next) return
+    this.setQueue(session, rest)
+    this.dispatch(session, { text: next.text, images: next.images })
+  }
+
+  private dispatch(session: Session, input: UserInput): void {
+    const { pointer } = session
     // Sessions resumed from elsewhere keep the title the agent gave them.
     if (!session.record.title && !session.hadHistory) {
       session.record.title = titleFrom(input.text) || 'Image'
+      this.save(session)
     }
     session.run ??= this.adapter(pointer.agent).start(
       {
@@ -178,8 +217,6 @@ export class SessionManager {
       },
       (event) => this.apply(session, event),
     )
-    session.record.draft = ''
-    this.save(session)
     session.run.send(input)
   }
 
@@ -284,6 +321,7 @@ export class SessionManager {
     }
     if (event.type === 'conversationReset') this.moveTo(session, event.agentSessionId)
     if (event.type !== 'itemUpserted' && event.type !== 'textAppended') this.broadcastSummaries()
+    if (event.type === 'statusChanged' && event.status !== 'working') this.sendQueued(session)
   }
 
   /**

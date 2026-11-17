@@ -102,9 +102,17 @@ test('trashes a symlink rather than what it links to', async () => {
   await expect(files.delete('p', '')).rejects.toThrow('Not a file name')
 })
 
-test('refuses paths outside the project', async () => {
-  await expect(files.readFile('p', '../secret')).rejects.toThrow('Outside the project')
-  await expect(files.writeFile('p', '/etc/hosts', '')).rejects.toThrow('Outside the project')
+test('reads and writes files outside the project, but changes only its tree', async () => {
+  const outside = await realpath(await mkdtemp(join(tmpdir(), 'escritoire-outside-')))
+  try {
+    await writeFile(join(outside, 'notes.md'), 'a')
+    expect(await files.writeFile('p', join(outside, 'notes.md'), 'b')).toBe('saved')
+    expect(await files.readFile('p', join(outside, 'notes.md'))).toEqual({ kind: 'text', text: 'b' })
+    await expect(files.listDirectory('p', '..')).rejects.toThrow('Outside the project')
+    await expect(files.delete('p', join(outside, 'notes.md'))).rejects.toThrow('Outside the project')
+  } finally {
+    await rm(outside, { recursive: true, force: true })
+  }
 })
 
 test('reports changes made by others, but not its own writes or dependencies', async () => {
@@ -141,10 +149,8 @@ test('serializes writes through canonical aliases and rejects stale saves', asyn
   expect(await readFile(join(root, 'file.txt'), 'utf8')).toBe('last')
 })
 
-test('rejects links outside the project for reads, writes and directory listing', async () => {
+test('leaves links outside the project out of the tree', async () => {
   await symlink(tmpdir(), join(root, 'outside'))
   await expect(files.listDirectory('p', 'outside')).rejects.toThrow('Outside the project')
-  await expect(files.readFile('p', 'outside')).rejects.toThrow('Outside the project')
-  await expect(files.writeFile('p', 'outside', 'bad')).rejects.toThrow('Outside the project')
   expect(await files.listDirectory('p', '')).toEqual([])
 })

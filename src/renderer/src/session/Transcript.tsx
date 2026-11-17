@@ -17,6 +17,7 @@ import {
 import { cn } from '@/lib/utils'
 import { BrainIcon } from 'lucide-react'
 import type { ImageAttachment, Item, ToolView } from '../../../shared/agent'
+import { fileLinkProps } from './FileLinks'
 
 export function Transcript({ items, working }: { items: Item[]; working: boolean }) {
   const children = new Map<string, Item[]>()
@@ -86,7 +87,9 @@ function ItemView({
       return (
         <Message from="assistant">
           <MessageContent>
-            <MessageResponse isAnimating={streaming}>{item.text}</MessageResponse>
+            <MessageResponse isAnimating={streaming} {...fileLinkProps}>
+              {item.text}
+            </MessageResponse>
           </MessageContent>
         </Message>
       )
@@ -100,7 +103,7 @@ function ItemView({
         )
       }
       return (
-        <Reasoning className="mb-0" isStreaming={streaming}>
+        <Reasoning className="mb-0" isStreaming={streaming} defaultOpen={false}>
           <ReasoningTrigger className="py-0.5 [&_svg]:size-3.5" />
           <ReasoningContent className="mt-1 mb-2 ml-1.5 border-l pl-4">{item.text}</ReasoningContent>
         </Reasoning>

@@ -63,8 +63,10 @@ export type Api = {
   /** Loads the session if needed and subscribes to its `sessionEvent`s. */
   openSession(projectId: string, session: SessionPointer): Promise<OpenedSession>
   closeSessionView(session: SessionPointer): Promise<void>
-  /** Starts or resumes the agent if it isn't running. */
+  /** Starts or resumes the agent if it isn't running. During a turn the message is queued. */
   sendMessage(session: SessionPointer, input: UserInput): Promise<void>
+  editQueuedMessage(session: SessionPointer, id: string, text: string): Promise<void>
+  cancelQueuedMessage(session: SessionPointer, id: string): Promise<void>
   interrupt(session: SessionPointer): Promise<void>
   getSettingChoices(projectId: string, agent: AgentKind): Promise<SettingChoices>
   listCommands(projectId: string, agent: AgentKind): Promise<SlashCommand[]>
@@ -164,6 +166,8 @@ const apiMethodSet: Record<keyof Api, true> = {
   openSession: true,
   closeSessionView: true,
   sendMessage: true,
+  editQueuedMessage: true,
+  cancelQueuedMessage: true,
   interrupt: true,
   getSettingChoices: true,
   listCommands: true,

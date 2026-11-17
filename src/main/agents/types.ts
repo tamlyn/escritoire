@@ -41,7 +41,11 @@ export type StartOptions = {
  * nothing more; a closed run emits nothing.
  */
 export interface AgentRun {
-  /** During a turn the message is queued for the agent to pick up. */
+  /**
+   * The session manager holds messages until a turn ends, but the agent may
+   * start a turn of its own (when a background task finishes, say), so a
+   * message arriving during one is queued for the agent to pick up.
+   */
   send(input: UserInput): void
   interrupt(): Promise<void>
   respond(requestId: string, response: RequestResponse): void
