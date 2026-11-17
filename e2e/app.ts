@@ -6,9 +6,12 @@ import { _electron as electron, type ElectronApplication, type Page } from '@pla
 export type RunningApp = { app: ElectronApplication; page: Page; close: () => Promise<void> }
 
 /** Launches the built app with its own data directory, so tests never touch real state. */
-export async function launchApp(userDataDir?: string): Promise<RunningApp> {
+export async function launchApp(userDataDir?: string, env?: Record<string, string>): Promise<RunningApp> {
   const dataDir = userDataDir ?? (await mkdtemp(join(tmpdir(), 'escritoire-e2e-')))
-  const app = await electron.launch({ args: ['.', `--user-data-dir=${dataDir}`] })
+  const app = await electron.launch({
+    args: ['.', `--user-data-dir=${dataDir}`],
+    ...(env ? { env: { ...process.env, ...env } as Record<string, string> } : {}),
+  })
   const page = await app.firstWindow()
   await page.getByRole('banner').waitFor()
   return {

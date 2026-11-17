@@ -8,7 +8,7 @@ This document captures direction, not an exhaustive specification. Build iterati
 
 Starting priorities, not fixed release gates. Try each increment and let actual use determine the next improvement.
 
-1. The bugs and Codex fixes under "From use", below.
+1. The bugs under "From use", below.
 2. Attention across projects: the inbox, dock badge, OS notifications and switcher ordering.
 3. The Orca review pass (see below).
 4. Remote access from a phone over Tailscale, in the build order given in that section.
@@ -18,12 +18,6 @@ The other items under "From use", and agent session features from the VS Code ex
 ## From use
 
 Noticed using Escritoire day to day (November 2026).
-
-### Codex
-
-- **Modes set the sandbox as well as approvals.** Escritoire passes only an approval policy, so the sandbox comes from Codex's own config and folder trust. That explains "Ask when needed" asking before editing project files while running `curl` or `python` without asking: the project gets a read-only sandbox, in which those commands run unasked. Offer Codex's presets instead, each a sandbox and an approval policy together: read only; auto (write the workspace, ask to go beyond it), which is the auto mode wanted; and full access. Check the current app-server docs for both settings.
-- **Starting a session must fail visibly.** With the Codex CLI not installed, the new session button does nothing. Show why, in the tab. Claude's binary is bundled with the SDK, but a wrong `ESCRITOIRE_CLAUDE_CODE_PATH` or a failed login needs the same.
-- **Show progress while a session starts.** Starting Codex from cold can take a few seconds.
 
 ### Agent sessions
 

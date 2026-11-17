@@ -61,8 +61,11 @@ turns, handles command/file approvals and questions, and interrupts active turns
 Unknown item types remain visible. Only the IDE server's tool-approval elicitations
 are automatically accepted. Other elicitations are shown for approval; unsupported
 client requests receive a JSON-RPC error. Models and effort choices come from
-`model/list`; approval policies offered are `on-request` and `untrusted`, with the
-user's configured sandbox retained. Supervisor tools are supplied on creation or resume along
+`model/list`. Modes are Codex's presets (read only, auto, full access), each an
+approval policy with a sandbox mode. Resume passes both, so the configured details
+of that sandbox (network access, extra writable roots) still apply; `turn/start`
+replaces the sandbox policy only when a mode change during the run needs a
+different sandbox. Supervisor tools are supplied on creation or resume along
 with guidance to use them for background processes.
 
 Context usage uses the latest request’s total tokens and reported context window,

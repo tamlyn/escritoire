@@ -21,26 +21,43 @@ beforeEach(() => { mocks.clients.length = 0; mocks.call.mockReset() })
 
 describe('Codex adapter', () => {
   it('reports effective settings on open and live context usage without cumulative totals', async () => {
-    const effective = { model: 'actual-model', approvalPolicy: 'untrusted', reasoningEffort: 'high' }
+    const effective = { model: 'actual-model', approvalPolicy: 'on-request', sandbox: { type: 'readOnly' }, reasoningEffort: 'high' }
     mocks.call.mockImplementation(async (method: string) => method === 'thread/start' ? { thread: { id: 'usage-thread' }, ...effective } : { turn: { id: 'turn' } })
     const id = await codexAdapter.createSession('/project')
-    expect((await codexAdapter.loadHistory(id, '/project')).settings).toEqual({ model: 'actual-model', permissionMode: 'untrusted', effort: 'high' })
+    expect((await codexAdapter.loadHistory(id, '/project')).settings).toEqual({ model: 'actual-model', permissionMode: 'read-only', effort: 'high' })
     let view: SessionView = { ...emptySessionView }
     const run = codexAdapter.start({ cwd: '/project', agentSessionId: id, settings: {} }, (e) => { view = applyEvent(view, e) })
     run.send({ text: 'Hi', images: [] }); await tick()
-    expect(view.settings).toEqual({ model: 'actual-model', permissionMode: 'untrusted', effort: 'high' })
+    expect(view.settings).toEqual({ model: 'actual-model', permissionMode: 'read-only', effort: 'high' })
     const client = mocks.clients[0]
     client.onMessage({ method: 'thread/tokenUsage/updated', params: { threadId: id, tokenUsage: { last: { totalTokens: 25000, cachedInputTokens: 20000 }, total: { totalTokens: 100000 }, modelContextWindow: 100000 } } })
     expect(view.usage).toMatchObject({ contextTokens: 25000, contextWindow: 100000, cacheReadTokens: 20000, cacheWriteTokens: 0 })
-    client.onMessage({ method: 'thread/settings/updated', params: { threadId: id, threadSettings: { model: 'new-model', approvalPolicy: 'on-request', effort: 'low' } } })
-    expect(view.settings).toEqual({ model: 'new-model', permissionMode: 'on-request', effort: 'low' })
+    client.onMessage({ method: 'thread/settings/updated', params: { threadId: id, threadSettings: { model: 'new-model', approvalPolicy: 'untrusted', sandboxPolicy: { type: 'readOnly' }, effort: 'low' } } })
+    expect(view.settings).toEqual({ model: 'new-model', permissionMode: 'custom', effort: 'low' })
     run.close()
   })
 
-  it('restores the resolved model and approval policy from resume', async () => {
-    mocks.call.mockResolvedValueOnce({ model: 'restored-model', approvalPolicy: 'never', reasoningEffort: 'medium' }).mockResolvedValueOnce({ data: [], nextCursor: null })
+  it('restores the resolved model and mode from resume', async () => {
+    mocks.call.mockResolvedValueOnce({ model: 'restored-model', approvalPolicy: 'never', sandbox: { type: 'dangerFullAccess' }, reasoningEffort: 'medium' }).mockResolvedValueOnce({ data: [], nextCursor: null })
     const history = await codexAdapter.loadHistory('existing', '/project')
-    expect(history.settings).toEqual({ model: 'restored-model', permissionMode: 'never', effort: 'medium' })
+    expect(history.settings).toEqual({ model: 'restored-model', permissionMode: 'full-access', effort: 'medium' })
+  })
+
+  it('resumes in the chosen mode and switches sandbox only when the mode changes it', async () => {
+    mocks.call.mockImplementation(async (method: string) => method === 'thread/resume'
+      ? { approvalPolicy: 'on-request', sandbox: { type: 'workspaceWrite', networkAccess: true } }
+      : { turn: { id: 'turn' } })
+    const run = codexAdapter.start({ cwd: '/project', agentSessionId: 'thread', settings: { permissionMode: 'auto' } }, () => {})
+    run.send({ text: 'Hello', images: [] }); await tick()
+    expect(mocks.call).toHaveBeenCalledWith('thread/resume', expect.objectContaining({ approvalPolicy: 'on-request', sandbox: 'workspace-write' }))
+    const firstTurn = mocks.call.mock.calls.find(([m]) => m === 'turn/start')![1]
+    expect(firstTurn).toMatchObject({ approvalPolicy: 'on-request' })
+    expect(firstTurn).not.toHaveProperty('sandboxPolicy')
+    mocks.clients[0].onMessage({ method: 'turn/completed', params: { threadId: 'thread', turn: { id: 'turn', status: 'completed' } } })
+    await run.changeSettings({ permissionMode: 'full-access' })
+    run.send({ text: 'Again', images: [] }); await tick()
+    expect(mocks.call.mock.calls.filter(([m]) => m === 'turn/start')[1]![1]).toMatchObject({ approvalPolicy: 'never', sandboxPolicy: { type: 'dangerFullAccess' } })
+    run.close()
   })
 
   it('adopts an unpersisted new thread without resuming it', async () => {

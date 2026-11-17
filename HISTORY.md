@@ -108,6 +108,8 @@ Check current versions and APIs against documentation when adding each one.
   - finished and read;
   - finished and read but with an unsent draft message;
   - errored.
+- **Starting a session shows progress and fails visibly.** Codex starts its app-server and a thread before the tab opens, which can take seconds, so the new tab's button shows it starting, and a failure (such as no Codex CLI) is shown in that tab. Claude starts when the first message is sent; a wrong `ESCRITOIRE_CLAUDE_CODE_PATH` or a missing login already ends the run with the reason in the session.
+- **Codex modes are Codex's own presets**, each a sandbox and an approval policy together: read only, auto (write the workspace, ask to go beyond it) and full access. An approval policy alone isn't enough: the sandbox would come from Codex's config and folder trust, and in an untrusted folder's read-only sandbox "on-request" asks before every edit yet runs any command unasked. A thread in any other combination shows as custom. Permission profiles would replace this but are still experimental in app-server.
 - Find and resume past sessions. This naturally includes sessions started outside the IDE (e.g. `claude` in a separate terminal), since they live in the same on-disk store. Attaching to one that is still running elsewhere is out of scope.
 
 ### Session restore

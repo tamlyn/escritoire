@@ -14,9 +14,12 @@ export class CodexRpc {
   onError: (error: Error) => void = () => {}
 
   constructor(cwd: string) {
-    this.child = spawn(process.env.ESCRITOIRE_CODEX_PATH || 'codex', ['app-server'], { cwd, stdio: ['pipe', 'pipe', 'pipe'] })
+    const command = process.env.ESCRITOIRE_CODEX_PATH || 'codex'
+    this.child = spawn(command, ['app-server'], { cwd, stdio: ['pipe', 'pipe', 'pipe'] })
     this.child.stderr.on('data', (data) => { this.stderr = (this.stderr + String(data)).slice(-4000) })
-    this.child.on('error', (error) => this.fail(error))
+    this.child.on('error', (error: NodeJS.ErrnoException) => this.fail(error.code === 'ENOENT'
+      ? new Error(`Couldn't find the Codex CLI (${command}). Install it, or set ESCRITOIRE_CODEX_PATH to it.`)
+      : error))
     this.child.stdin.on('error', (error) => this.fail(error))
     this.child.on('exit', (code, signal) => this.fail(new Error(`Codex exited (${signal ?? code}). ${this.stderr}`)))
     const lines = createInterface({ input: this.child.stdout })
@@ -58,13 +61,14 @@ export class CodexRpc {
   }
   private fail(error: Error): void {
     if (this.closed) return
-    this.close()
+    this.close(error)
     this.onError(error)
   }
-  close(): void {
+  /** Outstanding calls reject with `reason`. */
+  close(reason = new Error('Codex connection closed')): void {
     if (this.closed) return
     this.closed = true
-    for (const call of this.pending.values()) { clearTimeout(call.timer); call.reject(new Error('Codex connection closed')) }
+    for (const call of this.pending.values()) { clearTimeout(call.timer); call.reject(reason) }
     this.pending.clear()
     this.child.kill()
   }

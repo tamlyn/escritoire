@@ -1,7 +1,7 @@
-import { FilePlusIcon, MessageSquarePlusIcon, SquareTerminalIcon } from 'lucide-react'
+import { FilePlusIcon, LoaderCircleIcon, MessageSquarePlusIcon, SquareTerminalIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useParentTab, useParentWorkspace } from 'react-resizable-panels'
-import type { PastSession } from '../../shared/agent'
+import type { AgentKind, PastSession } from '../../shared/agent'
 import { api } from './api'
 import { useFileActions } from './file-actions'
 import { relativeTime } from './lib/time'
@@ -10,6 +10,7 @@ import { modifierLabel } from './shortcuts'
 import { createFileTab, createSessionTab, createTerminalTab, type Tab, type TabData } from './tabs'
 
 const maxPastSessions = 20
+const agentNames: Record<AgentKind, string> = { claude: 'Claude', codex: 'Codex' }
 const startButton =
   'hover:bg-accent focus-visible:ring-ring flex items-center gap-3 rounded-lg border px-4 py-3 text-left outline-none focus-visible:ring-2'
 
@@ -20,6 +21,8 @@ export function NewTabPage({ tab }: { tab: Tab }) {
   const parentTab = useParentTab()
   const fileActions = useFileActions()
   const [pastSessions, setPastSessions] = useState<PastSession[] | null>(null)
+  const [starting, setStarting] = useState<AgentKind | null>(null)
+  const [startError, setStartError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -37,28 +40,48 @@ export function NewTabPage({ tab }: { tab: Tab }) {
     workspace.closeTab(tab.id)
   }
 
-  async function startSession(agent: 'claude' | 'codex') {
-    const pointer = await api.createSession(project.id, agent)
-    replaceWith(createSessionTab(pointer, ''))
+  // Codex starts its app-server and a thread before the tab can open, which can take seconds or fail.
+  async function startSession(agent: AgentKind) {
+    if (starting) return
+    setStarting(agent)
+    setStartError(null)
+    try {
+      const pointer = await api.createSession(project.id, agent)
+      replaceWith(createSessionTab(pointer, ''))
+    } catch (error) {
+      setStartError(`Couldn't start the ${agentNames[agent]} session: ${error instanceof Error ? error.message : String(error)}`)
+    } finally {
+      setStarting(null)
+    }
+  }
+
+  function sessionButton(agent: AgentKind, autoFocus = false) {
+    return (
+      <button
+        type="button"
+        autoFocus={autoFocus}
+        disabled={starting !== null}
+        onClick={() => void startSession(agent)}
+        className={startButton}
+      >
+        {starting === agent ? (
+          <LoaderCircleIcon className="text-muted-foreground size-5 animate-spin" />
+        ) : (
+          <MessageSquarePlusIcon className="text-muted-foreground size-5" />
+        )}
+        <span className="font-medium">
+          {starting === agent ? `Starting ${agentNames[agent]}…` : `New ${agentNames[agent]} session`}
+        </span>
+      </button>
+    )
   }
 
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto flex max-w-xl flex-col gap-8 px-6 py-16">
         <div className="flex flex-col gap-2">
-          <button
-            type="button"
-            autoFocus
-            onClick={() => void startSession('claude')}
-            className={startButton}
-          >
-            <MessageSquarePlusIcon className="text-muted-foreground size-5" />
-            <span className="font-medium">New Claude session</span>
-          </button>
-          <button type="button" onClick={() => void startSession('codex')} className={startButton}>
-            <MessageSquarePlusIcon className="text-muted-foreground size-5" />
-            <span className="font-medium">New Codex session</span>
-          </button>
+          {sessionButton('claude', true)}
+          {sessionButton('codex')}
           <button type="button" onClick={() => replaceWith(createTerminalTab())} className={startButton}>
             <SquareTerminalIcon className="text-muted-foreground size-5" />
             <span className="font-medium">New terminal</span>
@@ -72,6 +95,7 @@ export function NewTabPage({ tab }: { tab: Tab }) {
             <span className="font-medium">New file</span>
             <span className="text-muted-foreground ml-auto text-xs">{modifierLabel}N</span>
           </button>
+          {startError && <p role="alert" className="text-destructive px-1 text-sm">{startError}</p>}
         </div>
 
         {pastSessions && pastSessions.length > 0 && (
@@ -86,7 +110,7 @@ export function NewTabPage({ tab }: { tab: Tab }) {
               >
                 <span className="min-w-0 flex-1 truncate">{session.title || 'Untitled session'}</span>
                 <span className="text-muted-foreground shrink-0 text-xs">
-                  {session.agent === 'codex' ? 'Codex · ' : 'Claude · '}{relativeTime(session.lastActiveAt)}
+                  {agentNames[session.agent]} · {relativeTime(session.lastActiveAt)}
                 </span>
               </button>
             ))}

@@ -7,6 +7,9 @@ import type { TurnStartResponse } from './codex-protocol/v2/TurnStartResponse'
 import type { ModelListResponse } from './codex-protocol/v2/ModelListResponse'
 import type { ThreadTokenUsage } from './codex-protocol/v2/ThreadTokenUsage'
 import type { ThreadSettingsUpdatedNotification } from './codex-protocol/v2/ThreadSettingsUpdatedNotification'
+import type { AskForApproval } from './codex-protocol/v2/AskForApproval'
+import type { SandboxMode } from './codex-protocol/v2/SandboxMode'
+import type { SandboxPolicy } from './codex-protocol/v2/SandboxPolicy'
 import { CodexRpc, type RpcMessage } from './codex-rpc'
 import type { AgentAdapter, AgentRun, StartOptions } from './types'
 
@@ -18,7 +21,20 @@ async function using<T>(cwd: string, fn: (rpc: CodexRpc) => Promise<T>): Promise
 
 // Codex only writes a rollout after the first turn. Keep newly created threads
 // alive until the run adopts their connection.
-const freshThreads = new Map<string, { rpc: CodexRpc; settings: SessionSettings }>()
+const freshThreads = new Map<string, { rpc: CodexRpc; resolved: Resolved }>()
+
+// Codex's own presets. The sandbox has to be chosen with the approval policy:
+// in a read-only sandbox "on-request" runs any command unasked but asks to edit.
+const modes = {
+  'read-only': { label: 'Read only', approvalPolicy: 'on-request', sandbox: 'read-only' },
+  auto: { label: 'Auto', approvalPolicy: 'on-request', sandbox: 'workspace-write' },
+  'full-access': { label: 'Full access', approvalPolicy: 'never', sandbox: 'danger-full-access' },
+} satisfies Record<string, { label: string; approvalPolicy: AskForApproval; sandbox: SandboxMode }>
+
+type Mode = (typeof modes)[keyof typeof modes]
+const modeFor = (id: string | null | undefined): Mode | undefined => id && Object.hasOwn(modes, id) ? modes[id as keyof typeof modes] : undefined
+
+type Resolved = Pick<ThreadStartResponse, 'model' | 'approvalPolicy' | 'sandbox' | 'reasoningEffort'>
 
 export const codexAdapter: AgentAdapter = {
   kind: 'codex',
@@ -27,7 +43,7 @@ export const codexAdapter: AgentAdapter = {
     try {
       await rpc.initialize()
       const result = await rpc.call<ThreadStartResponse>('thread/start', { cwd, ...ideConfig(ide) })
-      freshThreads.set(result.thread.id, { rpc, settings: resolvedSettings(result) })
+      freshThreads.set(result.thread.id, { rpc, resolved: result })
       return result.thread.id
     } catch (e) { rpc.close(); throw e }
   },
@@ -43,7 +59,7 @@ export const codexAdapter: AgentAdapter = {
     } while (cursor)
     return sessions
   }),
-  loadHistory: (threadId, cwd) => freshThreads.has(threadId) ? Promise.resolve({ items: [], settings: freshThreads.get(threadId)!.settings }) : using(cwd, async (rpc) => {
+  loadHistory: (threadId, cwd) => freshThreads.has(threadId) ? Promise.resolve({ items: [], settings: resolvedSettings(freshThreads.get(threadId)!.resolved) }) : using(cwd, async (rpc) => {
     let usage: ContextUsage | undefined
     rpc.onMessage = (m) => {
       if (m.method === 'thread/tokenUsage/updated' && m.params?.threadId === threadId) usage = contextUsage(m.params.tokenUsage as ThreadTokenUsage)
@@ -69,17 +85,38 @@ export const codexAdapter: AgentAdapter = {
     } while (cursor)
     return {
       models: [{ id: 'default', label: 'Default', efforts: models.find((m) => m.isDefault)?.supportedReasoningEfforts.map((e) => e.reasoningEffort) ?? [] }, ...models.map((m) => ({ id: m.model, label: m.displayName, description: m.description, efforts: m.supportedReasoningEfforts.map((e) => e.reasoningEffort) }))],
-      permissionModes: [{ id: 'on-request', label: 'Ask when needed' }, { id: 'untrusted', label: 'Ask first' }, { id: 'never', label: 'Never ask' }],
+      permissionModes: Object.entries(modes).map(([id, { label }]) => ({ id, label })),
     }
   }),
   start: (options, emit) => new CodexRun(options, emit),
 }
 
-function resolvedSettings(result: Pick<ThreadStartResponse, 'model' | 'approvalPolicy' | 'reasoningEffort'>): SessionSettings {
+function resolvedSettings(result: Resolved): SessionSettings {
+  const sandbox = sandboxMode(result.sandbox)
+  const mode = Object.entries(modes).find(([, m]) => m.sandbox === sandbox && m.approvalPolicy === result.approvalPolicy)
   return {
     ...(result.model ? { model: result.model } : {}),
-    ...(result.approvalPolicy ? { permissionMode: typeof result.approvalPolicy === 'string' ? result.approvalPolicy : 'granular' } : {}),
+    ...(result.approvalPolicy && result.sandbox ? { permissionMode: mode?.[0] ?? 'custom' } : {}),
     ...(result.reasoningEffort !== undefined ? { effort: result.reasoningEffort } : {}),
+  }
+}
+
+function sandboxMode(policy: SandboxPolicy | undefined): SandboxMode | undefined {
+  switch (policy?.type) {
+    case 'readOnly': return 'read-only'
+    case 'workspaceWrite': return 'workspace-write'
+    case 'dangerFullAccess': return 'danger-full-access'
+    default: return undefined
+  }
+}
+
+// Only sent when switching sandbox mid-run, since it replaces the user's
+// configured details (network access, extra writable roots).
+function sandboxPolicy(mode: SandboxMode): SandboxPolicy {
+  switch (mode) {
+    case 'read-only': return { type: 'readOnly', networkAccess: false }
+    case 'workspace-write': return { type: 'workspaceWrite', writableRoots: [], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false }
+    case 'danger-full-access': return { type: 'dangerFullAccess' }
   }
 }
 
@@ -131,6 +168,7 @@ class CodexRun implements AgentRun {
   private completedTurns = new Set<string>()
   private queue: UserInput[] = []
   private settings: SessionSettings
+  private sandbox?: SandboxMode
   private items = new Map<string, Item>()
   private requests = new Map<string, { id: number | string; method: string; params: Record<string, unknown> }>()
 
@@ -141,10 +179,12 @@ class CodexRun implements AgentRun {
     this.rpc = fresh?.rpc ?? new CodexRpc(options.cwd)
     this.rpc.onError = (e) => this.fail(e)
     this.rpc.onMessage = (m) => this.message(m)
-    this.ready = fresh ? Promise.resolve().then(() => this.reportSettings(fresh.settings)) : this.rpc.initialize().then(() => this.rpc.call<ThreadStartResponse>('thread/resume', {
+    const mode = modeFor(options.settings.permissionMode)
+    this.ready = fresh ? Promise.resolve().then(() => this.adopt(fresh.resolved)) : this.rpc.initialize().then(() => this.rpc.call<ThreadStartResponse>('thread/resume', {
       threadId: options.agentSessionId, cwd: options.cwd, excludeTurns: true,
+      ...(mode ? { approvalPolicy: mode.approvalPolicy, sandbox: mode.sandbox } : {}),
       ...ideConfig(options.ide),
-    })).then((result) => this.reportSettings(resolvedSettings(result)))
+    })).then((result) => this.adopt(result))
     void this.ready.catch((e: unknown) => this.fail(e))
   }
   send(input: UserInput): void { if (!this.closed) { this.queue.push(input); void this.drain() } }
@@ -157,11 +197,12 @@ class CodexRun implements AgentRun {
     try {
       await this.ready
       if (this.closed) return
+      const mode = modeFor(this.settings.permissionMode)
       const result = await this.rpc.call<TurnStartResponse>('turn/start', {
         threadId: this.options.agentSessionId,
         input: [{ type: 'text', text: input.text, text_elements: [] }, ...input.images.map((i) => ({ type: 'image', url: `data:${i.mediaType};base64,${i.data}` }))],
         model: this.settings.model ?? null, effort: this.settings.effort ?? null,
-        ...(this.settings.permissionMode && this.settings.permissionMode !== 'granular' ? { approvalPolicy: this.settings.permissionMode } : {}),
+        ...(mode ? { approvalPolicy: mode.approvalPolicy, ...(mode.sandbox !== this.sandbox ? { sandboxPolicy: sandboxPolicy(mode.sandbox) } : {}) } : {}),
       })
       if (!this.completedTurns.has(result.turn.id)) this.turnId ??= result.turn.id
       if (this.interruptRequested && this.turnId) await this.interrupt()
@@ -188,8 +229,9 @@ class CodexRun implements AgentRun {
   async changeSettings(settings: SessionSettings): Promise<void> { this.settings = { ...this.settings, ...settings } }
   async stopTask(): Promise<void> { throw new Error('Codex does not expose task stopping here. Interrupt the turn instead.') }
   close(): void { this.closed = true; this.queue = []; this.rpc.close() }
-  private reportSettings(settings: SessionSettings): void {
-    if (!this.closed) this.emit({ type: 'settingsChanged', settings })
+  private adopt(resolved: Resolved): void {
+    this.sandbox = sandboxMode(resolved.sandbox)
+    if (!this.closed) this.emit({ type: 'settingsChanged', settings: resolvedSettings(resolved) })
   }
   private resolve(id: string): void { this.requests.delete(id); this.emit({ type: 'requestResolved', requestId: id }) }
   private fail(error: unknown): void {
@@ -208,7 +250,7 @@ class CodexRun implements AgentRun {
         this.emit({ type: 'usageChanged', usage: contextUsage(p.tokenUsage as ThreadTokenUsage) }); break
       case 'thread/settings/updated': {
         const settings = (p as unknown as ThreadSettingsUpdatedNotification).threadSettings
-        this.reportSettings(resolvedSettings({ ...settings, reasoningEffort: settings.effort })); break
+        this.adopt({ ...settings, sandbox: settings.sandboxPolicy, reasoningEffort: settings.effort }); break
       }
       case 'turn/started': this.turnId = (p.turn as { id: string }).id; break
       case 'turn/completed': {
