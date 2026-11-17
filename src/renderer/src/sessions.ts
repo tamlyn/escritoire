@@ -79,10 +79,11 @@ export function useSession(projectId: string, pointer: SessionPointer): OpenSess
       const later = early.filter((e) => e.seq > opened.seq)
       if (later.length > 0) seq = later[later.length - 1]!.seq
       const reset = later.findLast((e) => e.event.type === 'conversationReset')?.event
+      const movedTo = reset?.type === 'conversationReset' ? reset.agentSessionId : opened.movedTo
       setState({
         view: later.reduce((view, e) => applyEvent(view, e.event), opened.view),
         draft: opened.draft,
-        ...(reset?.type === 'conversationReset' ? { movedTo: reset.agentSessionId } : {}),
+        ...(movedTo ? { movedTo } : {}),
       })
     })
 

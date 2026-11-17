@@ -40,6 +40,8 @@ export function Composer({
   const [files, setFiles] = useState<string[] | null>(null)
   const [commands, setCommands] = useState<SlashCommand[] | null>(null)
   const [selected, setSelected] = useState(0)
+  /** The user moved the selection, so Enter means that option. */
+  const [picked, setPicked] = useState(false)
   const textarea = useRef<HTMLTextAreaElement>(null)
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
@@ -99,12 +101,15 @@ export function Composer({
       : file
         ? { kind: 'file', ...file }
         : null
-    // Fetched afresh each time, so files an agent has just created, and skills just added, appear.
+    // Asked for each time, so files an agent has just created, and skills just added, appear.
     if (next?.kind === 'file' && mention?.kind !== 'file') void api.listProjectFiles(projectId).then(setFiles)
     if (next?.kind === 'command' && mention?.kind !== 'command') {
       void api.listCommands(projectId, pointer.agent).then(setCommands)
     }
-    if (next?.kind !== mention?.kind || next?.query !== mention?.query) setSelected(0)
+    if (next?.kind !== mention?.kind || next?.query !== mention?.query) {
+      setSelected(0)
+      setPicked(false)
+    }
     setMention(next)
   }
 
@@ -144,9 +149,10 @@ export function Composer({
         event.preventDefault()
         const step = event.key === 'ArrowDown' ? 1 : -1
         setSelected((selected + step + matches.length) % matches.length)
+        setPicked(true)
         return
       }
-      if (event.key === 'Enter' || event.key === 'Tab') {
+      if (event.key === 'Tab' || (event.key === 'Enter' && entersOption(matches[selected]!))) {
         event.preventDefault()
         choose(matches[selected]!)
         return
@@ -170,6 +176,13 @@ export function Composer({
         void api.changeSessionSettings(pointer, { permissionMode: mode })
       }
     }
+  }
+
+  // A complete command is sent, and a fuzzy match (`/tmp` finding `/template`) only replaces what was typed if chosen.
+  function entersOption(option: Option): boolean {
+    if (mention?.kind !== 'command' || picked) return true
+    const name = option.word.slice(1)
+    return name !== mention.query && name.startsWith(mention.query)
   }
 
   function onPaste(event: React.ClipboardEvent<HTMLTextAreaElement>) {
@@ -199,7 +212,10 @@ export function Composer({
               // Keeps focus, and so the caret, in the textarea.
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => choose(option)}
-              onMouseEnter={() => setSelected(index)}
+              onMouseEnter={() => {
+                setSelected(index)
+                setPicked(true)
+              }}
               className={cn(
                 'flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm',
                 index === selected && 'bg-accent text-accent-foreground',

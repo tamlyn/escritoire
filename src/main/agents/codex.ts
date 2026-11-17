@@ -69,7 +69,14 @@ export const codexAdapter: AgentAdapter = {
       if (m.method === 'thread/tokenUsage/updated' && m.params?.threadId === threadId) usage = contextUsage(m.params.tokenUsage as ThreadTokenUsage)
       else if (m.id !== undefined) rpc.unsupported(m.id)
     }
-    const result = await rpc.call<ThreadStartResponse>('thread/resume', { threadId, excludeTurns: true })
+    let result: ThreadStartResponse
+    try {
+      result = await rpc.call<ThreadStartResponse>('thread/resume', { threadId, excludeTurns: true })
+    } catch (e) {
+      // The run starts a new thread in its place.
+      if (isUnsaved(e)) return { items: [] }
+      throw e
+    }
     const items: Item[] = []
     let cursor: string | null = null
     do {
@@ -108,8 +115,13 @@ const builtInCommands: SlashCommand[] = [
   { name: 'review', description: 'Review uncommitted changes, or what the instructions ask for', argumentHint: '[instructions]' },
 ]
 
+// Codex only writes a thread's rollout after its first turn, so a thread the
+// app quit before using can't be resumed.
+const isUnsaved = (error: unknown) => error instanceof Error && error.message.startsWith('no rollout found')
+
+// A long-lived app-server caches skills, and would miss one added since.
 async function listSkills(rpc: CodexRpc, cwd: string): Promise<SkillMetadata[]> {
-  const result = await rpc.call<SkillsListResponse>('skills/list', { cwds: [cwd] })
+  const result = await rpc.call<SkillsListResponse>('skills/list', { cwds: [cwd], forceReload: true })
   return result.data.flatMap((entry) => entry.skills).filter((skill) => skill.enabled)
 }
 
@@ -202,6 +214,8 @@ class CodexRun implements AgentRun {
   /** Starts as the session's thread; `/clear` moves the run to a new one. */
   private threadId: string
   private requests = new Map<string, { id: number | string; method: string; params: Record<string, unknown> }>()
+  /** Settles a `/compact`, whose turn is only announced by `turn/started`. */
+  private turnStarted?: (turnId: string) => void
 
   constructor(private options: StartOptions, private emit: (event: AgentEvent) => void) {
     this.threadId = options.agentSessionId
@@ -211,13 +225,21 @@ class CodexRun implements AgentRun {
     this.rpc = fresh?.rpc ?? new CodexRpc(options.cwd)
     this.rpc.onError = (e) => this.fail(e)
     this.rpc.onMessage = (m) => this.message(m)
-    const mode = modeFor(options.settings.permissionMode)
-    this.ready = fresh ? Promise.resolve().then(() => this.adopt(fresh.resolved)) : this.rpc.initialize().then(() => this.rpc.call<ThreadStartResponse>('thread/resume', {
-      threadId: options.agentSessionId, cwd: options.cwd, excludeTurns: true,
-      ...(mode ? { approvalPolicy: mode.approvalPolicy, sandbox: mode.sandbox } : {}),
-      ...ideConfig(options.ide),
-    })).then((result) => this.adopt(result))
+    this.ready = fresh ? Promise.resolve().then(() => this.adopt(fresh.resolved)) : this.rpc.initialize().then(() => this.resume())
     void this.ready.catch((e: unknown) => this.fail(e))
+  }
+  private async resume(): Promise<void> {
+    const mode = modeFor(this.settings.permissionMode)
+    try {
+      this.adopt(await this.rpc.call<ThreadStartResponse>('thread/resume', {
+        threadId: this.threadId, cwd: this.options.cwd, excludeTurns: true,
+        ...(mode ? { approvalPolicy: mode.approvalPolicy, sandbox: mode.sandbox } : {}),
+        ...ideConfig(this.options.ide),
+      }))
+    } catch (e) {
+      if (!isUnsaved(e)) throw e
+      await this.startThread()
+    }
   }
   send(input: UserInput): void { if (!this.closed) { this.queue.push(input); void this.drain() } }
   private async drain(): Promise<void> {
@@ -230,18 +252,18 @@ class CodexRun implements AgentRun {
       await this.ready
       if (this.closed) return
       if (parseCommand(input.text)?.name === 'clear') {
-        await this.clear()
+        await this.startThread()
         this.emit({ type: 'statusChanged', status: 'idle' })
         void Promise.resolve().then(() => this.drain())
         return
       }
       const turn = await this.startTurn(input)
-      // Compaction's turn is only announced by `turn/started`.
-      if (turn && !this.completedTurns.has(turn.id)) this.turnId ??= turn.id
+      if (!this.completedTurns.has(turn.id)) this.turnId ??= turn.id
       if (this.interruptRequested && this.turnId) await this.interrupt()
     } catch (e) { this.fail(e) } finally { this.starting = false }
   }
-  private async clear(): Promise<void> {
+  /** Moves the run to a new thread. */
+  private async startThread(): Promise<void> {
     const mode = modeFor(this.settings.permissionMode)
     const result = await this.rpc.call<ThreadStartResponse>('thread/start', {
       cwd: this.options.cwd,
@@ -253,12 +275,13 @@ class CodexRun implements AgentRun {
     this.emit({ type: 'conversationReset', agentSessionId: this.threadId })
     this.adopt(result)
   }
-  private async startTurn(input: UserInput): Promise<{ id: string } | undefined> {
+  private async startTurn(input: UserInput): Promise<{ id: string }> {
     const threadId = this.threadId
     const command = parseCommand(input.text)
     if (command?.name === 'compact') {
+      const started = new Promise<string>((resolve) => { this.turnStarted = resolve })
       await this.rpc.call('thread/compact/start', { threadId })
-      return undefined
+      return { id: await started }
     }
     if (command?.name === 'review') {
       const target: ReviewTarget = command.args ? { type: 'custom', instructions: command.args } : { type: 'uncommittedChanges' }
@@ -276,6 +299,8 @@ class CodexRun implements AgentRun {
       model: this.settings.model ?? null, effort: this.settings.effort ?? null,
       ...(mode ? { approvalPolicy: mode.approvalPolicy, ...(mode.sandbox !== this.sandbox ? { sandboxPolicy: sandboxPolicy(mode.sandbox) } : {}) } : {}),
     })
+    // The override lasts for the thread, whether or not Codex reports it.
+    if (mode) this.sandbox = mode.sandbox
     return result.turn
   }
   async interrupt(): Promise<void> {
@@ -322,7 +347,12 @@ class CodexRun implements AgentRun {
         const settings = (p as unknown as ThreadSettingsUpdatedNotification).threadSettings
         this.adopt({ ...settings, sandbox: settings.sandboxPolicy, reasoningEffort: settings.effort }); break
       }
-      case 'turn/started': this.turnId = (p.turn as { id: string }).id; break
+      case 'turn/started': {
+        this.turnId = (p.turn as { id: string }).id
+        this.turnStarted?.(this.turnId)
+        this.turnStarted = undefined
+        break
+      }
       case 'turn/completed': {
         this.turnId = undefined
         for (const id of this.requests.keys()) this.resolve(id)

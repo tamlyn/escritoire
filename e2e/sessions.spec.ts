@@ -64,7 +64,6 @@ test('clears the transcript and follows the new session on /clear', async () => 
   const firstTabId = await page.getByRole('tab', { name: 'New session' }).getAttribute('data-tab-id')
   // Claude Code runs /clear itself, without asking the model.
   await composer.fill('/clear')
-  await composer.press('Escape')
   await composer.press('Enter')
   await expect(page.locator(`[data-tab-id="${firstTabId}"]`)).toHaveCount(0)
   await expect(page.getByRole('tab', { name: 'New session', selected: true })).toBeVisible()

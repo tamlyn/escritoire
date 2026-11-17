@@ -218,6 +218,8 @@ export type OpenedSession = {
   seq: number
   title: string
   draft: string
+  /** The session the conversation continues in, if the agent reset it. Nothing else is filled in then. */
+  movedTo: string | null
 }
 
 export type SessionEvent = { agentSessionId: string; seq: number; event: AgentEvent }

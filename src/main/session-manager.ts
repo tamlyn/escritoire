@@ -23,6 +23,8 @@ import { Work } from './work'
 
 type ProjectWork = { work: Work; loading: Map<string, Promise<Session>> }
 
+type CommandList = { latest?: SlashCommand[]; loading?: Promise<SlashCommand[]> }
+
 type Session = {
   projectId: string
   pointer: SessionPointer
@@ -56,8 +58,15 @@ const titleLength = 60
  */
 export class SessionManager {
   private readonly sessions = new Map<string, Session>()
+  /**
+   * Where each reset conversation continues, so a client that missed the reset
+   * (its tab wasn't mounted, or it wasn't connected) still follows it.
+   */
+  private readonly moved = new Map<string, string>()
   /** Projects with sessions loading or loaded, until they close. */
   private readonly projects = new Map<string, ProjectWork>()
+  /** By project and agent. */
+  private readonly commands = new Map<string, CommandList>()
   private closed = false
   private readonly now: () => number
 
@@ -106,6 +115,8 @@ export class SessionManager {
   }
 
   async openSession(projectId: string, pointer: SessionPointer): Promise<OpenedSession> {
+    const movedTo = this.moved.get(pointer.agentSessionId)
+    if (movedTo) return { view: emptySessionView, seq: 0, title: '', draft: '', movedTo }
     const session = await this.load(projectId, pointer)
     session.subscribed = true
     this.broadcastSummaries()
@@ -114,6 +125,7 @@ export class SessionManager {
       seq: session.seq,
       title: session.record.title,
       draft: session.record.draft,
+      movedTo: null,
     }
   }
 
@@ -128,8 +140,27 @@ export class SessionManager {
     return this.adapter(agent).settingChoices(this.deps.projectPath(projectId))
   }
 
-  async listCommands(projectId: string, agent: AgentKind): Promise<SlashCommand[]> {
-    return this.adapter(agent).listCommands(this.deps.projectPath(projectId))
+  /**
+   * Listing commands starts an agent process, which takes seconds, so this
+   * answers with the last list and refreshes it for next time: a skill just
+   * added appears the time after.
+   */
+  listCommands(projectId: string, agent: AgentKind): Promise<SlashCommand[]> {
+    const key = `${projectId}\n${agent}`
+    let list = this.commands.get(key)
+    if (!list) {
+      list = {}
+      this.commands.set(key, list)
+    }
+    const current = list
+    if (!current.loading) {
+      const loading = this.adapter(agent).listCommands(this.deps.projectPath(projectId))
+      current.loading = loading
+      void loading
+        .then((commands) => { current.latest = commands }, () => {})
+        .finally(() => { current.loading = undefined })
+    }
+    return current.latest ? Promise.resolve(current.latest) : current.loading!
   }
 
   sendMessage(pointer: SessionPointer, input: UserInput): void {
@@ -257,9 +288,11 @@ export class SessionManager {
 
   /**
    * Continues the run as the agent's new session. The old session's record stays
-   * for when it is resumed. Clients follow by opening the new one.
+   * for when it is resumed, though until the app restarts opening it leads to
+   * the new one. Clients follow by opening the new one.
    */
   private moveTo(session: Session, agentSessionId: string): void {
+    this.moved.set(session.pointer.agentSessionId, agentSessionId)
     this.sessions.delete(session.pointer.agentSessionId)
     session.pointer = { ...session.pointer, agentSessionId }
     session.record = { ...newRecord(session.pointer.agent), draft: session.record.draft, settings: session.record.settings }

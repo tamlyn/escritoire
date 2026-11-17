@@ -173,9 +173,9 @@ function loadCommands(cwd: string): Promise<SlashCommand[]> {
   return probe(cwd, async (probe) => {
     const commands = new Map<string, SlashCommand>()
     for (const command of await probe.supportedCommands()) {
+      if (settingCommands.has(command.name)) continue
       // Where names clash, Claude Code runs its own command.
       if (commands.has(command.name) && !command.builtin) continue
-      if (command.builtin && settingCommands.has(command.name)) continue
       commands.set(command.name, {
         name: command.name,
         description: command.description,
@@ -698,7 +698,8 @@ function userItem(id: string, text: string, images: ImageAttachment[]): Item | n
   if (notification) {
     return { kind: 'notice', id, level: 'info', text: [notification[1], notification[2]].filter(Boolean).join(': ') }
   }
-  const command = /^<command-name>\/?([^<]*)<\/command-name>/.exec(text)
+  // Skills and custom commands are saved with a `<command-message>` first.
+  const command = /^(?:<command-message>[\s\S]*?<\/command-message>\s*)?<command-name>\/?([^<]*)<\/command-name>/.exec(text)
   if (command) {
     const args = /<command-args>([\s\S]*?)<\/command-args>/.exec(text)?.[1] ?? ''
     return { kind: 'userMessage', id, text: `/${command[1]} ${args}`.trim() }

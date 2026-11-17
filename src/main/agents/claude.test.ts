@@ -107,11 +107,13 @@ describe('ClaudeTranscript', () => {
       user('u2', '<local-command-stdout>Set model to `Sonnet 5.5`</local-command-stdout>'),
       user('u3', '<command-name>/compact</command-name>\n            <command-message>compact</command-message>\n            <command-args></command-args>'),
       user('u4', '<local-command-stdout></local-command-stdout>'),
+      user('u5', '<command-message>daily-health</command-message>\n<command-name>/daily-health</command-name>\n<command-args>today</command-args>'),
     ])
     expect(items).toEqual([
       { kind: 'userMessage', id: 'u1', text: '/model sonnet' },
       { kind: 'notice', id: 'u2', level: 'info', text: 'Set model to `Sonnet 5.5`' },
       { kind: 'userMessage', id: 'u3', text: '/compact' },
+      { kind: 'userMessage', id: 'u5', text: '/daily-health today' },
     ])
   })
 

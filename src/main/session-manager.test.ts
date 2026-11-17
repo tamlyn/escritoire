@@ -113,6 +113,8 @@ describe('SessionManager', () => {
     expect(runs).toHaveLength(1)
     expect(runs[0]!.sent).toEqual(['Remember 789', 'What number?'])
     expect(manager.summaries().map((s) => [s.agentSessionId, s.title])).toEqual([['session-2', 'What number?']])
+    // A client that missed the reset is sent on to the new session.
+    expect(await manager.openSession('p1', pointer)).toMatchObject({ movedTo: 'session-2' })
     // Closing the old tab leaves the run alone.
     manager.closeSession(pointer)
     expect(manager.summaries()).toHaveLength(1)
@@ -121,6 +123,20 @@ describe('SessionManager', () => {
     const store = new SessionStore(dataDir)
     expect((await store.get('p1', 'session-1'))?.title).toBe('Remember 789')
     expect((await store.get('p1', 'session-2'))?.title).toBe('What number?')
+  })
+
+  it('answers with the last command list while it fetches a newer one', async () => {
+    const { adapter } = fakeAdapter()
+    const lists = [[{ name: 'one', description: '' }], [{ name: 'two', description: '' }]]
+    let calls = 0
+    adapter.listCommands = async () => lists[Math.min(calls++, 1)]!
+    const manager = new SessionManager({ adapters: { claude: adapter }, store: new SessionStore(await mkdtemp(join(tmpdir(), 'escritoire-sessions-'))), projectPath: () => '/work/project', send: () => {} })
+
+    expect(await manager.listCommands('p1', 'claude')).toEqual(lists[0])
+    await Promise.resolve()
+    expect(await manager.listCommands('p1', 'claude')).toEqual(lists[0])
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(await manager.listCommands('p1', 'claude')).toEqual(lists[1])
   })
 
   it('marks a finished turn unread until the session is seen', async () => {

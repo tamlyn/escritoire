@@ -54,9 +54,11 @@ describe('Codex adapter', () => {
     const finish = (turnId: string) => mocks.clients.at(-1).onMessage({ method: 'turn/completed', params: { threadId: 'thread', turn: { id: turnId, status: 'completed' } } })
     run.send({ text: '/compact', images: [] }); await tick()
     expect(mocks.call).toHaveBeenCalledWith('thread/compact/start', { threadId: 'thread' })
-    mocks.clients.at(-1).onMessage({ method: 'turn/started', params: { threadId: 'thread', turn: { id: 'compaction' } } })
-    finish('compaction'); await tick()
+    // Compaction's turn is announced after the response; a message sent in between waits for it.
     run.send({ text: '/review focus on errors', images: [] }); await tick()
+    mocks.clients.at(-1).onMessage({ method: 'turn/started', params: { threadId: 'thread', turn: { id: 'compaction' } } }); await tick()
+    expect(mocks.call).not.toHaveBeenCalledWith('review/start', expect.anything())
+    finish('compaction'); await tick()
     expect(mocks.call).toHaveBeenCalledWith('review/start', { threadId: 'thread', target: { type: 'custom', instructions: 'focus on errors' } })
     finish('review/start'); await tick()
     run.send({ text: '/imagegen a cat', images: [] }); await tick()
@@ -101,6 +103,10 @@ describe('Codex adapter', () => {
     await run.changeSettings({ permissionMode: 'full-access' })
     run.send({ text: 'Again', images: [] }); await tick()
     expect(mocks.call.mock.calls.filter(([m]) => m === 'turn/start')[1]![1]).toMatchObject({ approvalPolicy: 'never', sandboxPolicy: { type: 'dangerFullAccess' } })
+    mocks.clients[0].onMessage({ method: 'turn/completed', params: { threadId: 'thread', turn: { id: 'turn', status: 'completed' } } })
+    await run.changeSettings({ permissionMode: 'auto' })
+    run.send({ text: 'Back', images: [] }); await tick()
+    expect(mocks.call.mock.calls.filter(([m]) => m === 'turn/start')[2]![1]).toMatchObject({ approvalPolicy: 'on-request', sandboxPolicy: { type: 'workspaceWrite' } })
     run.close()
   })
 
@@ -112,6 +118,20 @@ describe('Codex adapter', () => {
     run.send({ text: 'Hello', images: [] }); await tick()
     expect(mocks.clients).toHaveLength(1)
     expect(mocks.call.mock.calls.map(([m]) => m)).toEqual(['thread/start', 'turn/start'])
+    run.close()
+  })
+
+  it('starts a new thread in place of one Codex never saved', async () => {
+    mocks.call.mockImplementation(async (method: string) => {
+      if (method === 'thread/resume') throw new Error('no rollout found for thread id unused')
+      return method === 'thread/start' ? { thread: { id: 'replacement' } } : { turn: { id: 'turn' } }
+    })
+    expect(await codexAdapter.loadHistory('unused', '/project')).toEqual({ items: [] })
+    const events: unknown[] = []
+    const run = codexAdapter.start({ cwd: '/project', agentSessionId: 'unused', settings: {} }, (e) => events.push(e))
+    run.send({ text: 'Hello', images: [] }); await tick()
+    expect(events).toContainEqual({ type: 'conversationReset', agentSessionId: 'replacement' })
+    expect(mocks.call.mock.calls.find(([m]) => m === 'turn/start')![1]).toMatchObject({ threadId: 'replacement' })
     run.close()
   })
 
