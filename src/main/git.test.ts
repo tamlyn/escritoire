@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test } from 'vitest'
-import { gitBlame, gitCommit, gitDiff, gitHeadText, gitHistory, gitPull, gitPush, gitSummary, gitSwitch } from './git'
+import { gitBlame, gitCommit, gitDiff, gitFiles, gitHeadText, gitHistory, gitPull, gitPush, gitSummary, gitSwitch } from './git'
 import { ProjectFiles } from './project-files'
 
 let repo: string
@@ -69,6 +69,18 @@ test('separates staged, unstaged and untracked changes, with line counts', async
     untracked: [{ path: 'dir/untracked.txt', lines: { added: 1, removed: 0 } }],
     untrackedOmitted: 0,
   })
+})
+
+test('lists tracked and untracked files, but not deleted ones', async () => {
+  git('init', '-q', '-b', 'main')
+  await write('.gitignore', 'ignored.txt\n')
+  await write('kept.txt', 'x')
+  await write('deleted.txt', 'x')
+  git('add', '.')
+  await rm(join(repo, 'deleted.txt'))
+  await write('ignored.txt', 'x')
+  await write('untracked.txt', 'x')
+  expect((await gitFiles(repo))?.sort()).toEqual(['.gitignore', 'kept.txt', 'untracked.txt'])
 })
 
 test('lists history across branches, with parents and refs', async () => {

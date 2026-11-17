@@ -21,7 +21,7 @@ export type ScreenConnection = {
  */
 export function ScreenView({ screenId, connection }: { screenId: string; connection: ScreenConnection }) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const terminalRef = useRef<{ terminal: Terminal; fit: () => void }>(null)
+  const terminalRef = useRef<Terminal>(null)
   const visible = useParentTabState()?.isVisible ?? false
   const connectionRef = useRef(connection)
   connectionRef.current = connection
@@ -44,7 +44,7 @@ export function ScreenView({ screenId, connection }: { screenId: string; connect
       if (container.clientWidth > 0 && container.clientHeight > 0) fitAddon.fit()
     }
     fit()
-    terminalRef.current = { terminal, fit }
+    terminalRef.current = terminal
 
     // Output can arrive before the snapshot; anything the snapshot includes is dropped.
     let snapshotSeq: number | null = null
@@ -64,12 +64,28 @@ export function ScreenView({ screenId, connection }: { screenId: string; connect
 
     terminal.onData(connection.write)
     terminal.onResize(connection.resize)
-    const observer = new ResizeObserver(fit)
-    observer.observe(container)
+    // xterm pauses rendering while hidden, and a resize then leaves its scrollbar at the old height,
+    // overflowing the tab. Its own observer was created first, so it has resumed by the time this one fires.
+    let shown = false
+    const visibility = new IntersectionObserver((entries) => {
+      shown = entries.at(-1)!.isIntersecting
+      if (shown) fit()
+    })
+    visibility.observe(container)
+    const resize = new ResizeObserver(() => {
+      if (shown) fit()
+    })
+    resize.observe(container)
+
+    const colorScheme = matchMedia('(prefers-color-scheme: dark)')
+    const updateTheme = () => (terminal.options.theme = themeFrom(container))
+    colorScheme.addEventListener('change', updateTheme)
 
     return () => {
       disposed = true
-      observer.disconnect()
+      visibility.disconnect()
+      resize.disconnect()
+      colorScheme.removeEventListener('change', updateTheme)
       unsubscribe()
       connection.detach()
       terminal.dispose()
@@ -78,9 +94,7 @@ export function ScreenView({ screenId, connection }: { screenId: string; connect
   }, [screenId])
 
   useEffect(() => {
-    if (!visible) return
-    terminalRef.current?.fit()
-    terminalRef.current?.terminal.focus()
+    if (visible) terminalRef.current?.focus()
   }, [visible])
 
   // Padded outside the container, which the fit addon measures.

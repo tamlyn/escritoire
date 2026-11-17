@@ -161,8 +161,16 @@ export async function gitPush(root: string): Promise<void> {
 export async function gitFiles(root: string): Promise<string[] | null> {
   try {
     // Relative to the working directory, so already relative to the project.
-    const output = await git(root, ['ls-files', '-z', '--cached', '--others', '--exclude-standard', '--deduplicate', '--', '.'])
-    return output.toString().split('\0').filter(Boolean)
+    // The index still lists a deleted file until its deletion is staged.
+    const [listed, deleted] = await Promise.all([
+      git(root, ['ls-files', '-z', '--cached', '--others', '--exclude-standard', '--deduplicate', '--', '.']),
+      git(root, ['ls-files', '-z', '--deleted', '--', '.']),
+    ])
+    const missing = new Set(deleted.toString().split('\0'))
+    return listed
+      .toString()
+      .split('\0')
+      .filter((path) => path && !missing.has(path))
   } catch (error) {
     if (!(error instanceof NotARepository)) console.error(`Could not list the files of ${root} with git:`, error)
     return null

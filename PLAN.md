@@ -19,13 +19,6 @@ The other items under "From use", and agent session features from the VS Code ex
 
 Noticed using Escritoire day to day (November 2026).
 
-### Bugs
-
-- The new tab page's scrollbar should sit at the right edge of the tab, as in a session tab.
-- ⌘O and @-mentions offer a deleted file that the file tree no longer shows. `git ls-files --cached` lists tracked files deleted from the working tree until the deletion is staged.
-- Resizing or splitting a terminal tab vertically gives double scrollbars, because the terminal doesn't refit to its new height.
-- Terminals open before the system switches between light and dark keep the old theme; they read it only once, when created.
-
 ### Codex
 
 - **Modes set the sandbox as well as approvals.** Escritoire passes only an approval policy, so the sandbox comes from Codex's own config and folder trust. That explains "Ask when needed" asking before editing project files while running `curl` or `python` without asking: the project gets a read-only sandbox, in which those commands run unasked. Offer Codex's presets instead, each a sandbox and an approval policy together: read only; auto (write the workspace, ask to go beyond it), which is the auto mode wanted; and full access. Check the current app-server docs for both settings.
