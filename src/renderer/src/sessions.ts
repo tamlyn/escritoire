@@ -41,7 +41,8 @@ export function useSessionSummary(agentSessionId: string): SessionSummary | unde
   return useSessionSummaries().find((s) => s.agentSessionId === agentSessionId)
 }
 
-export type OpenSession = { view: SessionView; draft: string }
+/** `movedTo` is the session the conversation continues in after the agent reset it. */
+export type OpenSession = { view: SessionView; draft: string; movedTo?: string }
 
 /**
  * Opens a session in main and keeps a local copy of its view, folding in the
@@ -65,16 +66,23 @@ export function useSession(projectId: string, pointer: SessionPointer): OpenSess
       }
       if (message.seq <= seq) return
       seq = message.seq
-      setState((current) => current && { ...current, view: applyEvent(current.view, message.event) })
+      const { event } = message
+      setState((current) => current && {
+        ...current,
+        view: applyEvent(current.view, event),
+        ...(event.type === 'conversationReset' ? { movedTo: event.agentSessionId } : {}),
+      })
     })
 
     void api.openSession(projectId, session).then((opened) => {
       seq = opened.seq
       const later = early.filter((e) => e.seq > opened.seq)
       if (later.length > 0) seq = later[later.length - 1]!.seq
+      const reset = later.findLast((e) => e.event.type === 'conversationReset')?.event
       setState({
         view: later.reduce((view, e) => applyEvent(view, e.event), opened.view),
         draft: opened.draft,
+        ...(reset?.type === 'conversationReset' ? { movedTo: reset.agentSessionId } : {}),
       })
     })
 

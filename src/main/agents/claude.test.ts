@@ -100,6 +100,21 @@ describe('ClaudeTranscript', () => {
     expect(items).toEqual([{ kind: 'notice', id: 'u1', level: 'info', text: 'Interrupted' }])
   })
 
+  it('shows a saved slash command as typed and its output as a notice', () => {
+    const user = (uuid: string, content: string) => ({ type: 'user', uuid, message: { role: 'user', content }, parent_tool_use_id: null })
+    const items = fold([
+      user('u1', '<command-name>/model</command-name>\n            <command-message>model</command-message>\n            <command-args>sonnet</command-args>'),
+      user('u2', '<local-command-stdout>Set model to `Sonnet 5.5`</local-command-stdout>'),
+      user('u3', '<command-name>/compact</command-name>\n            <command-message>compact</command-message>\n            <command-args></command-args>'),
+      user('u4', '<local-command-stdout></local-command-stdout>'),
+    ])
+    expect(items).toEqual([
+      { kind: 'userMessage', id: 'u1', text: '/model sonnet' },
+      { kind: 'notice', id: 'u2', level: 'info', text: 'Set model to `Sonnet 5.5`' },
+      { kind: 'userMessage', id: 'u3', text: '/compact' },
+    ])
+  })
+
   it("hides Claude Code's own prompts to the model, live and saved", () => {
     const items = fold([
       { type: 'user', uuid: 'u1', message: { role: 'user', content: 'Resume.' }, isSynthetic: true, parent_tool_use_id: null },

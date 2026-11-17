@@ -1,12 +1,12 @@
-import { ArrowUpIcon, FileIcon, SquareIcon, XIcon } from 'lucide-react'
+import { ArrowUpIcon, FileIcon, SlashIcon, SquareIcon, XIcon } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
-import type { ImageAttachment, SessionPointer, SessionSettings, SettingChoices } from '../../../shared/agent'
+import type { ImageAttachment, SessionPointer, SessionSettings, SettingChoices, SlashCommand } from '../../../shared/agent'
 import { baseName, parentPath } from '../../../shared/files'
 import { api, flushers } from '../api'
 import { imageFiles, toAttachment } from './images'
 import { fuzzyFinder } from '../fuzzy'
-import { activeMention, insertMention, type Mention } from './mentions'
+import { activeCommand, activeMention, insertMention, type Mention } from './mentions'
 import { nextPermissionMode } from './SessionControls'
 import { imageUrl } from './Transcript'
 
@@ -36,8 +36,9 @@ export function Composer({
   const [text, setText] = useState(initialDraft)
   const [images, setImages] = useState<ImageAttachment[]>([])
   const [attachErrors, setAttachErrors] = useState<string[]>([])
-  const [mention, setMention] = useState<Mention | null>(null)
+  const [mention, setMention] = useState<Completion | null>(null)
   const [files, setFiles] = useState<string[] | null>(null)
+  const [commands, setCommands] = useState<SlashCommand[] | null>(null)
   const [selected, setSelected] = useState(0)
   const textarea = useRef<HTMLTextAreaElement>(null)
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
@@ -53,15 +54,34 @@ export function Composer({
     return () => { flushers.delete(flush) }
   }, [pointer.agentSessionId])
 
-  const query = mention?.query
   const findFiles = useMemo(
     () => (files ? fuzzyFinder(files, { path: (path) => path, limit: mentionLimit }) : null),
     [files],
   )
-  const matches = useMemo(
-    () => (query !== undefined && findFiles ? findFiles(query).map((match) => match.item) : []),
-    [findFiles, query],
+  const findCommands = useMemo(
+    () => (commands ? fuzzyFinder(commands, { path: (command) => command.name, limit: Infinity }) : null),
+    [commands],
   )
+  const matches = useMemo((): Option[] => {
+    if (mention?.kind === 'file' && findFiles) {
+      return findFiles(mention.query).map(({ item: path }) => ({
+        key: path,
+        word: `@${path}`,
+        label: baseName(path),
+        detail: parentPath(path),
+      }))
+    }
+    if (mention?.kind === 'command' && findCommands) {
+      return findCommands(mention.query).map(({ item: command }) => ({
+        key: command.name,
+        word: `/${command.name}`,
+        label: `/${command.name}`,
+        hint: command.argumentHint,
+        detail: command.description,
+      }))
+    }
+    return []
+  }, [findFiles, findCommands, mention?.kind, mention?.query])
   const canSend = text.trim() !== '' || images.length > 0
 
   function changeText(next: string, caret: number) {
@@ -72,19 +92,26 @@ export function Composer({
   }
 
   function updateMention(value: string, caret: number) {
-    const next = activeMention(value, caret)
-    if (next && !mention) {
-      // Fetched afresh for each mention, so files an agent has just created appear.
-      void api.listProjectFiles(projectId).then(setFiles)
+    const command = activeCommand(value, caret)
+    const file = activeMention(value, caret)
+    const next: Completion | null = command
+      ? { kind: 'command', ...command }
+      : file
+        ? { kind: 'file', ...file }
+        : null
+    // Fetched afresh each time, so files an agent has just created, and skills just added, appear.
+    if (next?.kind === 'file' && mention?.kind !== 'file') void api.listProjectFiles(projectId).then(setFiles)
+    if (next?.kind === 'command' && mention?.kind !== 'command') {
+      void api.listCommands(projectId, pointer.agent).then(setCommands)
     }
-    if (next?.query !== mention?.query) setSelected(0)
+    if (next?.kind !== mention?.kind || next?.query !== mention?.query) setSelected(0)
     setMention(next)
   }
 
-  function choose(path: string) {
+  function choose(option: Option) {
     const element = textarea.current
     if (!mention || !element) return
-    const inserted = insertMention(text, element.selectionStart, mention, path)
+    const inserted = insertMention(text, element.selectionStart, mention, option.word)
     changeText(inserted.text, inserted.caret)
     setMention(null)
     requestAnimationFrame(() => element.setSelectionRange(inserted.caret, inserted.caret))
@@ -163,23 +190,29 @@ export function Composer({
   return (
     <div className="relative">
       {matches.length > 0 && (
-        <div className="bg-popover text-popover-foreground absolute right-0 bottom-full left-0 mb-1 overflow-hidden rounded-lg border p-1 shadow-md">
-          {matches.map((path, index) => (
+        <div className="bg-popover text-popover-foreground absolute right-0 bottom-full left-0 mb-1 max-h-72 overflow-y-auto rounded-lg border p-1 shadow-md">
+          {matches.map((option, index) => (
             <button
-              key={path}
+              key={option.key}
+              ref={index === selected ? (element) => element?.scrollIntoView({ block: 'nearest' }) : undefined}
               type="button"
               // Keeps focus, and so the caret, in the textarea.
               onMouseDown={(event) => event.preventDefault()}
-              onClick={() => choose(path)}
+              onClick={() => choose(option)}
               onMouseEnter={() => setSelected(index)}
               className={cn(
                 'flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm',
                 index === selected && 'bg-accent text-accent-foreground',
               )}
             >
-              <FileIcon className="text-muted-foreground size-3.5 shrink-0" />
-              <span className="truncate">{baseName(path)}</span>
-              <span className="text-muted-foreground min-w-0 truncate text-xs">{parentPath(path)}</span>
+              {mention?.kind === 'command' ? (
+                <SlashIcon className="text-muted-foreground size-3.5 shrink-0" />
+              ) : (
+                <FileIcon className="text-muted-foreground size-3.5 shrink-0" />
+              )}
+              <span className="shrink-0">{option.label}</span>
+              {option.hint && <span className="text-muted-foreground shrink-0 text-xs">{option.hint}</span>}
+              <span className="text-muted-foreground min-w-0 truncate text-xs">{option.detail}</span>
             </button>
           ))}
         </div>
@@ -222,7 +255,7 @@ export function Composer({
             onPaste={onPaste}
             autoFocus={autoFocus}
             rows={1}
-            placeholder={working ? 'Queue a message (Esc to interrupt)' : 'Message agent, @ to mention a file'}
+            placeholder={working ? 'Queue a message (Esc to interrupt)' : 'Message agent, @ to mention a file, / for commands'}
             className="placeholder:text-muted-foreground field-sizing-content max-h-60 min-h-9 flex-1 resize-none bg-transparent px-2 py-1.5 outline-none"
           />
           {working && !canSend ? (
@@ -251,6 +284,11 @@ export function Composer({
     </div>
   )
 }
+
+type Completion = Mention & { kind: 'file' | 'command' }
+
+/** A completion the popover offers; choosing it replaces the mention with `word`. */
+type Option = { key: string; word: string; label: string; hint?: string; detail: string }
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)

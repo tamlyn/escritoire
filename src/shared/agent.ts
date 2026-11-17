@@ -88,6 +88,9 @@ export type ModelChoice = {
   efforts: string[]
 }
 
+/** A command the composer offers after `/`. Messages starting `/name` run it. */
+export type SlashCommand = { name: string; description: string; argumentHint?: string }
+
 /** From the latest request the agent made in the main conversation. */
 export type ContextUsage = {
   /** Everything the request sent plus its reply: how full the context window is. */
@@ -120,6 +123,11 @@ export type AgentEvent =
   | { type: 'usageChanged'; usage: ContextUsage }
   /** The whole set of running background tasks. */
   | { type: 'tasksChanged'; tasks: BackgroundTask[] }
+  /**
+   * The agent discarded the conversation, as `/clear` does, and the run carries
+   * on as a new session with an empty transcript. The old one stays resumable.
+   */
+  | { type: 'conversationReset'; agentSessionId: string }
 
 export type SessionView = {
   status: SessionStatus
@@ -167,6 +175,8 @@ export function applyEvent(view: SessionView, event: AgentEvent): SessionView {
       return { ...view, usage: event.usage }
     case 'tasksChanged':
       return { ...view, tasks: event.tasks }
+    case 'conversationReset':
+      return { ...emptySessionView, status: view.status, settings: view.settings, tasks: view.tasks }
   }
 }
 

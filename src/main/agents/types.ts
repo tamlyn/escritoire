@@ -6,6 +6,7 @@ import type {
   SessionSettings,
   SessionView,
   SettingChoices,
+  SlashCommand,
   UserInput,
 } from '../../shared/agent'
 import type { IdeServerConnection } from '../ide-server'
@@ -20,6 +21,7 @@ export interface AgentAdapter {
   /** Empty if the session has no transcript yet. */
   loadHistory(agentSessionId: string, cwd: string): Promise<History>
   settingChoices(cwd: string): Promise<SettingChoices>
+  listCommands(cwd: string): Promise<SlashCommand[]>
   start(options: StartOptions, emit: (event: AgentEvent) => void): AgentRun
 }
 

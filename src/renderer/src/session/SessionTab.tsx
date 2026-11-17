@@ -1,11 +1,11 @@
 import { LoaderCircleIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { useParentTabState, useParentWorkspace } from 'react-resizable-panels'
+import { useParentTabState, useParentWorkspace, type WorkspaceNode } from 'react-resizable-panels'
 import type { SessionPointer, SessionStatus } from '../../../shared/agent'
 import { api } from '../api'
 import { useProject } from '../project-context'
 import { useSession, useSessionSummary, useSettingChoices } from '../sessions'
-import type { Tab, TabData } from '../tabs'
+import { createSessionTab, type Tab, type TabData } from '../tabs'
 import { BackgroundTasks } from './BackgroundTasks'
 import { Composer } from './Composer'
 import { Requests } from './Requests'
@@ -31,6 +31,29 @@ export function SessionTab({ tab, pointer }: { tab: Tab; pointer: SessionPointer
   useEffect(() => {
     if (title && title !== tab.title) workspace?.updateTab(tab.id, { title })
   }, [title, tab.id, tab.title, workspace])
+
+  const movedTo = session?.movedTo
+  useEffect(() => {
+    if (!movedTo || !workspace) return
+    // The tab follows the conversation, in its place.
+    const visit = (node: WorkspaceNode<TabData>) => {
+      if (node.type === 'split') {
+        node.children.forEach(visit)
+        return
+      }
+      const index = node.tabs.findIndex((other) => other.id === tab.id)
+      if (index === -1) return
+      workspace.addTab(createSessionTab({ agent: pointer.agent, agentSessionId: movedTo }, ''), {
+        tabsetId: node.id,
+        index,
+        select: node.selectedId === tab.id,
+      })
+      workspace.closeTab(tab.id)
+    }
+    const model = workspace.getModel()
+    visit(model.root)
+    model.floating?.forEach(visit)
+  }, [movedTo, workspace, tab.id, pointer.agent])
 
   if (!session) return null
   const { view } = session

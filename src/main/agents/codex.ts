@@ -1,4 +1,8 @@
-import type { AgentEvent, ContextUsage, Item, RequestResponse, SessionSettings, ToolStatus, UserInput } from '../../shared/agent'
+import type { AgentEvent, ContextUsage, Item, RequestResponse, SessionSettings, SlashCommand, ToolStatus, UserInput } from '../../shared/agent'
+import type { ReviewStartResponse } from './codex-protocol/v2/ReviewStartResponse'
+import type { ReviewTarget } from './codex-protocol/v2/ReviewTarget'
+import type { SkillMetadata } from './codex-protocol/v2/SkillMetadata'
+import type { SkillsListResponse } from './codex-protocol/v2/SkillsListResponse'
 import type { ThreadItem } from './codex-protocol/v2/ThreadItem'
 import type { ThreadListResponse } from './codex-protocol/v2/ThreadListResponse'
 import type { ThreadTurnsListResponse } from './codex-protocol/v2/ThreadTurnsListResponse'
@@ -88,7 +92,29 @@ export const codexAdapter: AgentAdapter = {
       permissionModes: Object.entries(modes).map(([id, { label }]) => ({ id, label })),
     }
   }),
+  listCommands: (cwd) => using(cwd, async (rpc) => {
+    const skills = (await listSkills(rpc, cwd))
+      .filter((skill) => !builtInCommands.some((command) => command.name === skill.name))
+      .map((skill) => ({ name: skill.name, description: skill.interface?.shortDescription ?? skill.shortDescription ?? skill.description }))
+    return [...builtInCommands, ...skills]
+  }),
   start: (options, emit) => new CodexRun(options, emit),
+}
+
+// Codex's own slash commands belong to its TUI; these are the ones app-server can run.
+const builtInCommands: SlashCommand[] = [
+  { name: 'compact', description: 'Summarise the conversation to free up context' },
+  { name: 'review', description: 'Review uncommitted changes, or what the instructions ask for', argumentHint: '[instructions]' },
+]
+
+async function listSkills(rpc: CodexRpc, cwd: string): Promise<SkillMetadata[]> {
+  const result = await rpc.call<SkillsListResponse>('skills/list', { cwds: [cwd] })
+  return result.data.flatMap((entry) => entry.skills).filter((skill) => skill.enabled)
+}
+
+function parseCommand(text: string): { name: string; args: string } | null {
+  const match = /^\/(\S+)\s*([\s\S]*)$/.exec(text)
+  return match ? { name: match[1]!, args: match[2]!.trim() } : null
 }
 
 function resolvedSettings(result: Resolved): SessionSettings {
@@ -154,6 +180,8 @@ export function codexItem(item: ThreadItem): Item {
     case 'fileChange': return { kind: 'toolCall', id: item.id, status: status(item.status), title: 'File changes', view: { type: 'fileChange', changes: item.changes.map((c) => ({ path: c.path, diff: c.diff })) } }
     case 'mcpToolCall': return { kind: 'toolCall', id: item.id, status: status(item.status), title: `${item.server}: ${item.tool}`, view: { type: 'generic', name: item.tool, input: item.arguments, output: JSON.stringify(item.error ?? item.result, null, 2) } }
     case 'contextCompaction': return { kind: 'notice', id: item.id, level: 'info', text: 'Context compacted' }
+    case 'enteredReviewMode': return { kind: 'notice', id: item.id, level: 'info', text: `Reviewing ${item.review}` }
+    case 'exitedReviewMode': return { kind: 'agentMessage', id: item.id, text: item.review }
     default: return { kind: 'unknown', id: item.id, label: item.type, raw: item }
   }
 }
@@ -197,16 +225,36 @@ class CodexRun implements AgentRun {
     try {
       await this.ready
       if (this.closed) return
-      const mode = modeFor(this.settings.permissionMode)
-      const result = await this.rpc.call<TurnStartResponse>('turn/start', {
-        threadId: this.options.agentSessionId,
-        input: [{ type: 'text', text: input.text, text_elements: [] }, ...input.images.map((i) => ({ type: 'image', url: `data:${i.mediaType};base64,${i.data}` }))],
-        model: this.settings.model ?? null, effort: this.settings.effort ?? null,
-        ...(mode ? { approvalPolicy: mode.approvalPolicy, ...(mode.sandbox !== this.sandbox ? { sandboxPolicy: sandboxPolicy(mode.sandbox) } : {}) } : {}),
-      })
-      if (!this.completedTurns.has(result.turn.id)) this.turnId ??= result.turn.id
+      const turn = await this.startTurn(input)
+      // Compaction's turn is only announced by `turn/started`.
+      if (turn && !this.completedTurns.has(turn.id)) this.turnId ??= turn.id
       if (this.interruptRequested && this.turnId) await this.interrupt()
     } catch (e) { this.fail(e) } finally { this.starting = false }
+  }
+  private async startTurn(input: UserInput): Promise<{ id: string } | undefined> {
+    const threadId = this.options.agentSessionId
+    const command = parseCommand(input.text)
+    if (command?.name === 'compact') {
+      await this.rpc.call('thread/compact/start', { threadId })
+      return undefined
+    }
+    if (command?.name === 'review') {
+      const target: ReviewTarget = command.args ? { type: 'custom', instructions: command.args } : { type: 'uncommittedChanges' }
+      return (await this.rpc.call<ReviewStartResponse>('review/start', { threadId, target })).turn
+    }
+    const skill = command && (await listSkills(this.rpc, this.options.cwd)).find((s) => s.name === command.name)
+    const mode = modeFor(this.settings.permissionMode)
+    const result = await this.rpc.call<TurnStartResponse>('turn/start', {
+      threadId,
+      input: [
+        { type: 'text', text: input.text, text_elements: [] },
+        ...(skill ? [{ type: 'skill', name: skill.name, path: skill.path }] : []),
+        ...input.images.map((i) => ({ type: 'image', url: `data:${i.mediaType};base64,${i.data}` })),
+      ],
+      model: this.settings.model ?? null, effort: this.settings.effort ?? null,
+      ...(mode ? { approvalPolicy: mode.approvalPolicy, ...(mode.sandbox !== this.sandbox ? { sandboxPolicy: sandboxPolicy(mode.sandbox) } : {}) } : {}),
+    })
+    return result.turn
   }
   async interrupt(): Promise<void> {
     this.queue = []

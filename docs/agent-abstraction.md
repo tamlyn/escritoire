@@ -29,11 +29,13 @@ A session is a **transcript of items**, a list of **pending requests** and a **s
 - **History** comes from `getSessionMessages`, which has the same message shapes but no structured tool results, so tool views are built from the `tool_use` input and the text result, which both paths have. Verified live: history, live output and resume agree.
 - **Questions.** `AskUserQuestion` arrives through `canUseTool` and is answered with `allow` and `updatedInput.answers`. Verified live.
 - **IDE tools.** Every run gets the IDE's MCP server for its project (`StartOptions.ide`) as `escritoire`, loaded up front rather than behind tool search, with the read-only tools always allowed. A `PreToolUse` hook refuses Bash calls with `run_in_background` and names the supervisor's tools instead. Verified live: Claude reaches for `start_process` unprompted, and when told to use background Bash it follows the refusal to the supervisor.
+- **Slash commands** are listed by a probe process (`supportedCommands`) and sent as ordinary prompts, which Claude Code runs. Live, a local command's output arrives as a synthetic reply; in history the command is a `<command-name>` user message and its output a `<local-command-stdout>` one, which the adapter shows as the command typed and a notice. Verified live with `/context` and `/model`.
+- **Conversation reset.** `/clear`, and leaving plan mode with cleared context, make Claude Code continue the same process as a new session with a new id (`conversation_reset`). The adapter emits `conversationReset`; `SessionManager` re-keys the session under the new id with a fresh record, so a later run resumes the new transcript rather than the old one, and the old record stays for resuming. The renderer's tab replaces itself with one for the new id. Verified live.
 - **Interruption.** Claude Code records an interruption as a `[Request interrupted by user…]` user message, live and in history; the adapter shows it as a notice.
 
 ## Sessions in main
 
-- **Identity is the agent's.** Claude's `query()` accepts a `sessionId`, so the IDE generates it when the tab is created; Codex's `thread/start` returns `thread.id` immediately. Everything is keyed by `(agent, agentSessionId)`. Each run asks Claude Code for the transcript first and resumes only if there is one, since a first run can fail before writing it; otherwise it starts with `sessionId`.
+- **Identity is the agent's.** Claude's `query()` accepts a `sessionId`, so the IDE generates it when the tab is created; Codex's `thread/start` returns `thread.id` immediately. Everything is keyed by `(agent, agentSessionId)`, and a run that resets its conversation moves the session to the agent's new id. Each run asks Claude Code for the transcript first and resumes only if there is one, since a first run can fail before writing it; otherwise it starts with `sessionId`.
 - **A small session store, not a transcript store.** `sessions/<projectId>.json` holds what the agents can't give back: title, draft, `lastSeenAt` and `lastTurnEndedAt`. A session tab's layout data is just the pointer. Per-session settings (model, permission mode) join the store when the UI can change them.
 - **Titles.** A new session takes its first message's first line. A session started elsewhere keeps the title its agent gave it.
 - **Past sessions** are the agent's own list for the project, including sessions started outside the IDE.
@@ -51,7 +53,7 @@ A session is a **transcript of items**, a list of **pending requests** and a **s
 
 ## Not built yet
 
-- Model and permission mode switching, slash commands, @-mentions, images.
+- Model and permission mode switching, @-mentions, images.
 - The permission prompt has not been exercised live: the user's `auto` permission mode approved every tool in testing.
 
 ## Rejected alternatives
@@ -69,3 +71,9 @@ protocol and lifecycle details. Optional adapter `closeSession` and `dispose`
 hooks release threads created before their first message. Recent-session listing
 combines successful adapters, so an absent Codex binary does not hide Claude's
 history.
+
+Slash commands are the adapter's: `/compact` calls `thread/compact/start`, whose
+turn is announced only by `turn/started` (verified live); `/review` calls
+`review/start` on uncommitted changes, or with the arguments as custom
+instructions; any other name matching an enabled skill from `skills/list` is a
+normal turn with a `skill` input beside the text. Anything else is plain text.

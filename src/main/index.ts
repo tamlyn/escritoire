@@ -104,6 +104,7 @@ function createApi(client: Client, { clients, remote, projects, sessions, sessio
     sendMessage: async (session, input) => sessions.sendMessage(session, input),
     interrupt: (session) => sessions.interrupt(session),
     getSettingChoices: (projectId, agent) => sessions.settingChoices(projectId, agent),
+    listCommands: (projectId, agent) => sessions.listCommands(projectId, agent),
     changeSessionSettings: (session, settings) => sessions.changeSettings(session, settings),
     stopTask: (session, taskId) => sessions.stopTask(session, taskId),
     respond: async (session, requestId, response) => sessions.respond(session, requestId, response),

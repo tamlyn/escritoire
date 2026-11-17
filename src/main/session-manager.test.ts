@@ -21,6 +21,7 @@ function fakeAdapter(history: Item[] = []) {
     listSessions: async () => [],
     loadHistory: async () => ({ items: history }),
     settingChoices: async () => ({ models: [], permissionModes: [] }),
+    listCommands: async () => [],
     start(options, emit) {
       const run = { options, emit, sent: [] as string[], settings: [] as SessionSettings[], refuseSettings: false }
       runs.push(run)
@@ -96,6 +97,30 @@ describe('SessionManager', () => {
     expect(events).toEqual([
       { agentSessionId: 'session-1', seq: opened.seq + 1, event: { type: 'statusChanged', status: 'working' } },
     ])
+  })
+
+  it('continues the run as the new session when the agent resets the conversation', async () => {
+    const { manager, runs, sent, dataDir } = await setup()
+    const pointer = await manager.createSession('p1', 'claude')
+    await manager.openSession('p1', pointer)
+    manager.sendMessage(pointer, say('Remember 789'))
+    runs[0]!.emit({ type: 'conversationReset', agentSessionId: 'session-2' })
+
+    expect(sent.at(-2)!.payload).toMatchObject({ agentSessionId: 'session-1', event: { type: 'conversationReset' } })
+    const moved = { agent: 'claude' as const, agentSessionId: 'session-2' }
+    expect((await manager.openSession('p1', moved)).view.items).toEqual([])
+    manager.sendMessage(moved, say('What number?'))
+    expect(runs).toHaveLength(1)
+    expect(runs[0]!.sent).toEqual(['Remember 789', 'What number?'])
+    expect(manager.summaries().map((s) => [s.agentSessionId, s.title])).toEqual([['session-2', 'What number?']])
+    // Closing the old tab leaves the run alone.
+    manager.closeSession(pointer)
+    expect(manager.summaries()).toHaveLength(1)
+
+    await manager.closeProject('p1')
+    const store = new SessionStore(dataDir)
+    expect((await store.get('p1', 'session-1'))?.title).toBe('Remember 789')
+    expect((await store.get('p1', 'session-2'))?.title).toBe('What number?')
   })
 
   it('marks a finished turn unread until the session is seen', async () => {

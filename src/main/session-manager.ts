@@ -12,6 +12,7 @@ import {
   type SessionSummary,
   type SessionView,
   type SettingChoices,
+  type SlashCommand,
   type UserInput,
 } from '../shared/agent'
 import type { Events } from '../shared/api'
@@ -125,6 +126,10 @@ export class SessionManager {
 
   async settingChoices(projectId: string, agent: AgentKind): Promise<SettingChoices> {
     return this.adapter(agent).settingChoices(this.deps.projectPath(projectId))
+  }
+
+  async listCommands(projectId: string, agent: AgentKind): Promise<SlashCommand[]> {
+    return this.adapter(agent).listCommands(this.deps.projectPath(projectId))
   }
 
   sendMessage(pointer: SessionPointer, input: UserInput): void {
@@ -246,7 +251,23 @@ export class SessionManager {
     if (permissionMode && permissionMode !== session.record.settings?.permissionMode) {
       this.rememberSettings(session, { permissionMode })
     }
+    if (event.type === 'conversationReset') this.moveTo(session, event.agentSessionId)
     if (event.type !== 'itemUpserted' && event.type !== 'textAppended') this.broadcastSummaries()
+  }
+
+  /**
+   * Continues the run as the agent's new session. The old session's record stays
+   * for when it is resumed. Clients follow by opening the new one.
+   */
+  private moveTo(session: Session, agentSessionId: string): void {
+    this.sessions.delete(session.pointer.agentSessionId)
+    session.pointer = { ...session.pointer, agentSessionId }
+    session.record = { ...newRecord(session.pointer.agent), draft: session.record.draft, settings: session.record.settings }
+    session.hadHistory = false
+    session.subscribed = false
+    session.visible = false
+    this.sessions.set(agentSessionId, session)
+    this.save(session)
   }
 
   private rememberSettings(session: Session, settings: SessionSettings): void {
@@ -328,8 +349,11 @@ export class SessionManager {
     // A closed project's sessions were saved as it closed, and its agents' late events don't matter.
     const project = this.projects.get(session.projectId)
     if (!project) return
+    // Captured now, since a reset can give the session a new id and record before the save runs.
+    const { agentSessionId } = session.pointer
+    const { record } = session
     project.work
-      .run(() => this.deps.store.put(session.projectId, session.pointer.agentSessionId, session.record))
+      .run(() => this.deps.store.put(session.projectId, agentSessionId, record))
       .catch((error: unknown) => {
         this.apply(session, { type: 'itemUpserted', item: { kind: 'notice', id: 'persistence-error', level: 'error', text: `Couldn't save session: ${errorText(error)}` } })
       })

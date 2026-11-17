@@ -28,6 +28,7 @@ import {
   type RequestResponse,
   type SessionSettings,
   type SettingChoices,
+  type SlashCommand,
   type ToolView,
   type UserInput,
 } from '../../shared/agent'
@@ -125,6 +126,8 @@ export const claudeAdapter: AgentAdapter = {
     return choices
   },
 
+  listCommands: loadCommands,
+
   start: (options, emit) => new ClaudeRun(options, emit),
 }
 
@@ -132,13 +135,22 @@ export const claudeAdapter: AgentAdapter = {
 let choices: Promise<SettingChoices> | undefined
 
 /** Asks a Claude Code process that never gets a message, which takes a fraction of a second. */
-async function loadSettingChoices(cwd: string): Promise<SettingChoices> {
+async function probe<T>(cwd: string, ask: (probe: Query) => Promise<T>): Promise<T> {
   const input = new AsyncQueue<SDKUserMessage>()
   const probe = query({
     prompt: input,
     options: { cwd, settingSources, pathToClaudeCodeExecutable: claudeCodePath() },
   })
   try {
+    return await ask(probe)
+  } finally {
+    input.end()
+    probe.close()
+  }
+}
+
+function loadSettingChoices(cwd: string): Promise<SettingChoices> {
+  return probe(cwd, async (probe) => {
     const models = await probe.supportedModels()
     return {
       models: models.map((m) => ({
@@ -150,10 +162,28 @@ async function loadSettingChoices(cwd: string): Promise<SettingChoices> {
       })),
       permissionModes,
     }
-  } finally {
-    input.end()
-    probe.close()
-  }
+  })
+}
+
+// The session controls change these, and would miss a change a command made.
+const settingCommands = new Set(['model', 'effort'])
+
+// Skills and commands come from the project as well as the user, so they're asked for each time.
+function loadCommands(cwd: string): Promise<SlashCommand[]> {
+  return probe(cwd, async (probe) => {
+    const commands = new Map<string, SlashCommand>()
+    for (const command of await probe.supportedCommands()) {
+      // Where names clash, Claude Code runs its own command.
+      if (commands.has(command.name) && !command.builtin) continue
+      if (command.builtin && settingCommands.has(command.name)) continue
+      commands.set(command.name, {
+        name: command.name,
+        description: command.description,
+        ...(command.argumentHint ? { argumentHint: command.argumentHint } : {}),
+      })
+    }
+    return [...commands.values()]
+  })
 }
 
 type Pending = {
@@ -449,6 +479,9 @@ export class ClaudeTranscript {
         return this.mapSystem(message as Message)
       case 'result':
         return this.mapResult(message as Message)
+      case 'conversation_reset':
+        this.usage = undefined
+        return [{ type: 'conversationReset', agentSessionId: (message as Message).new_conversation_id as string }]
       default:
         return []
     }
@@ -616,8 +649,9 @@ export class ClaudeTranscript {
     // and compaction summaries: `isSynthetic` live, `is_meta` in saved history.
     const synthetic = Boolean(message.isSynthetic || message.is_meta)
     const events: AgentEvent[] = []
-    if ((text || images.length) && !parentId && !synthetic) {
-      events.push(upsert(userItem(id, text, images)))
+    const item = (text || images.length) && !parentId && !synthetic ? userItem(id, text, images) : null
+    if (item) {
+      events.push(upsert(item))
     }
     if (typeof content === 'string') return events
     for (const block of content) {
@@ -654,14 +688,25 @@ function textOf({ content }: Pick<ApiMessage, 'content'>): string {
 }
 
 /**
- * Claude Code records interruptions and background task notifications as user
- * messages. Live, the notification arrives as a system message instead.
+ * Claude Code records interruptions, background task notifications, slash
+ * commands and their output as user messages. Live, a notification arrives as
+ * a system message and a command's output as a synthetic reply instead.
  */
-function userItem(id: string, text: string, images: ImageAttachment[]): Item {
+function userItem(id: string, text: string, images: ImageAttachment[]): Item | null {
   if (interruptionMarker.test(text)) return { kind: 'notice', id, level: 'info', text: 'Interrupted' }
   const notification = /^<task-notification>[\s\S]*<summary>([\s\S]*?)<\/summary>(?:\s*<event>([\s\S]*?)<\/event>)?/.exec(text)
   if (notification) {
     return { kind: 'notice', id, level: 'info', text: [notification[1], notification[2]].filter(Boolean).join(': ') }
+  }
+  const command = /^<command-name>\/?([^<]*)<\/command-name>/.exec(text)
+  if (command) {
+    const args = /<command-args>([\s\S]*?)<\/command-args>/.exec(text)?.[1] ?? ''
+    return { kind: 'userMessage', id, text: `/${command[1]} ${args}`.trim() }
+  }
+  const output = /^<local-command-(stdout|stderr)>([\s\S]*)<\/local-command-\1>$/.exec(text)
+  if (output) {
+    const outputText = output[2]!.trim()
+    return outputText ? { kind: 'notice', id, level: output[1] === 'stderr' ? 'error' : 'info', text: outputText } : null
   }
   return { kind: 'userMessage', id, text, ...(images.length ? { images } : {}) }
 }

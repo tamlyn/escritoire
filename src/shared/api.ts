@@ -21,6 +21,7 @@ import type {
   SessionSettings,
   SessionSummary,
   SettingChoices,
+  SlashCommand,
   UserInput,
 } from './agent'
 import type { DirectoryEntry, FileContent, FilesChanged, WriteResult } from './files'
@@ -66,6 +67,7 @@ export type Api = {
   sendMessage(session: SessionPointer, input: UserInput): Promise<void>
   interrupt(session: SessionPointer): Promise<void>
   getSettingChoices(projectId: string, agent: AgentKind): Promise<SettingChoices>
+  listCommands(projectId: string, agent: AgentKind): Promise<SlashCommand[]>
   /** Only the settings given change; `null` goes back to the agent's default. */
   changeSessionSettings(session: SessionPointer, settings: SessionSettings): Promise<void>
   stopTask(session: SessionPointer, taskId: string): Promise<void>
@@ -164,6 +166,7 @@ const apiMethodSet: Record<keyof Api, true> = {
   sendMessage: true,
   interrupt: true,
   getSettingChoices: true,
+  listCommands: true,
   changeSessionSettings: true,
   stopTask: true,
   respond: true,

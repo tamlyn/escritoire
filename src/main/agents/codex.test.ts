@@ -37,6 +37,35 @@ describe('Codex adapter', () => {
     run.close()
   })
 
+  it('runs slash commands as compaction, review or a skill', async () => {
+    const skill = { name: 'imagegen', description: 'Make images', path: '/skills/imagegen/SKILL.md', enabled: true }
+    mocks.call.mockImplementation(async (method: string) => {
+      if (method === 'skills/list') return { data: [{ cwd: '/project', skills: [skill], errors: [] }] }
+      if (method === 'thread/compact/start') return {}
+      return { turn: { id: method } }
+    })
+    expect(await codexAdapter.listCommands('/project')).toEqual([
+      expect.objectContaining({ name: 'compact' }),
+      expect.objectContaining({ name: 'review' }),
+      { name: 'imagegen', description: 'Make images' },
+    ])
+    const run = codexAdapter.start({ cwd: '/project', agentSessionId: 'thread', settings: {} }, () => {})
+    const finish = (turnId: string) => mocks.clients.at(-1).onMessage({ method: 'turn/completed', params: { threadId: 'thread', turn: { id: turnId, status: 'completed' } } })
+    run.send({ text: '/compact', images: [] }); await tick()
+    expect(mocks.call).toHaveBeenCalledWith('thread/compact/start', { threadId: 'thread' })
+    mocks.clients.at(-1).onMessage({ method: 'turn/started', params: { threadId: 'thread', turn: { id: 'compaction' } } })
+    finish('compaction'); await tick()
+    run.send({ text: '/review focus on errors', images: [] }); await tick()
+    expect(mocks.call).toHaveBeenCalledWith('review/start', { threadId: 'thread', target: { type: 'custom', instructions: 'focus on errors' } })
+    finish('review/start'); await tick()
+    run.send({ text: '/imagegen a cat', images: [] }); await tick()
+    expect(mocks.call.mock.calls.find(([m]) => m === 'turn/start')![1].input).toEqual([
+      { type: 'text', text: '/imagegen a cat', text_elements: [] },
+      { type: 'skill', name: 'imagegen', path: '/skills/imagegen/SKILL.md' },
+    ])
+    run.close()
+  })
+
   it('restores the resolved model and mode from resume', async () => {
     mocks.call.mockResolvedValueOnce({ model: 'restored-model', approvalPolicy: 'never', sandbox: { type: 'dangerFullAccess' }, reasoningEffort: 'medium' }).mockResolvedValueOnce({ data: [], nextCursor: null })
     const history = await codexAdapter.loadHistory('existing', '/project')
