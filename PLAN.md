@@ -9,9 +9,8 @@ This document captures direction, not an exhaustive specification. Build iterati
 Starting priorities, not fixed release gates. Try each increment and let actual use determine the next improvement.
 
 1. The bugs under "From use", below.
-2. Attention across projects: the inbox, dock badge, OS notifications and switcher ordering.
-3. The Orca review pass (see below).
-4. Remote access from a phone over Tailscale, in the build order given in that section.
+2. The Orca review pass (see below).
+3. Remote access from a phone over Tailscale, in the build order given in that section.
 
 The other items under "From use", and agent session features from the VS Code extension that aren't yet built, are added in the order they are missed, alongside these slices.
 
@@ -51,16 +50,6 @@ Noticed using Escritoire day to day (November 2026).
 
 ## Features
 
-### Attention across projects
-
-The user must be able to tell when another project needs them, without a persistent list of projects on screen. Attention within a project is built (see HISTORY.md); this extends it across projects.
-
-- **Inbox in the top bar:** one small control beside the active project's name, showing a count of sessions in other projects that need attention. It opens a list of those sessions, waiting for input first, then unread finished turns, each with its project. Choosing one switches to that project and focuses the session. This is the one persistent attention indicator.
-- When the window is unfocused, also a dock badge and an OS notification.
-- **Away means absent, not unfocused.** Web Push to a phone depends on whether the user is at the desktop (presence, in HISTORY.md), not on window focus, so walking away with Escritoire focused still notifies the phone. Treat the user as away after one minute idle rather than five.
-- **Project switcher** orders projects needing attention first, then the rest by recency. Each row shows state at a glance: agents working or waiting, processes running or crashed.
-- No jump-to-next-project shortcut is needed.
-
 ### Remote access
 
 Use Escritoire from a phone, and later from another computer, over the user's Tailscale network. The phone is for keeping agents moving away from the desk: seeing what needs attention, reading sessions, answering questions and permission requests, and sending messages. Tailscale isn't allowed on the work machine, so this is for the personal machine only.
@@ -71,7 +60,7 @@ Pairing, revocation and serving the renderer to a browser are built (see Remote 
 - **Attachments other than images**, or uploads into the project, get an HTTP upload on the same listener only when needed.
 - **The phone is for driving agent sessions.** Its layout covers the attention loop first: the inbox, the project switcher, and session tabs (read, send, answer, interrupt, switch model and mode). Terminals and file editors are an occasional convenience there, added after the session loop works; git and processes come only when missed.
 - **The phone keeps no workspace layout.** A project's saved layout belongs to the desktop. The phone derives its view from the session list and opens anything else as a transient view, so it never overwrites the desktop's tabs.
-- **Notifications:** Web Push to paired phones when the user is away from the desktop (see Attention across projects). The dock badge and OS notifications stay with the desktop shell. On iOS this needs the web app added to the home screen.
+- **Notifications:** Web Push to paired phones when the user is away from the desktop (presence, in HISTORY.md), not on window focus, so walking away with Escritoire focused still notifies the phone. Push on the same transitions as the desktop's notifications (`newlyNeedingAttention` in `shared/attention.ts`). The dock badge and OS notifications stay with the desktop shell. On iOS this needs the web app added to the home screen.
 - **Remote sessions between computers come later.** The same transport lets Escritoire on one computer view a project hosted by Escritoire on another, so agents keep running while a laptop sleeps. Paths, processes, terminals and agents then belong to the host, not the viewing machine. Running main headless (without a window) belongs to that later slice.
 
 Build order:

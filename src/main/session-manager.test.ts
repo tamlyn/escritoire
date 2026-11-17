@@ -193,6 +193,59 @@ describe('SessionManager', () => {
     expect(restarted.summaries()[0]!.attention).toBe('unread')
   })
 
+  it('lists sessions left unread before a restart until they load', async () => {
+    const { manager, runs, dataDir } = await setup()
+    const pointer = await manager.createSession('p1', 'claude')
+    await manager.openSession('p1', pointer)
+    manager.sendMessage(pointer, say('Hi'))
+    runs[0]!.emit({ type: 'statusChanged', status: 'idle' })
+    await manager.closeProject('p1')
+
+    const sent: unknown[] = []
+    const restarted = new SessionManager({
+      adapters: { claude: fakeAdapter().adapter },
+      store: new SessionStore(dataDir),
+      projectPath: () => '/work/project',
+      send: (_name, payload) => sent.push(payload),
+    })
+    await restarted.restoreUnread(['p1'])
+    const unread = { ...pointer, projectId: 'p1', title: 'Hi', status: 'idle', attention: 'unread' }
+    expect(restarted.summaries()).toEqual([unread])
+    expect(sent).toEqual([[unread]])
+
+    await restarted.openSession('p1', pointer)
+    expect(restarted.summaries()).toEqual([unread])
+  })
+
+  it('marks a session seen when its tab closes, loaded or not', async () => {
+    const { manager, runs, dataDir } = await setup()
+    const first = await manager.createSession('p1', 'claude')
+    await manager.openSession('p1', first)
+    manager.sendMessage(first, say('One'))
+    runs[0]!.emit({ type: 'statusChanged', status: 'idle' })
+    manager.closeSession(first)
+    await manager.closeProject('p1')
+    const store = new SessionStore(dataDir)
+    const record = (await store.get('p1', first.agentSessionId))!
+    expect(record.lastSeenAt).toBeGreaterThanOrEqual(record.lastTurnEndedAt)
+
+    // Unread when the project closed, so restored, then closed without loading.
+    await store.put('p1', 'session-2', { ...record, title: 'Two', lastSeenAt: 0 })
+    const restarted = new SessionManager({
+      adapters: { claude: fakeAdapter().adapter },
+      store: new SessionStore(dataDir),
+      projectPath: () => '/work/project',
+      send: () => {},
+    })
+    await restarted.restoreUnread(['p1'])
+    expect(restarted.summaries().map((s) => s.title)).toEqual(['Two'])
+    restarted.closeSession({ agent: 'claude', agentSessionId: 'session-2' })
+    expect(restarted.summaries()).toEqual([])
+    await restarted.closeProject('p1')
+    const second = (await new SessionStore(dataDir).get('p1', 'session-2'))!
+    expect(second.lastSeenAt).toBeGreaterThanOrEqual(second.lastTurnEndedAt)
+  })
+
   it('starts runs with the chosen settings and changes the running one', async () => {
     const { manager, runs, dataDir } = await setup()
     const pointer = await manager.createSession('p1', 'claude')

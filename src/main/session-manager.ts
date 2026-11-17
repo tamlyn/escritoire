@@ -26,6 +26,9 @@ type ProjectWork = { work: Work; loading: Map<string, Promise<Session>> }
 
 type CommandList = { latest?: SlashCommand[]; loading?: Promise<SlashCommand[]> }
 
+/** A session left unread when the app last quit, which hasn't been loaded since. */
+type UnreadSession = { projectId: string; pointer: SessionPointer; title: string }
+
 type Session = {
   projectId: string
   pointer: SessionPointer
@@ -59,6 +62,8 @@ const titleLength = 60
  */
 export class SessionManager {
   private readonly sessions = new Map<string, Session>()
+  /** By agent session id. Replaced by the session once it loads. */
+  private readonly unread = new Map<string, UnreadSession>()
   /**
    * Where each reset conversation continues, so a client that missed the reset
    * (its tab wasn't mounted, or it wasn't connected) still follows it.
@@ -82,7 +87,7 @@ export class SessionManager {
   }
 
   summaries(): SessionSummary[] {
-    return [...this.sessions.values()].map((s) => ({
+    const loaded = [...this.sessions.values()].map((s): SessionSummary => ({
       ...s.pointer,
       projectId: s.projectId,
       title: s.record.title,
@@ -94,6 +99,30 @@ export class SessionManager {
             ? 'unread'
             : null,
     }))
+    const unread = [...this.unread.values()].map((s): SessionSummary => ({
+      ...s.pointer,
+      projectId: s.projectId,
+      title: s.title,
+      status: 'idle',
+      attention: 'unread',
+    }))
+    return [...loaded, ...unread]
+  }
+
+  /**
+   * Sessions load only when a client shows them, so after a restart this finds
+   * the open projects' unread sessions for the summaries. Nothing can be waiting
+   * after a restart, since agents only resume when sent a message.
+   */
+  async restoreUnread(projectIds: string[]): Promise<void> {
+    const results = await Promise.allSettled(projectIds.map(async (projectId) => {
+      for (const [agentSessionId, record] of Object.entries(await this.deps.store.list(projectId))) {
+        if (record.lastTurnEndedAt <= record.lastSeenAt || this.sessions.has(agentSessionId)) continue
+        this.unread.set(agentSessionId, { projectId, pointer: { agent: record.agent, agentSessionId }, title: record.title })
+      }
+    }))
+    for (const result of results) if (result.status === 'rejected') console.error(result.reason)
+    this.broadcastSummaries()
   }
 
   async listPastSessions(projectId: string): Promise<PastSession[]> {
@@ -264,9 +293,36 @@ export class SessionManager {
     if (visible) this.markSeen(session)
   }
 
+  /**
+   * The user closed the session's tab, so it no longer needs them: marked seen,
+   * or it would be unread again after every restart.
+   */
   closeSession(pointer: SessionPointer): void {
     const session = this.sessions.get(pointer.agentSessionId)
-    if (!session) return
+    if (session) {
+      if (session.record.lastSeenAt < session.record.lastTurnEndedAt) {
+        session.record.lastSeenAt = this.now()
+        this.save(session)
+      }
+      this.stop(session)
+      return
+    }
+    const unread = this.unread.get(pointer.agentSessionId)
+    if (!unread) return
+    this.unread.delete(pointer.agentSessionId)
+    this.broadcastSummaries()
+    const { projectId } = unread
+    const seenAt = this.now()
+    this.project(projectId).work
+      .run(async () => {
+        const record = await this.deps.store.get(projectId, pointer.agentSessionId)
+        if (record) await this.deps.store.put(projectId, pointer.agentSessionId, { ...record, lastSeenAt: seenAt })
+      })
+      .catch((error: unknown) => console.error(error))
+  }
+
+  private stop(session: Session): void {
+    const { pointer } = session
     session.run?.close()
     this.adapter(pointer.agent).closeSession?.(pointer.agentSessionId)
     this.sessions.delete(pointer.agentSessionId)
@@ -278,7 +334,10 @@ export class SessionManager {
     const project = this.projects.get(projectId)
     this.projects.delete(projectId)
     const closing = [...this.sessions.values()].filter((session) => session.projectId === projectId)
-    for (const session of closing) this.closeSession(session.pointer)
+    const forgotten = [...this.unread.values()].filter((unread) => unread.projectId === projectId)
+    for (const unread of forgotten) this.unread.delete(unread.pointer.agentSessionId)
+    for (const session of closing) this.stop(session)
+    if (forgotten.length > 0) this.broadcastSummaries()
     await project?.work.close()
     // Saved once more in case an earlier save failed.
     await Promise.all(closing.map((session) =>
@@ -397,6 +456,7 @@ export class SessionManager {
     }
     signal.throwIfAborted()
     this.sessions.set(pointer.agentSessionId, session)
+    this.unread.delete(pointer.agentSessionId)
     return session
   }
 

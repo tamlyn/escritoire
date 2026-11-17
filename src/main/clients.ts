@@ -218,6 +218,8 @@ function wants<K extends keyof Events>(client: Client, name: K, payload: Events[
   if (name === 'screenOutput') return client.screens.has((payload as Events['screenOutput']).screenId)
   // It carries the pairing code.
   if (name === 'remoteAccessChanged') return client.desktop
+  // Only the desktop shows notifications.
+  if (name === 'focusSession') return client.desktop
   return true
 }
 

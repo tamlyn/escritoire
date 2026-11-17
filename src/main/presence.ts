@@ -1,6 +1,6 @@
 import { powerMonitor } from 'electron'
 
-const idleSeconds = 5 * 60
+const idleSeconds = 60
 const checkEveryMs = 10_000
 
 /**

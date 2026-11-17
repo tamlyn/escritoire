@@ -1,16 +1,19 @@
 import { ChevronsUpDownIcon } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AppState } from '../../shared/api'
 import { api, isDesktop, subscribe } from './api'
+import { Inbox } from './Inbox'
 import { ProjectSwitcher } from './ProjectSwitcher'
-import { ProjectWorkspace, type ProjectWorkspaceHandle } from './ProjectWorkspace'
+import { type PendingSession, ProjectWorkspace, type ProjectWorkspaceHandle } from './ProjectWorkspace'
 import { RemoteAccessButton } from './remote/RemoteAccessButton'
 import { isMac, modifierLabel, useShortcut } from './shortcuts'
 
 export function App() {
   const [state, setState] = useState<AppState | null>(null)
   const [switcherOpen, setSwitcherOpen] = useState(false)
+  const [pendingSession, setPendingSession] = useState<PendingSession | null>(null)
   const workspaceRef = useRef<ProjectWorkspaceHandle>(null)
+  const activeProjectId = state?.activeProjectId
 
   useEffect(() => {
     // Pushes and replies arrive in the order main sent them, so whichever comes last is current.
@@ -18,6 +21,16 @@ export function App() {
     void api.getState().then(setState)
     return unsubscribe
   }, [])
+
+  /** Switches to the session's project if need be, then shows the session there. */
+  const goToSession = useCallback((session: PendingSession) => {
+    if (session.projectId !== activeProjectId) void api.activateProject(session.projectId).then(setState)
+    setPendingSession(session)
+  }, [activeProjectId])
+
+  useEffect(() => subscribe('focusSession', goToSession), [goToSession])
+
+  const clearPendingSession = useCallback(() => setPendingSession(null), [])
 
   useShortcut('o', () => setSwitcherOpen(true))
 
@@ -41,6 +54,11 @@ export function App() {
           {activeProject?.name ?? 'No project'}
           <ChevronsUpDownIcon className="text-muted-foreground size-3.5" />
         </button>
+        <Inbox
+          projects={state.projects}
+          activeProjectId={state.activeProjectId}
+          onSelect={(s) => goToSession({ projectId: s.projectId, pointer: { agent: s.agent, agentSessionId: s.agentSessionId }, title: s.title })}
+        />
         {isDesktop && (
           <div className="ml-auto">
             <RemoteAccessButton />
@@ -49,7 +67,13 @@ export function App() {
       </header>
       <main className="min-h-0 flex-1">
         {activeProject ? (
-          <ProjectWorkspace key={activeProject.id} project={activeProject} ref={workspaceRef} />
+          <ProjectWorkspace
+            key={activeProject.id}
+            project={activeProject}
+            pendingSession={pendingSession}
+            onPendingSessionShown={clearPendingSession}
+            ref={workspaceRef}
+          />
         ) : (
           <div className="text-muted-foreground flex h-full items-center justify-center">
             Press {modifierLabel}O to open a project

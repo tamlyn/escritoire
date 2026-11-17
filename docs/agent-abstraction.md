@@ -41,13 +41,14 @@ A session is a **transcript of items**, a list of **pending requests** and a **s
 - **Past sessions** are the agent's own list for the project, including sessions started outside the IDE.
 - **Lifecycle.** Opening a session tab loads history. Closing the tab or project stops the run; the session stays in the agent's list for resuming. A run that fails or whose Claude Code process exits denies its pending requests, sets `errored` and ends itself; the next message starts a fresh run. A closed run emits nothing. Session tabs have the id `session:<agentSessionId>`, so opening one that is already open selects it.
 - **Queued messages.** A message sent during a turn waits in the session's `queued` list, which `SessionManager` owns and reports with `queueChanged`, until status leaves `working`; then the next one is sent. Holding the queue in the IDE rather than the agent lets the user see, edit and cancel it, the same way for both agents. Adapters still accept a message mid-turn, since an agent can start a turn of its own.
-- **Attention** is derived in main, so it works for background projects: `waiting` if a request is pending, `unread` if a turn ended after the session was last seen, which survives restarts. The renderer reports when a session is visible (tab shown and window focused), which marks it seen.
+- **Attention** is derived in main, so it works for background projects: `waiting` if a request is pending, `unread` if a turn ended after the session was last seen, which survives restarts. The renderer reports when a session is visible (tab shown and window focused), which marks it seen. Closing a session's tab marks it seen too. After a restart, `restoreUnread` lists the open projects' unread sessions from the store until they load, so they aren't missing from the summaries; nothing can be waiting then, since agents resume only when sent a message.
 
 ## Main → renderer events
 
 `Events` in [`src/shared/api.ts`](../src/shared/api.ts) is typed like `Api`; the renderer listens with `subscribe(name, listener)`.
 
-- **`sessionsChanged`**: summaries (pointer, project, title, status, attention) of every loaded session, sent when status, requests or read state change. Drives tab indicators, and later the project attention count and switcher.
+- **`sessionsChanged`**: summaries (pointer, project, title, status, attention) of every loaded session, sent when status, requests or read state change. Drives tab indicators, the inbox, the switcher's rows and ordering, and the desktop's badge and notifications (`shared/attention.ts` says which sessions need the user, and which have just started to).
+- **`focusSession`**: `{ projectId, pointer, title }`, to the desktop only, when the user clicks a notification. The renderer switches project through `activateProject` and shows the session, as choosing it in the inbox does.
 - **`sessionEvent`**: `{ agentSessionId, seq, event }`, only for sessions the renderer has open.
 
 `openSession` returns the view with its `seq` and subscribes; events at or below that `seq` are dropped, and events that arrive before the snapshot are held, which removes any race between the reply and pushed events. Text deltas are not batched; coalesce in main only if streaming proves costly.

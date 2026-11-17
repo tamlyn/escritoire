@@ -237,6 +237,8 @@ export type Events = {
   /** The projects, or this client's active one, changed because of another client. */
   stateChanged: AppState
   remoteAccessChanged: RemoteAccess
+  /** The user clicked a notification about the session: show it. Desktop only. */
+  focusSession: { projectId: string; pointer: SessionPointer; title: string }
 }
 
 const eventNameSet: Record<keyof Events, true> = {
@@ -248,6 +250,7 @@ const eventNameSet: Record<keyof Events, true> = {
   gitChanged: true,
   stateChanged: true,
   remoteAccessChanged: true,
+  focusSession: true,
 }
 
 export const eventNames = Object.keys(eventNameSet) as (keyof Events)[]

@@ -1,4 +1,4 @@
-import { FileDiffIcon, GitCommitHorizontalIcon, LoaderCircleIcon, PlusIcon, XIcon } from 'lucide-react'
+import { FileDiffIcon, GitCommitHorizontalIcon, PlusIcon, XIcon } from 'lucide-react'
 import { type Ref, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import {
   Group,
@@ -17,7 +17,7 @@ import {
   usePanelRef,
   useWorkspaceRef,
 } from 'react-resizable-panels'
-import type { SessionSummary } from '../../shared/agent'
+import type { SessionPointer } from '../../shared/agent'
 import type { Project } from '../../shared/api'
 import { api } from './api'
 import { FileTree } from './FileTree'
@@ -25,6 +25,7 @@ import { FileActionsProvider, useFileActions } from './file-actions'
 import { diffSide } from './git/DiffTab'
 import { GitStatusRow } from './git/GitStatusRow'
 import { ProjectContext } from './project-context'
+import { SessionIndicator } from './session/SessionIndicator'
 import { useSessionSummary } from './sessions'
 import { modifierLabel, useShortcut } from './shortcuts'
 import { ProcessList } from './process/ProcessList'
@@ -36,6 +37,7 @@ import {
   createFileTab,
   createGitTab,
   createProcessTab,
+  createSessionTab,
   type Tab,
   TabContent,
   type TabData,
@@ -49,11 +51,21 @@ const emptyModel: WorkspaceModelInput<TabData> = {
 /** What the rest of the window can do in the active project's tabs. */
 export type ProjectWorkspaceHandle = { openFile: (path: string) => void }
 
+/** A session to show once the project's tabs have loaded. */
+export type PendingSession = { projectId: string; pointer: SessionPointer; title: string }
+
+type Props = {
+  project: Project
+  pendingSession: PendingSession | null
+  onPendingSessionShown: () => void
+  ref?: Ref<ProjectWorkspaceHandle>
+}
+
 /**
  * The file tree and tab area of one project. Mounted only while its project is
  * active; the tab layout is loaded on mount and saved on every change.
  */
-export function ProjectWorkspace({ project, ref }: { project: Project; ref?: Ref<ProjectWorkspaceHandle> }) {
+export function ProjectWorkspace({ project, pendingSession, onPendingSessionShown, ref }: Props) {
   const [model, setModel] = useState<WorkspaceModelInput<TabData> | null>(null)
   const workspaceRef = useWorkspaceRef<TabData>()
   useImperativeHandle(ref, () => ({ openFile: (path) => workspaceRef.current?.addTab(createFileTab(path)) }), [workspaceRef])
@@ -74,6 +86,14 @@ export function ProjectWorkspace({ project, ref }: { project: Project; ref?: Ref
       cancelled = true
     }
   }, [project.id])
+
+  // Runs after the workspace has mounted, so its handle is set. Session tabs
+  // have stable ids, so this selects an open tab or adds a missing one.
+  useEffect(() => {
+    if (!model || pendingSession?.projectId !== project.id) return
+    workspaceRef.current?.addTab(createSessionTab(pendingSession.pointer, pendingSession.title))
+    onPendingSessionShown()
+  }, [model, pendingSession, project.id, workspaceRef, onPendingSessionShown])
 
   useShortcut('t', () => workspaceRef.current?.addTab(createEmptyTab()))
   useShortcut('b', () => {
@@ -247,22 +267,6 @@ function ProcessTabLabel({ tab, processId }: { tab: Tab; processId: string }) {
       <span className="truncate font-mono text-xs">{tab.title}</span>
     </>
   )
-}
-
-function SessionIndicator({ summary }: { summary: SessionSummary | undefined }) {
-  if (summary?.status === 'working' && summary.attention !== 'waiting') {
-    return <LoaderCircleIcon aria-label="Working" className="size-3 shrink-0 animate-spin" />
-  }
-  const dot =
-    summary?.attention === 'waiting'
-      ? ['bg-amber-500', 'Waiting for input']
-      : summary?.status === 'errored'
-        ? ['bg-destructive', 'Errored']
-        : summary?.attention === 'unread'
-          ? ['bg-blue-500', 'Unread']
-          : null
-  if (!dot) return null
-  return <span role="img" aria-label={dot[1]} className={`size-2 shrink-0 rounded-full ${dot[0]}`} />
 }
 
 function renderToolbar() {

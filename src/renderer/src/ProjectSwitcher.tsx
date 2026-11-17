@@ -1,4 +1,4 @@
-import { FileIcon, FolderIcon, FolderOpenIcon } from 'lucide-react'
+import { FileIcon, FolderIcon, FolderOpenIcon, LoaderCircleIcon } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import type { AppState, Project } from '../../shared/api'
 import { api, errorMessage } from './api'
@@ -12,6 +12,9 @@ import {
 } from './components/ui/command'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
 import { fuzzyFinder } from './fuzzy'
+import { type ProjectActivity, projectActivity } from './project-activity'
+import { useAllProcesses } from './processes'
+import { useSessionSummaries } from './sessions'
 import { hasModifier, modifierLabel } from './shortcuts'
 
 const projectLimit = 5
@@ -51,7 +54,10 @@ export function ProjectSwitcher(props: Props) {
     }
   }, [open])
 
-  const projects = useMemo(() => orderProjects(state), [state])
+  const summaries = useSessionSummaries()
+  const processes = useAllProcesses()
+  const activity = useMemo(() => projectActivity(summaries, processes), [summaries, processes])
+  const projects = useMemo(() => orderProjects(state, activity), [state, activity])
   const findProjects = useMemo(() => fuzzyFinder(projects, { path: (p) => p.path, limit: projectLimit }), [projects])
   const findFiles = useMemo(() => fuzzyFinder(files, { path: (path) => path, limit: fileLimit }), [files])
   const projectMatches = query ? findProjects(query) : projects.map((item) => ({ item, positions: new Set<number>() }))
@@ -134,6 +140,7 @@ export function ProjectSwitcher(props: Props) {
                         key={project.id}
                         project={project}
                         positions={positions}
+                        activity={activity.get(project.id)}
                         isActive={project.id === state.activeProjectId}
                         onSelect={() => {
                           props.onActivate(project.id)
@@ -184,18 +191,51 @@ export function ProjectSwitcher(props: Props) {
   )
 }
 
-function ProjectItem(props: { project: Project; positions: Set<number>; isActive: boolean; onSelect: () => void }) {
-  const { project, isActive } = props
+type ProjectItemProps = {
+  project: Project
+  positions: Set<number>
+  activity: ProjectActivity | undefined
+  isActive: boolean
+  onSelect: () => void
+}
+
+function ProjectItem({ project, positions, activity, isActive, onSelect }: ProjectItemProps) {
   return (
-    <CommandItem value={project.path} onSelect={props.onSelect}>
+    <CommandItem value={project.path} onSelect={onSelect}>
       <span className={project.isOpen ? '' : 'text-muted-foreground'}>{project.name}</span>
       <span className="text-muted-foreground truncate text-xs">
-        <Highlighted text={project.path} positions={props.positions} />
+        <Highlighted text={project.path} positions={positions} />
       </span>
-      <span className="text-muted-foreground ml-auto shrink-0 text-xs">
+      <span className="text-muted-foreground ml-auto flex shrink-0 items-center gap-2 text-xs">
+        {activity && <ActivityIndicators activity={activity} />}
         {isActive ? 'current' : project.isOpen ? '' : 'closed'}
       </span>
     </CommandItem>
+  )
+}
+
+/** Only what is going on, in the colours of session tabs and process dots. */
+function ActivityIndicators({ activity }: { activity: ProjectActivity }) {
+  const dot = (count: number, colour: string, label: string) =>
+    count > 0 && (
+      <span role="img" aria-label={`${count} ${label}`} className="flex items-center gap-1">
+        <span className={`size-2 rounded-full ${colour}`} />
+        {count > 1 && count}
+      </span>
+    )
+  return (
+    <>
+      {dot(activity.waiting, 'bg-amber-500', 'waiting for input')}
+      {dot(activity.unread, 'bg-blue-500', 'unread')}
+      {activity.working > 0 && (
+        <span role="img" aria-label={`${activity.working} working`} className="flex items-center gap-1">
+          <LoaderCircleIcon className="size-3 animate-spin" />
+          {activity.working > 1 && activity.working}
+        </span>
+      )}
+      {dot(activity.running, 'bg-emerald-500', 'running')}
+      {dot(activity.failed, 'bg-destructive', 'crashed')}
+    </>
   )
 }
 
@@ -221,11 +261,18 @@ function Highlighted({ text, positions }: { text: string; positions: Set<number>
   )
 }
 
-/** Most recently active first, with the current project last since switching to it does nothing. */
-function orderProjects(state: AppState): Project[] {
-  const byRecency = [...state.projects].sort((a, b) => b.lastActiveAt - a.lastActiveAt)
-  const current = byRecency.filter((p) => p.id === state.activeProjectId)
-  return [...byRecency.filter((p) => p.id !== state.activeProjectId), ...current]
+/**
+ * Projects with sessions waiting for input first, then with unread ones, then
+ * the rest, each most recently active first. The current project is last,
+ * since switching to it does nothing.
+ */
+function orderProjects(state: AppState, activity: Map<string, ProjectActivity>): Project[] {
+  const rank = (project: Project) => {
+    if (project.id === state.activeProjectId) return 3
+    const a = activity.get(project.id)
+    return a?.waiting ? 0 : a?.unread ? 1 : 2
+  }
+  return [...state.projects].sort((a, b) => rank(a) - rank(b) || b.lastActiveAt - a.lastActiveAt)
 }
 
 /** Listed afresh each time the palette opens, so files an agent has just created appear. */

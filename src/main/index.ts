@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron'
 import icon from '../../build/icon.png?asset'
-import { type Api, apiMethods } from '../shared/api'
+import { type Api, apiMethods, type Events } from '../shared/api'
 import type { ApiConnection } from '../shared/api-client'
 import { codexAdapter } from './agents/codex'
 import { claudeAdapter } from './agents/claude'
@@ -23,6 +23,7 @@ import {
 } from './git'
 import { IdeServer } from './ide-server'
 import { registerSupervisorTools } from './ide-tools'
+import { DesktopAttention } from './desktop-attention'
 import { completeDirectory } from './paths'
 import { ProjectFiles } from './project-files'
 import { ProjectStore } from './project-store'
@@ -219,7 +220,7 @@ function titleBarOverlay(): Electron.TitleBarOverlay {
 
 let allowClose = false
 
-function createWindow(): void {
+function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -261,6 +262,7 @@ function createWindow(): void {
   } else {
     void window.loadFile(join(import.meta.dirname, '../renderer/index.html'))
   }
+  return window
 }
 
 app.on('window-all-closed', () => app.quit())
@@ -287,6 +289,10 @@ void app.whenReady().then(async () => {
     },
   })
   const send = clients.send
+  const attention = new DesktopAttention({
+    projectName: (projectId) => projects.getState().projects.find((p) => p.id === projectId)?.name ?? '',
+    focusSession: (session) => send('focusSession', session),
+  })
   const supervisor = new Supervisor({
     projectPath: (projectId) => projects.getProject(projectId).path,
     send: (output) => send('screenOutput', output),
@@ -301,8 +307,12 @@ void app.whenReady().then(async () => {
     store: sessionStore,
     projectPath: (projectId) => projects.getProject(projectId).path,
     ideConnection: (projectId) => ideServer.connection(projectId),
-    send,
+    send: (name, payload) => {
+      send(name, payload)
+      if (name === 'sessionsChanged') attention.update(payload as Events['sessionsChanged'])
+    },
   })
+  await sessions.restoreUnread(projects.getState().projects.filter((p) => p.isOpen).map((p) => p.id))
   const files = new ProjectFiles({
     projectPath: (projectId) => projects.getProject(projectId).path,
     send: (payload) => send('filesChanged', payload),
@@ -387,5 +397,5 @@ void app.whenReady().then(async () => {
     })()
   })
   ipcMain.handle('apiConnection', (): ApiConnection => ({ url: server.url, token: desktopToken }))
-  createWindow()
+  attention.attach(createWindow())
 })

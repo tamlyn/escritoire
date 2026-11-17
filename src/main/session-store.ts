@@ -29,6 +29,11 @@ export class SessionStore {
     return (await this.load(projectId))[agentSessionId]
   }
 
+  /** By the agent's session id. */
+  async list(projectId: string): Promise<Record<string, SessionRecord>> {
+    return { ...(await this.load(projectId)) }
+  }
+
   async put(projectId: string, agentSessionId: string, record: SessionRecord): Promise<void> {
     if (this.removed.has(projectId)) return
     const sessions = await this.load(projectId)

@@ -84,7 +84,7 @@ Check current versions and APIs against documentation when adding each one.
 - File watchers and git status polling run only for projects that are some client's active one, and refresh on switching in.
 - Supervised processes are never stopped merely by switching away or by inactivity. Closing the project or quitting the app stops them.
 - A user can remove a project from the list. This stops its processes and forgets its layout.
-- **Project switcher:** a keyboard-driven palette, by recency. Typing a path or fuzzy name in the same palette opens a new project; there is no separate "open project" UI.
+- **Project switcher:** a keyboard-driven palette: projects with sessions waiting for input first, then with unread turns, then the rest by recency, with the current project last. Each row shows what is going on there (sessions waiting, unread or working; processes running or crashed). Typing a path or fuzzy name in the same palette opens a new project; there is no separate "open project" UI.
 - **Opening files:** the same palette also matches the active project's files by fuzzy name, in a group below the matching projects. The list is fetched afresh each time the palette opens (git's tracked and untracked files, or a capped walk outside git), so there is no index to build or keep current.
 
 ### Attention within a project
@@ -92,6 +92,16 @@ Check current versions and APIs against documentation when adding each one.
 - **Attention means unseen activity.** Viewing a session clears its unread indicator; an unanswered question or permission request still remains visibly in the waiting-for-input state until answered.
 - Two levels: **waiting for input** (a question or permission request that blocks work, strongest signal) and an **unread finished turn** (weaker). A crashed process is a secondary signal.
 - Tabs show session state so activity elsewhere in the current project is visible.
+
+### Attention across projects
+
+- **The user can tell when another project needs them** without a persistent list of projects on screen. One definition of "needs attention" (`shared/attention.ts`) serves the inbox, the badge and notifications, and later Web Push, so they all fire on the same transitions.
+- **Inbox in the top bar,** beside the active project's name: a count of sessions in other projects that need attention, hidden when there are none. It lists them, waiting for input first, then unread, each with its project. Choosing one switches to that project and focuses the session. The active project's sessions are left out, since its tabs show them. It is derived in the renderer from the session summaries every client already has.
+- **While the window is unfocused,** a dock badge counts every session needing attention (in all projects, the active one included), and an OS notification appears each time a session starts waiting or finishes a turn. Clicking it brings the window forward and focuses the session. This is the only Electron-specific part (`main/desktop-attention.ts`); a session the user can see never becomes unread, since visibility already requires focus.
+- **Away means absent, not unfocused.** Presence at the desktop, which later decides Web Push, treats the user as away after one minute idle.
+- **Unread survives a restart.** Sessions load only when a client shows them, so at startup main lists the open projects' unread sessions from the session store until they load. Closing a session's tab marks it seen, so it doesn't return to the inbox after every restart; closing its project doesn't.
+- A crashed process is shown only in the switcher row, not the inbox or badge.
+- No jump-to-next-project shortcut.
 
 ### Agent sessions
 
@@ -190,7 +200,7 @@ The first step towards using Escritoire from a phone (see [Remote access](PLAN.m
 - **Values travel as JSON**, which drops `undefined`. So `null` resets a session setting to the agent's default, a trailing `undefined` argument is left off rather than sent as `null`, and the contract fails to compile if any method or event carries a value JSON would change.
 - Listeners bind to 127.0.0.1 only. The desktop's token is random per launch and never stored. A browser page from any origin but the window's own is refused, as is a client without the token.
 - **State per client, not per app.** Each connection is a client with its own active project, open session views, visibility and attached screens, released when it disconnects (`src/main/clients.ts`). Switching project in one client doesn't switch another; a client whose project another closes moves to the most recently active open one, and every client hears when the projects change. A new client starts in the project most recently active in any client, which is also where the desktop opens after a restart. Session events and screen output go only to the clients showing them.
-- **A session is visible if any client whose user is there shows it**, which marks its turns read. The desktop stops counting as viewing when the screen locks or the system has been idle for five minutes, so walking away with Escritoire frontmost doesn't mark turns read.
+- **A session is visible if any client whose user is there shows it**, which marks its turns read. The desktop stops counting as viewing when the screen locks or the system has been idle for a minute, so walking away with Escritoire frontmost doesn't mark turns read.
 - **A screen keeps the size it was given until another client types in it or resizes it**, so attaching a phone doesn't shrink the desktop's terminal. Only a client attached to a screen can type in it or resize it.
 - **The same renderer build runs in a browser.** There is no separate mobile app and no second message model. The preload keeps only what is genuinely desktop-only: the desktop's connection, and flushing edits on quit.
 - **Tailnet only, and paired.** `tailscale serve --bg <port>` publishes the remote listener to the tailnet over HTTPS; nothing depends on Tailscale itself, so `ssh -L` works too. Escritoire implements no login of its own, but Tailscale alone isn't enough: WebSockets ignore CORS, so any web page in the user's browser could connect to the loopback port, and agents on the same machine could connect and answer their own permission requests. So a browser pairs once, by typing a code the desktop shows, and keeps the resulting token.
@@ -222,3 +232,4 @@ All in November 2026, each tried on macOS and, from slice 2, on RHEL 8 through t
 9. Remote access, step 1: the desktop window's contract over a WebSocket.
 10. Remote access, step 2: state per client, and presence at the desktop.
 11. Remote access, step 3: pairing, revocation and serving the renderer to a browser.
+12. Attention across projects: the inbox, dock badge, OS notifications and switcher ordering.

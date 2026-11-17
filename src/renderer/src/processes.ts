@@ -18,7 +18,7 @@ subscribe('processesChanged', (next) => {
 })
 void api.listProcesses().then((initial) => pushed || setProcesses(initial))
 
-function useAllProcesses(): ProcessInfo[] {
+export function useAllProcesses(): ProcessInfo[] {
   return useSyncExternalStore(
     (listener) => {
       listeners.add(listener)

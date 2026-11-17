@@ -76,6 +76,16 @@ describe('events', () => {
     expect(phone.received).toEqual([])
   })
 
+  it('sends a clicked notification only to the desktop', () => {
+    const desktop = connect()
+    const phone = connect(false)
+
+    clients.send('focusSession', { projectId: 'a', pointer: { agent: 'claude', agentSessionId: 's1' }, title: 'Fix it' })
+
+    expect(desktop.received.map((r) => r.name)).toEqual(['focusSession'])
+    expect(phone.received).toEqual([])
+  })
+
   it("tells other clients what one did, but not that one", () => {
     const desktop = connect()
     const phone = connect(false)
