@@ -66,7 +66,8 @@ export function UsageIndicator({ usage, limits }: { usage?: ContextUsage; limits
 function Doughnut({ fraction }: { fraction: number }) {
   const radius = 6
   const circumference = 2 * Math.PI * radius
-  const filled = Math.min(fraction, 1) * circumference
+  // Compaction usually comes well before a large window fills, so the low end is stretched to stay legible.
+  const filled = Math.min(fraction, 1) ** 0.7 * circumference
   return (
     <svg viewBox="0 0 16 16" className="size-4 -rotate-90">
       <circle cx="8" cy="8" r={radius} fill="none" strokeWidth="3" className="stroke-muted-foreground/25" />
