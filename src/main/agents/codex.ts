@@ -1,4 +1,4 @@
-import type { AgentEvent, ContextUsage, Item, RequestResponse, SessionSettings, SlashCommand, ToolStatus, UserInput } from '../../shared/agent'
+import type { AgentEvent, ContextUsage, Item, PlanLimit, RequestResponse, SessionSettings, SlashCommand, ToolStatus, UserInput } from '../../shared/agent'
 import type { ReviewStartResponse } from './codex-protocol/v2/ReviewStartResponse'
 import type { ReviewTarget } from './codex-protocol/v2/ReviewTarget'
 import type { SkillMetadata } from './codex-protocol/v2/SkillMetadata'
@@ -10,6 +10,10 @@ import type { ThreadStartResponse } from './codex-protocol/v2/ThreadStartRespons
 import type { TurnStartResponse } from './codex-protocol/v2/TurnStartResponse'
 import type { ModelListResponse } from './codex-protocol/v2/ModelListResponse'
 import type { ThreadTokenUsage } from './codex-protocol/v2/ThreadTokenUsage'
+import type { AccountRateLimitsUpdatedNotification } from './codex-protocol/v2/AccountRateLimitsUpdatedNotification'
+import type { GetAccountRateLimitsResponse } from './codex-protocol/v2/GetAccountRateLimitsResponse'
+import type { RateLimitSnapshot } from './codex-protocol/v2/RateLimitSnapshot'
+import type { RateLimitWindow } from './codex-protocol/v2/RateLimitWindow'
 import type { ThreadSettingsUpdatedNotification } from './codex-protocol/v2/ThreadSettingsUpdatedNotification'
 import type { AskForApproval } from './codex-protocol/v2/AskForApproval'
 import type { SandboxMode } from './codex-protocol/v2/SandboxMode'
@@ -169,6 +173,24 @@ function contextUsage(usage: ThreadTokenUsage): ContextUsage {
   }
 }
 
+/** Updates are sparse: a window they leave out keeps its last value. */
+function mergeRateLimits(previous: RateLimitSnapshot | undefined, next: RateLimitSnapshot): RateLimitSnapshot {
+  return { ...next, primary: next.primary ?? previous?.primary ?? null, secondary: next.secondary ?? previous?.secondary ?? null }
+}
+
+export function planLimits(snapshot: RateLimitSnapshot): PlanLimit[] {
+  return [snapshot.primary, snapshot.secondary]
+    .filter((window): window is RateLimitWindow => window !== null)
+    .map((window) => ({ label: windowLabel(window.windowDurationMins), usedPercent: window.usedPercent, resetsAt: window.resetsAt && window.resetsAt * 1000 }))
+}
+
+function windowLabel(minutes: number | null): string {
+  if (minutes === 300) return 'Current session'
+  if (minutes === 7 * 24 * 60) return 'Weekly'
+  if (!minutes) return 'Usage'
+  return minutes % (24 * 60) === 0 ? `${minutes / (24 * 60)}-day` : `${Math.round(minutes / 60)}-hour`
+}
+
 function ideConfig(ide: StartOptions['ide']) {
   return ide ? {
     config: { mcp_servers: { escritoire: { url: ide.url, http_headers: ide.headers } } },
@@ -210,6 +232,7 @@ class CodexRun implements AgentRun {
   private queue: UserInput[] = []
   private settings: SessionSettings
   private sandbox?: SandboxMode
+  private rateLimits?: RateLimitSnapshot
   private items = new Map<string, Item>()
   /** Starts as the session's thread; `/clear` moves the run to a new one. */
   private threadId: string
@@ -227,6 +250,18 @@ class CodexRun implements AgentRun {
     this.rpc.onMessage = (m) => this.message(m)
     this.ready = fresh ? Promise.resolve().then(() => this.adopt(fresh.resolved)) : this.rpc.initialize().then(() => this.resume())
     void this.ready.catch((e: unknown) => this.fail(e))
+    void this.ready.then(() => this.readRateLimits()).catch(() => {})
+  }
+  private async readRateLimits(): Promise<void> {
+    // An API key login has no plan limits, and the read fails.
+    const result = await this.rpc.call<GetAccountRateLimitsResponse>('account/rateLimits/read', undefined)
+    this.updateRateLimits(result.rateLimits)
+  }
+  private updateRateLimits(snapshot: RateLimitSnapshot): void {
+    // Other buckets, such as a model's own, are left out of the summary.
+    if (this.rateLimits?.limitId && snapshot.limitId && snapshot.limitId !== this.rateLimits.limitId) return
+    this.rateLimits = mergeRateLimits(this.rateLimits, snapshot)
+    if (!this.closed) this.emit({ type: 'limitsChanged', limits: planLimits(this.rateLimits) })
   }
   private async resume(): Promise<void> {
     const mode = modeFor(this.settings.permissionMode)
@@ -343,6 +378,8 @@ class CodexRun implements AgentRun {
     switch (m.method) {
       case 'thread/tokenUsage/updated':
         this.emit({ type: 'usageChanged', usage: contextUsage(p.tokenUsage as ThreadTokenUsage) }); break
+      case 'account/rateLimits/updated':
+        this.updateRateLimits((p as unknown as AccountRateLimitsUpdatedNotification).rateLimits); break
       case 'thread/settings/updated': {
         const settings = (p as unknown as ThreadSettingsUpdatedNotification).threadSettings
         this.adopt({ ...settings, sandbox: settings.sandboxPolicy, reasoningEffort: settings.effort }); break

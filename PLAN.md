@@ -18,10 +18,6 @@ The other items under "From use", and agent session features from the VS Code ex
 
 Noticed using Escritoire day to day (November 2026).
 
-### Agent sessions
-
-- **Subscription usage** (five-hour and weekly) beside context usage. The Agent SDK reports Claude's plan limits when they apply, not for an API key or Bedrock; check what app-server reports for Codex.
-
 ### Workspace and editor
 
 - **Several windows**, each showing one project. Per-client state already makes each window just another client. This amends decision 7 (one project in view per window rather than per app), which HISTORY.md should say when built.

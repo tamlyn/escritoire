@@ -12,6 +12,8 @@ import {
   type PermissionUpdate,
   type Query,
   query,
+  type SDKControlGetContextUsageResponse,
+  type SDKControlGetUsageResponse,
   type SDKMessage,
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk'
@@ -24,6 +26,7 @@ import {
   type ImageAttachment,
   type Item,
   type PendingRequest,
+  type PlanLimit,
   type Question,
   type RequestResponse,
   type SessionSettings,
@@ -298,6 +301,7 @@ class ClaudeRun implements AgentRun {
         },
       })
       this.markStarted(this.query)
+      void this.refreshLimits()
       for await (const message of this.query) {
         // A message queued during a turn becomes a turn of its own after the result.
         if (activityTypes.has(message.type)) this.setWorking(true)
@@ -356,6 +360,27 @@ class ClaudeRun implements AgentRun {
     this.interrupted = false
     this.errorShown = false
     this.setWorking(false)
+    void this.refreshContext()
+    void this.refreshLimits()
+  }
+
+  private async refreshContext(): Promise<void> {
+    try {
+      const context = await this.query!.getContextUsage({ detail: 'summary' })
+      for (const event of this.transcript.mapContextUsage(context)) this.emit(event)
+    } catch {
+      // The breakdown is a nicety; the indicator still has the total without it.
+    }
+  }
+
+  private async refreshLimits(): Promise<void> {
+    try {
+      // Experimental, so may change shape or vanish with a Claude Code update.
+      const usage = await this.query!.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true })
+      this.emit({ type: 'limitsChanged', limits: planLimits(usage) })
+    } catch {
+      // Older or pinned Claude Code versions lack it.
+    }
   }
 
   private canUseTool: CanUseTool = (toolName, toolInput, { signal, suggestions, toolUseID, title }) =>
@@ -492,7 +517,7 @@ export class ClaudeTranscript {
       case 'compact_boundary': {
         const postTokens = (message.compact_metadata as { post_tokens?: number }).post_tokens
         if (!this.usage || postTokens === undefined) return [notice('info', 'Conversation compacted')]
-        this.usage = { ...this.usage, contextTokens: postTokens }
+        this.usage = { ...this.usage, contextTokens: postTokens, categories: undefined }
         return [notice('info', 'Conversation compacted'), { type: 'usageChanged', usage: this.usage }]
       }
       case 'init':
@@ -561,7 +586,18 @@ export class ClaudeTranscript {
       cacheWriteTokens,
       cacheTtlMs,
       at: typeof timestamp === 'string' ? Date.parse(timestamp) : Date.now(),
+      // Only asked for at the end of a turn, so slightly behind during one.
+      categories: this.usage?.categories,
     }
+    return [{ type: 'usageChanged', usage: this.usage }]
+  }
+
+  mapContextUsage(context: SDKControlGetContextUsageResponse): AgentEvent[] {
+    if (!this.usage) return []
+    const categories = context.categories
+      .filter((category) => (category.kind === 'used' || category.kind === 'buffer') && category.tokens > 0)
+      .map(({ name, tokens, kind }) => ({ name, tokens, reserved: kind === 'buffer' }))
+    this.usage = { ...this.usage, categories }
     return [{ type: 'usageChanged', usage: this.usage }]
   }
 
@@ -813,4 +849,15 @@ function displayPath(path: unknown, cwd: string): string {
 function prefixLines(text: unknown, prefix: string): string {
   if (typeof text !== 'string' || text === '') return ''
   return text.replace(/\n$/, '').split('\n').map((line) => `${prefix}${line}\n`).join('')
+}
+
+export function planLimits(usage: SDKControlGetUsageResponse): PlanLimit[] {
+  const windows = usage.rate_limits ?? {}
+  const limits: PlanLimit[] = []
+  for (const [key, label] of [['five_hour', 'Current session'], ['seven_day', 'Weekly']] as const) {
+    const window = windows[key]
+    if (window?.utilization == null) continue
+    limits.push({ label, usedPercent: window.utilization, resetsAt: window.resets_at ? Date.parse(window.resets_at) : null })
+  }
+  return limits
 }

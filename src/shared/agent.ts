@@ -105,6 +105,19 @@ export type ContextUsage = {
   cacheTtlMs?: number
   /** When the request was answered, in epoch milliseconds. */
   at: number
+  /** What fills the context, as of the end of the latest turn, for agents that say. */
+  categories?: ContextCategory[]
+}
+
+/** Reserved space, such as the compaction buffer, is held back rather than in use. */
+export type ContextCategory = { name: string; tokens: number; reserved: boolean }
+
+/** How much of one of the subscription's usage allowances is spent, account-wide. */
+export type PlanLimit = {
+  label: string
+  usedPercent: number
+  /** In epoch milliseconds. */
+  resetsAt: number | null
 }
 
 /** Work the agent left running in the background, such as a monitor or a background subagent. */
@@ -124,6 +137,7 @@ export type AgentEvent =
   /** Merged into the current settings. */
   | { type: 'settingsChanged'; settings: SessionSettings }
   | { type: 'usageChanged'; usage: ContextUsage }
+  | { type: 'limitsChanged'; limits: PlanLimit[] }
   /** The whole set of running background tasks. */
   | { type: 'tasksChanged'; tasks: BackgroundTask[] }
   /**
@@ -141,6 +155,7 @@ export type SessionView = {
   requests: PendingRequest[]
   settings: SessionSettings
   usage?: ContextUsage
+  limits?: PlanLimit[]
   tasks: BackgroundTask[]
   queued: QueuedMessage[]
 }
@@ -180,10 +195,12 @@ export function applyEvent(view: SessionView, event: AgentEvent): SessionView {
       return { ...view, settings: { ...view.settings, ...event.settings } }
     case 'usageChanged':
       return { ...view, usage: event.usage }
+    case 'limitsChanged':
+      return { ...view, limits: event.limits }
     case 'tasksChanged':
       return { ...view, tasks: event.tasks }
     case 'conversationReset':
-      return { ...emptySessionView, status: view.status, settings: view.settings, tasks: view.tasks, queued: view.queued }
+      return { ...emptySessionView, status: view.status, settings: view.settings, limits: view.limits, tasks: view.tasks, queued: view.queued }
     case 'queueChanged':
       return { ...view, queued: event.queued }
   }

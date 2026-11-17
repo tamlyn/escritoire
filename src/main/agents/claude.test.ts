@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { applyEvent, emptySessionView } from '../../shared/agent'
-import { ClaudeTranscript } from './claude'
+import { type AgentEvent, applyEvent, emptySessionView } from '../../shared/agent'
+import { ClaudeTranscript, planLimits } from './claude'
 
 const cwd = '/work/project'
 
@@ -190,6 +190,48 @@ describe('ClaudeTranscript', () => {
       cacheTtlMs: 3_600_000,
       at: Date.parse('2026-11-13T09:00:00.000Z'),
     })
+  })
+
+  it('breaks the context down by what uses it, until compaction makes that stale', () => {
+    const transcript = new ClaudeTranscript('/project')
+    let view = emptySessionView
+    const apply = (events: AgentEvent[]) => { for (const event of events) view = applyEvent(view, event) }
+    apply(transcript.map({
+      type: 'assistant',
+      timestamp: '2026-11-13T09:00:00.000Z',
+      parent_tool_use_id: null,
+      message: { id: 'msg_1', model: 'claude-opus-5-5', content: [], usage: { input_tokens: 30_000, output_tokens: 0 } },
+    } as never))
+    apply(transcript.mapContextUsage({
+      categories: [
+        { name: 'System prompt', tokens: 5_000, kind: 'used', color: '' },
+        { name: 'Messages', tokens: 25_000, kind: 'used', color: '' },
+        { name: 'MCP tools (deferred)', tokens: 9_000, kind: 'deferred', color: '' },
+        { name: 'Autocompact buffer', tokens: 33_000, kind: 'buffer', color: '' },
+        { name: 'Free space', tokens: 100_000, kind: 'free', color: '' },
+      ],
+    } as never))
+    expect(view.usage?.categories).toEqual([
+      { name: 'System prompt', tokens: 5_000, reserved: false },
+      { name: 'Messages', tokens: 25_000, reserved: false },
+      { name: 'Autocompact buffer', tokens: 33_000, reserved: true },
+    ])
+    apply(transcript.map({ type: 'system', subtype: 'compact_boundary', compact_metadata: { post_tokens: 12_000 } } as never))
+    expect(view.usage?.categories).toBeUndefined()
+  })
+
+  it('reports the five-hour and weekly plan limits', () => {
+    expect(planLimits({
+      rate_limits: {
+        five_hour: { utilization: 7, resets_at: '2026-11-17T18:50:00.000Z' },
+        seven_day: { utilization: 22, resets_at: null },
+        seven_day_opus: { utilization: 50, resets_at: null },
+      },
+    } as never)).toEqual([
+      { label: 'Current session', usedPercent: 7, resetsAt: Date.parse('2026-11-17T18:50:00.000Z') },
+      { label: 'Weekly', usedPercent: 22, resetsAt: null },
+    ])
+    expect(planLimits({ rate_limits: null } as never)).toEqual([])
   })
 
   it('shrinks the context to what compaction left', () => {

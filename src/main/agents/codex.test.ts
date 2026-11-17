@@ -37,6 +37,25 @@ describe('Codex adapter', () => {
     run.close()
   })
 
+  it('reports plan limits, keeping windows a sparse update leaves out', async () => {
+    const window = (usedPercent: number, windowDurationMins: number) => ({ usedPercent, windowDurationMins, resetsAt: 1_800_000_000 })
+    mocks.call.mockImplementation(async (method: string) => method === 'account/rateLimits/read'
+      ? { rateLimits: { limitId: 'codex', primary: window(7, 300), secondary: window(40, 10080) } }
+      : { thread: { id: 'thread' } })
+    let view: SessionView = { ...emptySessionView }
+    const run = codexAdapter.start({ cwd: '/project', agentSessionId: 'thread', settings: {} }, (e) => { view = applyEvent(view, e) })
+    await tick()
+    expect(view.limits).toEqual([
+      { label: 'Current session', usedPercent: 7, resetsAt: 1_800_000_000_000 },
+      { label: 'Weekly', usedPercent: 40, resetsAt: 1_800_000_000_000 },
+    ])
+    const client = mocks.clients.at(-1)
+    client.onMessage({ method: 'account/rateLimits/updated', params: { rateLimits: { limitId: 'codex', primary: window(9, 300), secondary: null } } })
+    client.onMessage({ method: 'account/rateLimits/updated', params: { rateLimits: { limitId: 'other-model', primary: window(90, 300), secondary: null } } })
+    expect(view.limits?.map((l) => l.usedPercent)).toEqual([9, 40])
+    run.close()
+  })
+
   it('runs slash commands as compaction, review or a skill', async () => {
     const skill = { name: 'imagegen', description: 'Make images', path: '/skills/imagegen/SKILL.md', enabled: true }
     mocks.call.mockImplementation(async (method: string) => {
@@ -117,7 +136,7 @@ describe('Codex adapter', () => {
     const run = codexAdapter.start({ cwd: '/project', agentSessionId: id, settings: {} }, () => {})
     run.send({ text: 'Hello', images: [] }); await tick()
     expect(mocks.clients).toHaveLength(1)
-    expect(mocks.call.mock.calls.map(([m]) => m)).toEqual(['thread/start', 'turn/start'])
+    expect(mocks.call.mock.calls.map(([m]) => m).filter((m) => m !== 'account/rateLimits/read')).toEqual(['thread/start', 'turn/start'])
     run.close()
   })
 

@@ -85,6 +85,7 @@ export function SessionTab({ tab, pointer }: { tab: Tab; pointer: SessionPointer
             settings={view.settings}
             choices={choices}
             usage={view.usage}
+            limits={view.limits}
             working={working}
           />
         </Composer>

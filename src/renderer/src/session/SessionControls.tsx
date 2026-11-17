@@ -11,11 +11,13 @@ import { cn } from '@/lib/utils'
 import type {
   ContextUsage,
   ModelChoice,
+  PlanLimit,
   SessionPointer,
   SessionSettings,
   SettingChoices,
 } from '../../../shared/agent'
 import { api } from '../api'
+import { compact, UsageIndicator } from './UsageIndicator'
 
 const defaultValue = ''
 
@@ -25,12 +27,14 @@ export function SessionControls({
   settings,
   choices,
   usage,
+  limits,
   working,
 }: {
   pointer: SessionPointer
   settings: SessionSettings
   choices: SettingChoices | null
   usage?: ContextUsage
+  limits?: PlanLimit[]
   working: boolean
 }) {
   const change = (next: SessionSettings) => void api.changeSessionSettings(pointer, next)
@@ -66,7 +70,7 @@ export function SessionControls({
         />
       )}
       <div className="ml-auto flex items-center gap-3">
-        {usage && <ContextIndicator usage={usage} />}
+        <UsageIndicator usage={usage} limits={limits} />
         {usage && (pointer.agent === 'claude' ? <CacheIndicator usage={usage} working={working} /> : (
           <span title={`The latest request read ${usage.cacheReadTokens.toLocaleString()} tokens from the prompt cache.`}>
             {compact(usage.cacheReadTokens)} cached
@@ -135,18 +139,6 @@ function Picker({
   )
 }
 
-function ContextIndicator({ usage }: { usage: ContextUsage }) {
-  const { contextTokens, contextWindow } = usage
-  const title = contextWindow
-    ? `Context: ${contextTokens.toLocaleString()} of ${contextWindow.toLocaleString()} tokens`
-    : `Context: ${contextTokens.toLocaleString()} tokens`
-  return (
-    <span title={title}>
-      {contextWindow ? `${Math.round((contextTokens / contextWindow) * 100)}% context` : `${compact(contextTokens)} context`}
-    </span>
-  )
-}
-
 // The API's default when a session hasn't yet written to the cache.
 const defaultCacheTtlMs = 5 * 60_000
 
@@ -177,10 +169,6 @@ function useNow(intervalMs: number): number {
     return () => clearInterval(timer)
   }, [intervalMs])
   return now
-}
-
-function compact(tokens: number): string {
-  return tokens >= 1000 ? `${Math.round(tokens / 1000)}k` : String(tokens)
 }
 
 function capitalize(text: string): string {
