@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron'
+import icon from '../../build/icon.png?asset'
 import { type Api, apiMethods } from '../shared/api'
 import type { ApiConnection } from '../shared/api-client'
 import { codexAdapter } from './agents/codex'
@@ -221,6 +222,8 @@ function createWindow(): void {
     height: 900,
     show: false,
     backgroundColor: '#1c1c1e',
+    // Linux has no app bundle to take the icon from; macOS ignores this.
+    icon,
     ...(process.platform === 'darwin'
       ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 14, y: 12 } }
       : { titleBarStyle: 'hidden', titleBarOverlay: titleBarOverlay() }),
