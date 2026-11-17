@@ -103,6 +103,7 @@ export const codexAdapter: AgentAdapter = {
 
 // Codex's own slash commands belong to its TUI; these are the ones app-server can run.
 const builtInCommands: SlashCommand[] = [
+  { name: 'clear', description: 'Start a new conversation in this tab' },
   { name: 'compact', description: 'Summarise the conversation to free up context' },
   { name: 'review', description: 'Review uncommitted changes, or what the instructions ask for', argumentHint: '[instructions]' },
 ]
@@ -198,9 +199,12 @@ class CodexRun implements AgentRun {
   private settings: SessionSettings
   private sandbox?: SandboxMode
   private items = new Map<string, Item>()
+  /** Starts as the session's thread; `/clear` moves the run to a new one. */
+  private threadId: string
   private requests = new Map<string, { id: number | string; method: string; params: Record<string, unknown> }>()
 
   constructor(private options: StartOptions, private emit: (event: AgentEvent) => void) {
+    this.threadId = options.agentSessionId
     this.settings = { ...options.settings }
     const fresh = freshThreads.get(options.agentSessionId)
     freshThreads.delete(options.agentSessionId)
@@ -225,14 +229,32 @@ class CodexRun implements AgentRun {
     try {
       await this.ready
       if (this.closed) return
+      if (parseCommand(input.text)?.name === 'clear') {
+        await this.clear()
+        this.emit({ type: 'statusChanged', status: 'idle' })
+        void Promise.resolve().then(() => this.drain())
+        return
+      }
       const turn = await this.startTurn(input)
       // Compaction's turn is only announced by `turn/started`.
       if (turn && !this.completedTurns.has(turn.id)) this.turnId ??= turn.id
       if (this.interruptRequested && this.turnId) await this.interrupt()
     } catch (e) { this.fail(e) } finally { this.starting = false }
   }
+  private async clear(): Promise<void> {
+    const mode = modeFor(this.settings.permissionMode)
+    const result = await this.rpc.call<ThreadStartResponse>('thread/start', {
+      cwd: this.options.cwd,
+      ...(mode ? { approvalPolicy: mode.approvalPolicy, sandbox: mode.sandbox } : {}),
+      ...ideConfig(this.options.ide),
+    })
+    if (this.closed) return
+    this.threadId = result.thread.id
+    this.emit({ type: 'conversationReset', agentSessionId: this.threadId })
+    this.adopt(result)
+  }
   private async startTurn(input: UserInput): Promise<{ id: string } | undefined> {
-    const threadId = this.options.agentSessionId
+    const threadId = this.threadId
     const command = parseCommand(input.text)
     if (command?.name === 'compact') {
       await this.rpc.call('thread/compact/start', { threadId })
@@ -259,7 +281,7 @@ class CodexRun implements AgentRun {
   async interrupt(): Promise<void> {
     this.queue = []
     this.interruptRequested = true
-    if (this.turnId) await this.rpc.call('turn/interrupt', { threadId: this.options.agentSessionId, turnId: this.turnId })
+    if (this.turnId) await this.rpc.call('turn/interrupt', { threadId: this.threadId, turnId: this.turnId })
   }
   respond(requestId: string, response: RequestResponse): void {
     const request = this.requests.get(requestId)
@@ -291,7 +313,7 @@ class CodexRun implements AgentRun {
   private message(m: RpcMessage): void {
     if (this.closed) return
     const p = m.params ?? {}
-    if (p.threadId && p.threadId !== this.options.agentSessionId) return
+    if (p.threadId && p.threadId !== this.threadId) return
     if (m.id !== undefined && m.method) { this.request(m.id, m.method, p); return }
     switch (m.method) {
       case 'thread/tokenUsage/updated':

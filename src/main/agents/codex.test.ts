@@ -45,6 +45,7 @@ describe('Codex adapter', () => {
       return { turn: { id: method } }
     })
     expect(await codexAdapter.listCommands('/project')).toEqual([
+      expect.objectContaining({ name: 'clear' }),
       expect.objectContaining({ name: 'compact' }),
       expect.objectContaining({ name: 'review' }),
       { name: 'imagegen', description: 'Make images' },
@@ -63,6 +64,20 @@ describe('Codex adapter', () => {
       { type: 'text', text: '/imagegen a cat', text_elements: [] },
       { type: 'skill', name: 'imagegen', path: '/skills/imagegen/SKILL.md' },
     ])
+    run.close()
+  })
+
+  it('moves to a new thread in the same mode on /clear', async () => {
+    mocks.call.mockImplementation(async (method: string) => method === 'thread/start'
+      ? { thread: { id: 'cleared' }, approvalPolicy: 'never', sandbox: { type: 'dangerFullAccess' } }
+      : { turn: { id: 'turn' } })
+    const events: unknown[] = []
+    const run = codexAdapter.start({ cwd: '/project', agentSessionId: 'thread', settings: { permissionMode: 'full-access' } }, (e) => events.push(e))
+    run.send({ text: '/clear', images: [] })
+    run.send({ text: 'Hello', images: [] }); await tick()
+    expect(mocks.call).toHaveBeenCalledWith('thread/start', expect.objectContaining({ cwd: '/project', approvalPolicy: 'never', sandbox: 'danger-full-access' }))
+    expect(events).toContainEqual({ type: 'conversationReset', agentSessionId: 'cleared' })
+    expect(mocks.call.mock.calls.find(([m]) => m === 'turn/start')![1]).toMatchObject({ threadId: 'cleared' })
     run.close()
   })
 

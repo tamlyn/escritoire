@@ -72,7 +72,8 @@ hooks release threads created before their first message. Recent-session listing
 combines successful adapters, so an absent Codex binary does not hide Claude's
 history.
 
-Slash commands are the adapter's: `/compact` calls `thread/compact/start`, whose
+Slash commands are the adapter's: `/clear` starts a new thread on the run's
+connection, in the same mode, and reports it as `conversationReset`; `/compact` calls `thread/compact/start`, whose
 turn is announced only by `turn/started` (verified live); `/review` calls
 `review/start` on uncommitted changes, or with the arguments as custom
 instructions; any other name matching an enabled skill from `skills/list` is a
