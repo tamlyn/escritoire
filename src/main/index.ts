@@ -295,6 +295,7 @@ void app.whenReady().then(async () => {
   // Its dependencies are only used once a client connects, after they exist.
   const clients = new Clients({
     lastActiveProject: () => projects.getState().activeProjectId,
+    isProjectOpen: (projectId) => projects.getState().projects.some((p) => p.id === projectId && p.isOpen),
     setSessionVisible: (session, visible) => sessions.setVisible(session, visible),
     closeSessionView: (session) => sessions.closeSessionView(session),
     setQueuedMessageHeld: (session, id, held) => sessions.setQueuedMessageHeld(session, id, held),
@@ -352,7 +353,7 @@ void app.whenReady().then(async () => {
   const remote = await RemoteAccess.load({
     dataDir,
     rendererDir: join(import.meta.dirname, '../renderer'),
-    connect: (send) => serve(clients.connect(send, { desktop: false })),
+    connect: (send, activeProjectId) => serve(clients.connect(send, { desktop: false, activeProjectId })),
     onChange: (state) => send('remoteAccessChanged', state),
   })
   const services: Services = { clients, remote, projects, sessions, sessionStore, files, terminals, supervisor, connections, databases }
@@ -370,7 +371,7 @@ void app.whenReady().then(async () => {
   const server = await ApiServer.start({
     port: 0,
     admits: (request) => request.headers.origin === undefined || request.headers.origin === desktopOrigin,
-    connect: (token, send) => tokensMatch(token, desktopToken) ? serve(clients.connect(send, { desktop: true })) : undefined,
+    connect: ({ token, activeProjectId }, send) => tokensMatch(token, desktopToken) ? serve(clients.connect(send, { desktop: true, activeProjectId })) : undefined,
   })
   await remote.start()
 

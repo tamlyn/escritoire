@@ -1,4 +1,7 @@
+import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises'
 import { createServer } from 'node:net'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { chromium, expect, test, webkit } from '@playwright/test'
 import { launchApp } from './app'
 
@@ -46,3 +49,54 @@ for (const [name, browserType] of [['Chromium', chromium], ['WebKit', webkit]] a
     await close()
   })
 }
+
+test('a paired browser recovers in its own project when the connection returns', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'escritoire-e2e-')))
+  await mkdir(join(root, 'alpha'))
+  await mkdir(join(root, 'beta'))
+  const { page, close } = await launchApp()
+  const modifier = process.platform === 'darwin' ? 'Meta' : 'Control'
+  for (const name of ['alpha', 'beta']) {
+    await page.keyboard.press(`${modifier}+o`)
+    await page.getByRole('combobox').fill(`${root}/${name}/`)
+    await page.getByRole('option', { name: `Open ${root}/${name}/` }).click()
+    await expect(page.getByRole('banner')).toContainText(name)
+  }
+
+  const port = await freePort()
+  await page.getByRole('button', { name: 'Remote access' }).click()
+  await page.getByLabel('Port').fill(String(port))
+  await page.getByRole('button', { name: 'Turn on' }).click()
+  await page.getByRole('button', { name: 'Pair a device' }).click()
+  const code = await page.getByLabel('Pairing code').textContent()
+
+  const browser = await chromium.launch()
+  const remote = await browser.newPage()
+  await remote.goto(`http://127.0.0.1:${port}/`)
+  await remote.getByLabel('Pairing code').fill(code!)
+  await remote.getByRole('button', { name: 'Pair' }).click()
+  await expect(remote.getByRole('banner')).toContainText('beta')
+
+  await remote.getByRole('banner').getByRole('button', { name: 'beta' }).click()
+  await remote.getByRole('option', { name: /^alpha/ }).click()
+  await expect(remote.getByRole('banner')).toContainText('alpha')
+  // The desktop was last to be active in beta until the browser moved, so make it the latest again.
+  await page.keyboard.press('Escape')
+  await page.keyboard.press(`${modifier}+o`)
+  await page.getByRole('option', { name: /^beta/ }).click()
+  await expect(page.getByRole('banner')).toContainText('beta')
+
+  await page.getByRole('button', { name: 'Remote access' }).click()
+  await page.getByRole('button', { name: 'Turn off' }).click()
+  await expect(remote.getByRole('status')).toHaveText('Reconnecting…')
+  await expect(remote.getByRole('banner')).toContainText('alpha')
+
+  await page.getByLabel('Port').fill(String(port))
+  await page.getByRole('button', { name: 'Turn on' }).click()
+  await expect(remote.getByRole('status')).toHaveCount(0, { timeout: 15_000 })
+  await expect(remote.getByRole('banner')).toContainText('alpha')
+
+  await browser.close()
+  await close()
+  await rm(root, { recursive: true, force: true })
+})

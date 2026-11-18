@@ -22,6 +22,7 @@ beforeEach(() => {
   held = new Set()
   clients = new Clients({
     lastActiveProject: () => lastActive,
+    isProjectOpen: (projectId) => projectId === 'a' || projectId === 'b',
     setSessionVisible: (session, isVisible) => visible.set(session.agentSessionId, isVisible),
     closeSessionView: (session) => closedViews.push(session.agentSessionId),
     setQueuedMessageHeld: (_session, id, isHeld) => { if (isHeld) held.add(id); else held.delete(id) },
@@ -51,6 +52,15 @@ it('releases the queued messages a client was editing when it disconnects', () =
 })
 
 describe('projects', () => {
+  it('returns a reconnecting client to its project while that is open', () => {
+    const activeProject = (activeProjectId: string | null) =>
+      clients.connect(() => {}, { desktop: false, activeProjectId }).activeProjectId
+
+    expect(activeProject('b')).toBe('b')
+    expect(activeProject('closed')).toBe('a')
+    expect(activeProject(null)).toBe('a')
+  })
+
   it('gives each client its own active project, watching all of them', () => {
     const desktop = connect()
     const phone = connect(false)

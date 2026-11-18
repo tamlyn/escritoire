@@ -1,6 +1,6 @@
 import { useMemo, useSyncExternalStore } from 'react'
 import type { ProcessInfo } from '../../shared/process'
-import { api, subscribe } from './api'
+import { api, onViewsReloaded, subscribe } from './api'
 
 let processes: ProcessInfo[] = []
 const listeners = new Set<() => void>()
@@ -16,7 +16,12 @@ subscribe('processesChanged', (next) => {
   pushed = true
   setProcesses(next)
 })
-void api.listProcesses().then((initial) => pushed || setProcesses(initial))
+function loadProcesses() {
+  pushed = false
+  api.listProcesses().then((initial) => pushed || setProcesses(initial)).catch((error: unknown) => console.error(error))
+}
+loadProcesses()
+onViewsReloaded(loadProcesses)
 
 export function useAllProcesses(): ProcessInfo[] {
   return useSyncExternalStore(

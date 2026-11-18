@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { join } from 'node:path'
 import { defaultRemotePort, type PairedDevice, pairPath, type RemoteAccess as RemoteAccessState } from '../shared/remote'
+import type { Hello } from '../shared/api-client'
 import { ApiServer, type Connection, type SendEvent, tokensMatch } from './api-server'
 import { readJson, writeJson } from './json-file'
 import { serveFile } from './static-files'
@@ -20,7 +21,7 @@ export type RemoteAccessOptions = {
   /** The renderer's built files, served to browsers. */
   rendererDir: string
   /** Serves a paired device's connection. */
-  connect: (send: SendEvent) => Connection
+  connect: (send: SendEvent, activeProjectId: string | null) => Connection
   onChange: (state: RemoteAccessState) => void
 }
 
@@ -119,7 +120,7 @@ export class RemoteAccess {
       this.server = await ApiServer.start({
         port: this.saved.port,
         admits,
-        connect: (token, send, disconnect) => this.connect(token, send, disconnect),
+        connect: (hello, send, disconnect) => this.connect(hello, send, disconnect),
         request: (request, response) => void this.request(request, response).catch((error: unknown) => {
           console.error('Remote request failed:', error)
           if (!response.headersSent) response.writeHead(500)
@@ -137,7 +138,7 @@ export class RemoteAccess {
     await server?.close()
   }
 
-  private connect(token: string, send: SendEvent, disconnect: () => void): Connection | undefined {
+  private connect({ token, activeProjectId }: Hello, send: SendEvent, disconnect: () => void): Connection | undefined {
     const hash = hashToken(token)
     const device = this.saved.devices.find((d) => timingSafeEqual(Buffer.from(d.tokenHash, 'hex'), hash))
     if (!device) return undefined
@@ -145,7 +146,7 @@ export class RemoteAccess {
     disconnects.add(disconnect)
     this.connected.set(device.id, disconnects)
     this.seen(device)
-    const connection = this.options.connect(send)
+    const connection = this.options.connect(send, activeProjectId ?? null)
     return {
       handle: connection.handle,
       close: () => {

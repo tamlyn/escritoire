@@ -36,10 +36,77 @@ function connection(): Promise<ApiConnection> {
   return Promise.resolve({ url: `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/api`, token })
 }
 
-let lost: Error | null = null
-const lostListeners = new Set<() => void>()
+const activeProjectKey = 'escritoire.activeProject'
+
+function storedActiveProject(): string | null {
+  if (isDesktop) return null
+  try {
+    return localStorage.getItem(activeProjectKey)
+  } catch {
+    return null
+  }
+}
+
+let activeProjectId = storedActiveProject()
+
+/** Where to return after reconnecting, or after a browser reloads the page. */
+export function rememberActiveProject(id: string | null): void {
+  activeProjectId = id
+  if (isDesktop) return
+  try {
+    if (id === null) localStorage.removeItem(activeProjectKey)
+    else localStorage.setItem(activeProjectKey, id)
+  } catch { /* It only misses returning to this project after a reload. */ }
+}
+
+export type ConnectionState = {
+  reconnecting: boolean
+  /** Edits that couldn't be saved on reconnecting, which reloading the views would discard. */
+  unsavedError: string | null
+  /** Goes up each time the views should be rebuilt from fresh snapshots. */
+  epoch: number
+}
+
+let connectionState: ConnectionState = { reconnecting: false, unsavedError: null, epoch: 0 }
+const connectionListeners = new Set<() => void>()
+const reloadListeners = new Set<() => void>()
+
+function setConnectionState(next: Partial<ConnectionState>): void {
+  connectionState = { ...connectionState, ...next }
+  for (const listener of connectionListeners) listener()
+}
+
+export function useConnectionState(): ConnectionState {
+  return useSyncExternalStore(
+    (listener) => {
+      connectionListeners.add(listener)
+      return () => connectionListeners.delete(listener)
+    },
+    () => connectionState,
+  )
+}
+
+/** For stores that outlive the views, to fetch their lists again. */
+export function onViewsReloaded(listener: () => void): void {
+  reloadListeners.add(listener)
+}
+
+export function reloadViews(): void {
+  for (const listener of reloadListeners) listener()
+  setConnectionState({ unsavedError: null, epoch: connectionState.epoch + 1 })
+}
+
+async function recover(): Promise<void> {
+  const flushed = await Promise.allSettled([...flushers].map((flush) => flush()))
+  // Lost again: the next reconnection recovers.
+  if (connectionState.reconnecting) return
+  const failed = flushed.find((result) => result.status === 'rejected')
+  if (failed) setConnectionState({ unsavedError: errorMessage(failed.reason) })
+  else reloadViews()
+}
 
 const client = connectApi(connection(), {
+  activeProjectId: () => activeProjectId,
   onLost: (error) => {
     if (!isDesktop && error.message === notAuthorized) {
       // Revoked: pair again.
@@ -47,21 +114,18 @@ const client = connectApi(connection(), {
       location.reload()
       return
     }
-    lost = error
-    for (const listener of lostListeners) listener()
+    setConnectionState({ reconnecting: true })
+  },
+  onReconnected: () => {
+    setConnectionState({ reconnecting: false })
+    void recover()
   },
 })
 
-/** Why the connection to main was lost, once it has been. */
-export function useConnectionLost(): Error | null {
-  return useSyncExternalStore(
-    (listener) => {
-      lostListeners.add(listener)
-      return () => lostListeners.delete(listener)
-    },
-    () => lost,
-  )
-}
+window.addEventListener('online', client.checkConnection)
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') client.checkConnection()
+})
 
 const pending = new Set<Promise<unknown>>()
 // A query can run for hours, and quitting closes its connection anyway.

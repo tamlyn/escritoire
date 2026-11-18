@@ -14,6 +14,7 @@ export type ScreenHost = {
 export type ClientsDeps = {
   /** The project a new client starts in. */
   lastActiveProject: () => string | null
+  isProjectOpen: (projectId: string) => boolean
   /** Whether a client whose user is present can see the session, which marks its turns read. */
   setSessionVisible: (session: SessionPointer, visible: boolean) => void
   /** No client has the session open any more. */
@@ -56,11 +57,12 @@ export class Clients {
 
   constructor(private readonly deps: ClientsDeps) {}
 
-  connect(send: SendEvent, { desktop }: { desktop: boolean }): Client {
+  /** `activeProjectId` is where a reconnecting client was, which doesn't count as activating it. */
+  connect(send: SendEvent, { desktop, activeProjectId = null }: { desktop: boolean; activeProjectId?: string | null }): Client {
     const client: Client = {
       send,
       desktop,
-      activeProjectId: this.deps.lastActiveProject(),
+      activeProjectId: activeProjectId !== null && this.deps.isProjectOpen(activeProjectId) ? activeProjectId : this.deps.lastActiveProject(),
       present: desktop ? this.desktopPresent : true,
       sessions: new Map(),
       heldMessages: new Map(),

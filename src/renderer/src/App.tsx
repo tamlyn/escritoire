@@ -1,7 +1,7 @@
 import { ChevronsUpDownIcon } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AppState } from '../../shared/api'
-import { api, isDesktop, subscribe } from './api'
+import { api, isDesktop, rememberActiveProject, subscribe } from './api'
 import { Inbox } from './Inbox'
 import { ProjectSwitcher } from './ProjectSwitcher'
 import { type PendingSession, ProjectWorkspace, type ProjectWorkspaceHandle } from './ProjectWorkspace'
@@ -21,6 +21,10 @@ export function App() {
     void api.getState().then(setState)
     return unsubscribe
   }, [])
+
+  useEffect(() => {
+    if (activeProjectId !== undefined) rememberActiveProject(activeProjectId)
+  }, [activeProjectId])
 
   /** Switches to the session's project if need be, then shows the session there. */
   const goToSession = useCallback((session: PendingSession) => {

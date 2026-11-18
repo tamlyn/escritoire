@@ -6,7 +6,11 @@ import { type Api, apiMethods, type EventSubscriber, type Events } from './api'
  * until it has. Then each `Request` gets one `Reply` with the same id, and
  * `Push`es arrive whenever main sends an event. Everything is JSON.
  */
-export type Hello = { token: string }
+export type Hello = {
+  token: string
+  /** The project this client was showing, so reconnecting returns it there. */
+  activeProjectId?: string | null
+}
 export type Request = { id: number; method: string; args: unknown[] }
 export type Reply = { id: number; result?: unknown } | { id: number; error: string }
 export type Push = { event: string; payload: unknown }
@@ -17,36 +21,109 @@ export const notAuthorized = 'Not authorised'
 /** Where to reach main's API, and the token that admits this client. */
 export type ApiConnection = { url: string; token: string }
 
-export type ApiClient = { api: Api; subscribe: EventSubscriber; close(): void }
+export type ApiClient = {
+  api: Api
+  subscribe: EventSubscriber
+  close(): void
+  /** Reconnects now if waiting to, or tests an open socket. For when the network or the page comes back. */
+  checkConnection(): void
+}
+
+export type ApiClientOptions = {
+  /** Disconnected and retrying, or for good if the error is `notAuthorized`. */
+  onLost?: (error: Error) => void
+  onReconnected?: () => void
+  activeProjectId?: () => string | null
+}
+
+const retryDelaysMs = [1000, 2000, 5000]
+const livenessTimeoutMs = 3000
 
 /**
- * Calls made before the socket opens wait for it, in order. Once the
- * connection is lost, calls in flight and all later ones fail, and `onLost`
- * says why: `notAuthorized` if main doesn't know the token.
+ * Calls made while there is no socket wait for the next one, in order. Calls
+ * in flight when the connection is lost fail and are never retried, since
+ * main may have acted on them. Only `notAuthorized` ends the retrying.
  */
-export function connectApi(connection: Promise<ApiConnection>, { onLost }: { onLost?: (error: Error) => void } = {}): ApiClient {
+export function connectApi(
+  connection: Promise<ApiConnection>,
+  { onLost, onReconnected, activeProjectId }: ApiClientOptions = {},
+): ApiClient {
   const calls = new Map<number, { resolve: (result: unknown) => void; reject: (error: Error) => void }>()
   const listeners = new Map<string, Set<(payload: unknown) => void>>()
+  const waiting: { resolve: (socket: WebSocket) => void; reject: (error: Error) => void }[] = []
   let nextId = 1
-  let lost: Error | undefined
+  let target: ApiConnection | undefined
+  /** The current socket, open or opening. */
+  let socket: WebSocket | undefined
+  let ended: Error | undefined
+  let disconnected = false
+  let attempts = 0
+  let retry: ReturnType<typeof setTimeout> | undefined
 
-  const opened = connection.then(({ url, token }) => new Promise<WebSocket>((resolve, reject) => {
-    const socket = new WebSocket(url)
-    socket.onopen = () => {
-      socket.send(JSON.stringify({ token } satisfies Hello))
-      resolve(socket)
+  function open(): void {
+    clearTimeout(retry)
+    if (!target || ended) return
+    const { url, token } = target
+    const opening = new WebSocket(url)
+    socket = opening
+    opening.onopen = () => {
+      opening.send(JSON.stringify({ token, activeProjectId: activeProjectId?.() } satisfies Hello))
+      attempts = 0
+      for (const waiter of waiting.splice(0)) waiter.resolve(opening)
+      if (disconnected) {
+        disconnected = false
+        onReconnected?.()
+      }
     }
-    socket.onmessage = (event) => receive(JSON.parse(event.data as string) as Reply | Push)
-    socket.onclose = (event) => {
-      lost = new Error(event.reason || 'Lost the connection to Escritoire')
-      for (const call of calls.values()) call.reject(lost)
-      calls.clear()
-      reject(lost)
-      onLost?.(lost)
+    opening.onmessage = (event) => receive(JSON.parse(event.data as string) as Reply | Push)
+    opening.onclose = (event) => lose(opening, event.reason)
+  }
+
+  function lose(lost: WebSocket, reason = ''): void {
+    if (lost !== socket) return
+    socket = undefined
+    lost.onopen = lost.onmessage = lost.onclose = null
+    // A dead socket can take minutes to report closing, so it's not waited for.
+    lost.close()
+    const error = new Error(reason || 'Lost the connection to Escritoire')
+    for (const call of calls.values()) call.reject(error)
+    calls.clear()
+    if (ended) return
+    if (reason === notAuthorized) {
+      end(error)
+      onLost?.(error)
+      return
     }
-  }))
-  // Reported to whoever calls next.
-  opened.catch(() => {})
+    if (!disconnected) {
+      disconnected = true
+      onLost?.(error)
+    }
+    retry = setTimeout(open, retryDelaysMs[Math.min(attempts++, retryDelaysMs.length - 1)])
+  }
+
+  function end(error: Error): void {
+    ended = error
+    clearTimeout(retry)
+    for (const waiter of waiting.splice(0)) waiter.reject(error)
+  }
+
+  function checkConnection(): void {
+    if (!target || ended) return
+    if (socket?.readyState !== WebSocket.OPEN) {
+      if (socket) lose(socket)
+      open()
+      return
+    }
+    // A phone waking up can hold a socket that looks open but is dead. Browsers can't send pings.
+    const checked = socket
+    const timeout = setTimeout(() => lose(checked), livenessTimeoutMs)
+    call('getState', []).catch(() => {}).finally(() => clearTimeout(timeout))
+  }
+
+  connection.then((given) => {
+    target = given
+    open()
+  }, end)
 
   function receive(message: Reply | Push): void {
     if ('event' in message) {
@@ -64,16 +141,21 @@ export function connectApi(connection: Promise<ApiConnection>, { onLost }: { onL
   }
 
   async function call(method: string, args: unknown[]): Promise<unknown> {
-    const socket = await opened
-    if (lost) throw lost
+    const open = await whenOpen()
     // JSON turns a trailing undefined argument into null; left off, it arrives as undefined.
     let end = args.length
     while (end > 0 && args[end - 1] === undefined) end--
     const id = nextId++
     return new Promise((resolve, reject) => {
       calls.set(id, { resolve, reject })
-      socket.send(JSON.stringify({ id, method, args: args.slice(0, end) } satisfies Request))
+      open.send(JSON.stringify({ id, method, args: args.slice(0, end) } satisfies Request))
     })
+  }
+
+  function whenOpen(): Promise<WebSocket> {
+    if (ended) return Promise.reject(ended)
+    if (socket?.readyState === WebSocket.OPEN) return Promise.resolve(socket)
+    return new Promise((resolve, reject) => waiting.push({ resolve, reject }))
   }
 
   const api = Object.fromEntries(
@@ -89,7 +171,12 @@ export function connectApi(connection: Promise<ApiConnection>, { onLost }: { onL
     return () => { named.delete(wrapped) }
   }
 
-  return { api, subscribe, close: () => void opened.then((socket) => socket.close(), () => {}) }
+  function close(): void {
+    end(new Error('Closed the connection to Escritoire'))
+    if (socket) lose(socket)
+  }
+
+  return { api, subscribe, close, checkConnection }
 }
 
 /**

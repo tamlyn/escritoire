@@ -19,9 +19,10 @@ export type ApiServerOptions = {
    * Admits a client whose token is valid, saying how to serve it, or refuses
    * it with `undefined`. `disconnect` closes its connection once its token is revoked.
    */
-  connect: (token: string, send: SendEvent, disconnect: () => void) => Connection | undefined
+  connect: (hello: Hello, send: SendEvent, disconnect: () => void) => Connection | undefined
   /** Plain HTTP requests, such as for files. Without it they get 404. */
   request?: (request: IncomingMessage, response: ServerResponse) => void
+  heartbeatMs?: number
 }
 
 export type SendEvent = <K extends keyof Events>(name: K, payload: Events[K]) => void
@@ -35,6 +36,9 @@ export type Connection = {
 const apiPath = '/api'
 const helloTimeoutMs = 10_000
 const policyViolation = 1008
+const defaultHeartbeatMs = 20_000
+/** A client this far behind recovers faster from a fresh snapshot than by catching up. */
+const maxBufferedBytes = 8 * 1024 * 1024
 
 /**
  * Main's API over a WebSocket on the loopback interface, speaking the protocol
@@ -82,15 +86,22 @@ export class ApiServer {
   private accept(client: WebSocket): void {
     let connection: Connection | undefined
     const timeout = setTimeout(() => client.close(policyViolation, 'No token'), helloTimeoutMs)
+    // A phone leaving range can hold its connection half-open for minutes, still counting as viewing.
+    let answered = true
+    client.on('pong', () => { answered = true })
+    const heartbeat = setInterval(() => {
+      if (!answered) return client.terminate()
+      answered = false
+      client.ping()
+    }, this.options.heartbeatMs ?? defaultHeartbeatMs)
     client.on('close', () => {
       clearTimeout(timeout)
+      clearInterval(heartbeat)
       connection?.close()
     })
     // A malformed frame; the socket closes itself.
     client.on('error', (error) => console.error('API client:', error))
-    const send: SendEvent = (name, payload) => {
-      if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify({ event: name, payload } satisfies Push))
-    }
+    const send: SendEvent = (name, payload) => deliver(client, JSON.stringify({ event: name, payload } satisfies Push))
     client.on('message', (data, isBinary) => {
       // Once revoked, a client could keep sending until ws gives up waiting for it to close.
       if (client.readyState !== WebSocket.OPEN) return
@@ -98,7 +109,7 @@ export class ApiServer {
       if (!connection) {
         clearTimeout(timeout)
         const disconnect = () => client.close(policyViolation, notAuthorized)
-        connection = isHello(message) ? this.options.connect(message.token, send, disconnect) : undefined
+        connection = isHello(message) ? this.options.connect(message, send, disconnect) : undefined
         if (!connection) client.close(policyViolation, notAuthorized)
       } else if (isRequest(message)) {
         void this.reply(client, connection, message)
@@ -116,8 +127,14 @@ export class ApiServer {
       console.error(`Error in ${method}:`, error)
       reply = JSON.stringify({ id, error: error instanceof Error ? error.message : String(error) } satisfies Reply)
     }
-    if (client.readyState === WebSocket.OPEN) client.send(reply)
+    deliver(client, reply)
   }
+}
+
+function deliver(client: WebSocket, message: string): void {
+  if (client.readyState !== WebSocket.OPEN) return
+  if (client.bufferedAmount > maxBufferedBytes) client.terminate()
+  else client.send(message)
 }
 
 /** Compares in constant time, so the time taken says nothing about how much matched. */
@@ -139,7 +156,9 @@ function parse(data: RawData): unknown {
 }
 
 function isHello(message: unknown): message is Hello {
-  return typeof message === 'object' && message !== null && typeof (message as Hello).token === 'string'
+  if (typeof message !== 'object' || message === null) return false
+  const { token, activeProjectId } = message as Hello
+  return typeof token === 'string' && (activeProjectId == null || typeof activeProjectId === 'string')
 }
 
 function isRequest(message: unknown): message is Request {

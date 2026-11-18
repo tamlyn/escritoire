@@ -8,7 +8,7 @@ import {
   type SessionView,
   type SettingChoices,
 } from '../../shared/agent'
-import { api, subscribe } from './api'
+import { api, onViewsReloaded, subscribe } from './api'
 
 let summaries: SessionSummary[] = []
 const summaryListeners = new Set<() => void>()
@@ -24,7 +24,12 @@ subscribe('sessionsChanged', (next) => {
   pushed = true
   setSummaries(next)
 })
-void api.getSessionSummaries().then((initial) => pushed || setSummaries(initial))
+function loadSummaries() {
+  pushed = false
+  api.getSessionSummaries().then((initial) => pushed || setSummaries(initial)).catch((error: unknown) => console.error(error))
+}
+loadSummaries()
+onViewsReloaded(loadSummaries)
 
 /** Live state of every loaded session, across all projects. */
 export function useSessionSummaries(): SessionSummary[] {
