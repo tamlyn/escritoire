@@ -46,6 +46,28 @@ test('opens projects, keeps tabs per project, and restores them after restart', 
   await rm(root, { recursive: true, force: true })
 })
 
+test('completes the path still listed after typing narrows the completions', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'escritoire-e2e-')))
+  await mkdir(join(root, 'hardware'))
+  await mkdir(join(root, 'hmrc'))
+  await mkdir(join(root, 'hustle'))
+
+  const { page, close } = await launchApp()
+  await page.keyboard.press(`${modifier}+o`)
+  const input = page.getByRole('combobox')
+  await input.fill(`${root}/h`)
+  await expect(page.getByRole('option', { name: `${root}/hardware` })).toHaveAttribute('aria-selected', 'true')
+
+  await input.fill(`${root}/hm`)
+  await expect(page.getByRole('option')).toHaveCount(1)
+  await expect(page.getByRole('option', { name: `${root}/hmrc` })).toHaveAttribute('aria-selected', 'true')
+  await page.keyboard.press('Tab')
+  await expect(input).toHaveValue(`${root}/hmrc/`)
+
+  await close()
+  await rm(root, { recursive: true, force: true })
+})
+
 test("shows what is going on in other projects in the switcher", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'escritoire-e2e-')))
   await mkdir(join(root, 'alpha'))

@@ -64,6 +64,10 @@ export function ProjectSwitcher(props: Props) {
   const projectMatches = query ? findProjects(query) : projects.map((item) => ({ item, positions: new Set<number>() }))
   const fileMatches = query ? findFiles(query) : []
   const isFileHighlighted = highlighted.startsWith(filePrefix)
+  const openValue = query.endsWith('/') ? query.slice(0, -1) : null
+  const pathValues = [...(openValue === null ? [] : [openValue]), ...completions]
+  // cmdk keeps a removed item's value when several items disappear in one render.
+  const selected = isPath && !pathValues.includes(highlighted) ? (pathValues[0] ?? '') : highlighted
 
   async function openPath(path: string) {
     try {
@@ -75,9 +79,9 @@ export function ProjectSwitcher(props: Props) {
   }
 
   function onKeyDown(event: React.KeyboardEvent) {
-    if (isPath && event.key === 'Tab' && highlighted) {
+    if (isPath && event.key === 'Tab' && selected) {
       event.preventDefault()
-      setQuery(`${highlighted}/`)
+      setQuery(`${selected}/`)
       return
     }
     if (isPath || !hasModifier(event)) return
@@ -101,7 +105,7 @@ export function ProjectSwitcher(props: Props) {
         </DialogDescription>
         <Command
           shouldFilter={false}
-          value={highlighted}
+          value={selected}
           onValueChange={setHighlighted}
           onKeyDown={onKeyDown}
           className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium"
@@ -118,8 +122,8 @@ export function ProjectSwitcher(props: Props) {
           <CommandList className="max-h-[400px]">
             {isPath ? (
               <CommandGroup>
-                {query.endsWith('/') && (
-                  <CommandItem value={query.slice(0, -1)} onSelect={() => void openPath(query)}>
+                {openValue !== null && (
+                  <CommandItem value={openValue} onSelect={() => void openPath(query)}>
                     <FolderOpenIcon />
                     Open {query}
                   </CommandItem>
