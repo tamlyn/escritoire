@@ -27,9 +27,10 @@ export function terminalsIn(layout: unknown): { id: string; title: string }[] {
   return terminals
 }
 
-/** What Ctrl and a key send: the control character for a letter, and other input unchanged. */
+/** What Ctrl and a key send: the key's control character if it has one, and other input unchanged. */
 export function withCtrl(data: string): string {
-  return /^[a-zA-Z]$/.test(data) ? String.fromCharCode(data.toUpperCase().charCodeAt(0) - 64) : data
+  if (data === ' ') return '\0'
+  return /^[a-zA-Z@[\\\]^_]$/.test(data) ? String.fromCharCode(data.toUpperCase().charCodeAt(0) - 64) : data
 }
 
 /** The project's loaded sessions, then its recent past sessions that aren't among them. */
@@ -51,6 +52,34 @@ export function listSessions(
 }
 
 const openViewsKey = 'escritoire.phoneOpenViews'
+const startedTerminalsKey = 'escritoire.phoneStartedTerminals'
+
+function startedTerminals(): Record<string, string[]> {
+  try {
+    return JSON.parse(sessionStorage.getItem(startedTerminalsKey) ?? '{}') as Record<string, string[]>
+  } catch {
+    return {}
+  }
+}
+
+function saveStartedTerminals(projectId: string, terminalIds: string[]): void {
+  try {
+    sessionStorage.setItem(startedTerminalsKey, JSON.stringify({ ...startedTerminals(), [projectId]: terminalIds }))
+  } catch { /* It only misses offering to return to the terminal. */ }
+}
+
+/** The terminals the phone started in this project and hasn't closed, so it can return to them. */
+export function startedTerminalsIn(projectId: string): string[] {
+  return startedTerminals()[projectId] ?? []
+}
+
+export function rememberStartedTerminal(projectId: string, terminalId: string): void {
+  saveStartedTerminals(projectId, [...startedTerminalsIn(projectId), terminalId])
+}
+
+export function forgetStartedTerminal(projectId: string, terminalId: string): void {
+  saveStartedTerminals(projectId, startedTerminalsIn(projectId).filter((id) => id !== terminalId))
+}
 
 function openViews(): Record<string, PhoneView> {
   try {

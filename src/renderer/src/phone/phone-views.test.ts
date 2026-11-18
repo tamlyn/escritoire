@@ -51,5 +51,7 @@ it("finds the terminals in the desktop's layout", () => {
 it('turns a letter into its control character, leaving other input alone', () => {
   expect(withCtrl('c')).toBe('\x03')
   expect(withCtrl('C')).toBe('\x03')
+  expect(withCtrl('\\')).toBe('\x1c')
+  expect(withCtrl(' ')).toBe('\0')
   expect(withCtrl('\x1b[A')).toBe('\x1b[A')
 })

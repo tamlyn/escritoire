@@ -1,7 +1,7 @@
 import '@xterm/xterm/css/xterm.css'
 import { FitAddon } from '@xterm/addon-fit'
 import { type ITheme, Terminal } from '@xterm/xterm'
-import { useEffect, useRef } from 'react'
+import { type RefObject, useEffect, useRef } from 'react'
 import type { ScreenOutput, ScreenSize, ScreenSnapshot } from '../../../shared/screen'
 import { subscribe } from '../api'
 import { useIsCompact } from '../phone/compact'
@@ -19,9 +19,16 @@ export type ScreenConnection = {
  * from main's snapshot, so unmounting (switching projects) loses nothing.
  * `connection` is read once per `screenId`. `shown` says its tab or screen is on display.
  */
-export function ScreenView({ screenId, connection, shown: visible }: { screenId: string; connection: ScreenConnection; shown: boolean }) {
+export function ScreenView({ screenId, connection, shown: visible, terminalRef: givenRef }: {
+  screenId: string
+  connection: ScreenConnection
+  shown: boolean
+  /** Set to the terminal while it exists. */
+  terminalRef?: RefObject<Terminal | null>
+}) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const terminalRef = useRef<Terminal>(null)
+  const ownRef = useRef<Terminal>(null)
+  const terminalRef = givenRef ?? ownRef
   const compact = useIsCompact()
   const connectionRef = useRef(connection)
   connectionRef.current = connection

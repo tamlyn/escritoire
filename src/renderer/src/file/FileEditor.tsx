@@ -26,7 +26,8 @@ export type EditorProps = {
   content: { text: string }
   initialScrollPos: number | undefined
   onScrolled: (pos: number) => void
-  onRunTask: (name: string) => void
+  /** Without it, a task file offers no way to run its tasks. */
+  onRunTask?: (name: string) => void
   runningTasks: string[]
   blame: boolean
   onBlameChange: (on: boolean) => void
@@ -116,7 +117,7 @@ export function Editor({
           content.text.includes('\r\n') ? EditorState.lineSeparator.of('\r\n') : [],
           // Configured by the effect below.
           blameCompartment.of([]),
-          isTaskFile(baseName(path)) ? runGutter(baseName(path), (name) => onRunTaskRef.current(name)) : [],
+          onRunTask && isTaskFile(baseName(path)) ? runGutter(baseName(path), (name) => onRunTaskRef.current?.(name)) : [],
           basicSetup,
           // After basicSetup, so its gutter sits between the line numbers and the text.
           changeMarkers({

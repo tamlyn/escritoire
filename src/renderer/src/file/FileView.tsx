@@ -12,7 +12,8 @@ import { SqlFile } from './sql/SqlFile'
 type Props = Pick<EditorProps, 'onScrolled' | 'blame' | 'onBlameChange' | 'onOpenCommit'> & {
   path: string
   scrollPos: number | undefined
-  onProcessStarted: (process: ProcessInfo) => void
+  /** Without it, a task file can't start its tasks from here, as there'd be nowhere to show them. */
+  onProcessStarted?: (process: ProcessInfo) => void
 }
 
 /** A project file in its editor, wherever it is shown. */
@@ -26,7 +27,7 @@ export function FileView({ path, scrollPos, onProcessStarted, ...editorProps }: 
   )
 
   async function runTask(name: string) {
-    onProcessStarted(await api.startProcess(project.id, { task: { file: path, name } }))
+    onProcessStarted?.(await api.startProcess(project.id, { task: { file: path, name } }))
   }
 
   if (!content) return null
@@ -48,7 +49,7 @@ export function FileView({ path, scrollPos, onProcessStarted, ...editorProps }: 
           path={path}
           content={content}
           initialScrollPos={scrollPos}
-          onRunTask={(name) => void runTask(name)}
+          onRunTask={onProcessStarted && ((name) => void runTask(name))}
           runningTasks={runningTasks}
         />
       )

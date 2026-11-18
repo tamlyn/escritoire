@@ -21,3 +21,11 @@ Found while reviewing each step and left for now. None loses work.
 - **A subscription rotated while the app is closed stops notifications** until the app is next opened, because `sw.js` has no `pushsubscriptionchange` handler. (`renderer/public/sw.js`)
 - **A phone that vanishes while showing a session can miss a push** for up to about 40 seconds, until the heartbeat ends its connection. (`main/clients.ts`)
 - **The VAPID private key and push subscriptions are plain JSON in the data directory**, so anyone who can read it could send notifications to the paired phone. (`main/push.ts`)
+
+## Step 4: files and terminals on the phone
+
+- **A terminal started on the phone outlives a lost browser tab.** If the tab is closed or evicted, the shell runs unreachable until its project closes. Main could tie it to the client with a grace period. (`phone/PhoneWorkspace.tsx`)
+- **A phone attached to a terminal the desktop closes gets no notice**, and its screen freezes. Reopening it from a stale list starts a new shell under the old id. (`main/terminals.ts`)
+- **A phone attached to a terminal at the desktop's size wraps its output** until the phone types and takes the screen to its own size. (`screen/ScreenView.tsx`)
+- **Following a file link from a session discards images attached but not sent**, as reconnecting does. (`session/Composer.tsx`)
+- **Commits in the blame gutter do nothing on the phone**, which has no commit view. (`phone/PhoneWorkspace.tsx`)

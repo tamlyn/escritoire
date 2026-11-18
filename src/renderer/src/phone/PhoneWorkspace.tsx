@@ -14,7 +14,17 @@ import { useSessionSummaries, useSessionSummary } from '../sessions'
 import { TabErrorBoundary } from '../TabErrorBoundary'
 import { createTerminalTab } from '../tabs'
 import { PhoneTerminal } from './PhoneTerminal'
-import { listSessions, openViewIn, type PhoneView, rememberOpenView, type SessionPhoneView, terminalsIn } from './phone-views'
+import {
+  forgetStartedTerminal,
+  listSessions,
+  openViewIn,
+  type PhoneView,
+  rememberOpenView,
+  rememberStartedTerminal,
+  type SessionPhoneView,
+  startedTerminalsIn,
+  terminalsIn,
+} from './phone-views'
 
 type Props = {
   project: Project
@@ -35,17 +45,23 @@ export function PhoneWorkspace({ project, pendingSession, onPendingSessionShown,
   const current = useRef(view)
 
   const show = useCallback<Show>((next) => {
-    const left = current.current
-    // Nothing else would ever close a terminal the phone started.
-    if (left?.kind === 'terminal' && left.startedHere && left.terminalId !== (next?.kind === 'terminal' ? next.terminalId : null)) {
-      void api.closeTerminal(project.id, left.terminalId)
-    }
     current.current = next
     rememberOpenView(project.id, next)
     setView(next)
   }, [project.id])
 
-  useImperativeHandle(ref, () => ({ openFile: (path) => show({ kind: 'file', path, from: null }) }), [show])
+  useImperativeHandle(ref, () => ({
+    openFile: (path) => show({ kind: 'file', path, from: current.current?.kind === 'session' ? current.current : null }),
+  }), [show])
+
+  /** Nothing else would ever close a terminal the phone started. Other ways of leaving keep it running. */
+  function leaveTerminal(terminalId: string, startedHere: boolean) {
+    if (startedHere) {
+      forgetStartedTerminal(project.id, terminalId)
+      void api.closeTerminal(project.id, terminalId)
+    }
+    show(null)
+  }
 
   useEffect(() => {
     if (pendingSession?.projectId !== project.id) return
@@ -55,19 +71,19 @@ export function PhoneWorkspace({ project, pendingSession, onPendingSessionShown,
 
   return (
     <ProjectContext.Provider value={project}>
-      <TabErrorBoundary>
-        {view?.kind === 'session' ? (
-          <OpenSession key={view.pointer.agentSessionId} view={view} onShow={show} />
-        ) : view?.kind === 'file' ? (
-          <OpenFile key={view.path} path={view.path} onBack={() => show(view.from)} />
-        ) : view?.kind === 'terminal' ? (
-          <Screen title={view.title} onBack={() => show(null)}>
-            <PhoneTerminal key={view.terminalId} terminalId={view.terminalId} />
-          </Screen>
-        ) : (
+      {view?.kind === 'session' ? (
+        <OpenSession key={view.pointer.agentSessionId} view={view} onShow={show} />
+      ) : view?.kind === 'file' ? (
+        <OpenFile key={view.path} path={view.path} onBack={() => show(view.from)} />
+      ) : view?.kind === 'terminal' ? (
+        <Screen title={view.title} onBack={() => leaveTerminal(view.terminalId, view.startedHere)}>
+          <PhoneTerminal key={view.terminalId} terminalId={view.terminalId} />
+        </Screen>
+      ) : (
+        <TabErrorBoundary>
           <ProjectHome projectId={project.id} onOpen={show} />
-        )}
-      </TabErrorBoundary>
+        </TabErrorBoundary>
+      )}
     </ProjectContext.Provider>
   )
 }
@@ -87,7 +103,8 @@ function Screen({ title, indicator, onBack, children }: {
         {indicator}
         <span className="min-w-0 truncate font-medium">{title}</span>
       </div>
-      <div className="min-h-0 flex-1">{children}</div>
+      {/* Inside the header, so Back still leaves a view that has stopped working. */}
+      <div className="min-h-0 flex-1"><TabErrorBoundary>{children}</TabErrorBoundary></div>
     </div>
   )
 }
@@ -129,7 +146,6 @@ function OpenFile({ path, onBack }: { path: string; onBack: () => void }) {
         onBlameChange={setBlame}
         onScrolled={() => {}}
         onOpenCommit={() => {}}
-        onProcessStarted={() => {}}
       />
     </Screen>
   )
@@ -155,6 +171,7 @@ function ProjectHome({ projectId, onOpen }: { projectId: string; onOpen: Show })
   }, [projectId])
 
   const { loaded, past } = listSessions(projectId, summaries, pastSessions)
+  const started = startedTerminalsIn(projectId)
 
   return (
     <div className="flex h-full flex-col gap-6 overflow-y-auto p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
@@ -179,7 +196,11 @@ function ProjectHome({ projectId, onOpen }: { projectId: string; onOpen: Show })
         <NewSessionButton agent="codex" starting={starting} onStart={(agent) => void start(agent)} />
         <button
           type="button"
-          onClick={() => onOpen({ kind: 'terminal', terminalId: createTerminalTab().id, title: 'Terminal', startedHere: true })}
+          onClick={() => {
+            const terminalId = createTerminalTab().id
+            rememberStartedTerminal(projectId, terminalId)
+            onOpen({ kind: 'terminal', terminalId, title: 'Terminal', startedHere: true })
+          }}
           className={startButton}
         >
           <SquareTerminalIcon className="text-muted-foreground size-5" />
@@ -187,6 +208,21 @@ function ProjectHome({ projectId, onOpen }: { projectId: string; onOpen: Show })
         </button>
         {startError && <p role="alert" className="text-destructive px-1 text-sm">{startError}</p>}
       </div>
+      {started.length > 0 && (
+        <section className="flex flex-col gap-1">
+          <h2 className="text-muted-foreground mb-1 px-2 text-xs font-medium">Terminals on this phone</h2>
+          {started.map((terminalId, index) => (
+            <button
+              key={terminalId}
+              type="button"
+              onClick={() => onOpen({ kind: 'terminal', terminalId, title: 'Terminal', startedHere: true })}
+              className="hover:bg-accent rounded-md px-2 py-2.5 text-left"
+            >
+              Terminal {index + 1}
+            </button>
+          ))}
+        </section>
+      )}
       {terminals.length > 0 && (
         <section className="flex flex-col gap-1">
           <h2 className="text-muted-foreground mb-1 px-2 text-xs font-medium">Desktop terminals</h2>
