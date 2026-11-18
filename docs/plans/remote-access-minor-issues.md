@@ -29,3 +29,11 @@ Found while reviewing each step and left for now. None loses work.
 - **A phone attached to a terminal at the desktop's size wraps its output** until the phone types and takes the screen to its own size. (`screen/ScreenView.tsx`)
 - **Following a file link from a session discards images attached but not sent**, as reconnecting does. (`session/Composer.tsx`)
 - **Commits in the blame gutter do nothing on the phone**, which has no commit view. (`phone/PhoneWorkspace.tsx`)
+
+## Offering to run `tailscale serve`
+
+- **Turning remote access off leaves the `tailscale serve` mapping in place.** It reaches nothing while off, but another program that later listens on that port would be published to the tailnet. (`main/remote-access.ts`)
+- **A port served over plain HTTP is shown with an `https://` address**, if it was published by hand with `--http`. (`main/tailscale.ts`)
+- **Tailscale being stopped or logged out looks like it isn't installed**, so the dialog shows the manual command rather than the reason. (`main/tailscale.ts`)
+- **A failed publish can show the wrong output**, as stderr is preferred to stdout, where Tailscale prints its link for enabling HTTPS. (`main/tailscale.ts`)
+- **A hung Tailscale daemon makes publishing slow**, since each step waits up to 15 seconds. (`main/tailscale.ts`)

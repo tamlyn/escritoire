@@ -51,6 +51,9 @@ function RemoteAccessDialog({ remote, onClose }: { remote: RemoteAccess; onClose
   const [busy, setBusy] = useState(false)
   const listening = remote.enabled && !remote.error
 
+  // Tailscale may have changed since the dialog last opened; main pushes what it finds.
+  useEffect(() => { void api.getRemoteAccess() }, [])
+
   async function attempt(action: () => Promise<unknown>) {
     setBusy(true)
     setError(null)

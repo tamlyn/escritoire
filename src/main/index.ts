@@ -203,7 +203,10 @@ function createApi(client: Client, { clients, remote, push, projects, sessions, 
       databases.run(projects.getProject(projectId).id, connectionId, runId, statements),
     cancelSql: (runId) => databases.cancel(runId),
     // Otherwise a paired device could pair others, which would outlive revoking it.
-    getRemoteAccess: async () => desktopOnly(client, () => remote.state()),
+    getRemoteAccess: async () => desktopOnly(client, () => {
+      void remote.checkTailscale()
+      return remote.state()
+    }),
     changeRemoteAccess: async (settings) => desktopOnly(client, () => remote.configure(settings)),
     startPairing: async () => desktopOnly(client, () => remote.startPairing()),
     revokeDevice: async (deviceId) => desktopOnly(client, () => remote.revoke(deviceId)),

@@ -9,7 +9,7 @@ import { serveFile } from './static-files'
 
 /** Only a hash of each token is kept, so reading the data directory yields nothing usable. */
 type SavedDevice = Omit<PairedDevice, 'connected'> & { tokenHash: string; pushSubscription?: PushSubscription }
-type Saved = { enabled: boolean; port: number; devices: SavedDevice[] }
+type Saved = { enabled: boolean; port: number; devices: SavedDevice[]; publishedPort?: number }
 
 const pairingLifetimeMs = 5 * 60_000
 const pairingAttempts = 5
@@ -23,7 +23,7 @@ export type RemoteAccessOptions = {
   /** Serves a paired device's connection. */
   connect: (send: SendEvent, client: { deviceId: string; activeProjectId: string | null }) => Connection
   onChange: (state: RemoteAccessState) => void
-  tailscale: { state(port: number): Promise<TailscaleState>; publish(port: number): Promise<TailscaleState> }
+  tailscale: { state(port: number): Promise<TailscaleState>; publish(port: number, previousPort: number | null): Promise<TailscaleState> }
 }
 
 /**
@@ -40,6 +40,8 @@ export class RemoteAccess {
   private readonly writes = new Set<Promise<void>>()
   private closed = false
   private tailscale: TailscaleState = { available: false, url: null }
+  /** Only the latest Tailscale command's answer counts. */
+  private tailscaleRun = 0
 
   private constructor(
     private readonly options: RemoteAccessOptions,
@@ -74,6 +76,8 @@ export class RemoteAccess {
 
   async configure({ enabled, port }: Pick<RemoteAccessState, 'enabled' | 'port'>): Promise<RemoteAccessState> {
     if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`Not a port: ${port}`)
+    // That address reaches the old port, not this one.
+    if (port !== this.saved.port) this.tailscale = { ...this.tailscale, url: null }
     this.saved = { ...this.saved, enabled, port }
     await this.save()
     await this.stopListening()
@@ -86,7 +90,13 @@ export class RemoteAccess {
 
   async publish(): Promise<RemoteAccessState> {
     if (!this.server) throw new Error('Turn on remote access first.')
-    this.tailscale = await this.options.tailscale.publish(this.saved.port)
+    const run = ++this.tailscaleRun
+    const { port, publishedPort } = this.saved
+    const tailscale = await this.options.tailscale.publish(port, publishedPort ?? null)
+    if (run !== this.tailscaleRun || this.closed) return this.state()
+    this.tailscale = tailscale
+    this.saved = { ...this.saved, publishedPort: port }
+    await this.save()
     this.changed()
     return this.state()
   }
@@ -164,10 +174,11 @@ export class RemoteAccess {
   }
 
   /** In the background, since the command can be slow and the listener doesn't depend on it. */
-  private async checkTailscale(): Promise<void> {
-    const { port } = this.saved
-    const tailscale = await this.options.tailscale.state(port)
-    if (this.closed || port !== this.saved.port) return
+  async checkTailscale(): Promise<void> {
+    if (!this.server) return
+    const run = ++this.tailscaleRun
+    const tailscale = await this.options.tailscale.state(this.saved.port)
+    if (run !== this.tailscaleRun || this.closed) return
     this.tailscale = tailscale
     this.changed()
   }

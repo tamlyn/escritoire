@@ -14,8 +14,13 @@ it('finds no address when the port is not served', () => {
 })
 
 it('notices another service at the address publishing would take over', () => {
-  expect(conflictingTarget(serving('http://127.0.0.1:3000'), 4729)).toBe('http://127.0.0.1:3000')
-  expect(conflictingTarget(serving('http://127.0.0.1:4729'), 4729)).toBeNull()
-  expect(conflictingTarget(serving('http://127.0.0.1:3000', 'mac.tailnet.ts.net:8443'), 4729)).toBeNull()
-  expect(conflictingTarget({}, 4729)).toBeNull()
+  expect(conflictingTarget(serving('http://127.0.0.1:3000'), [4729])).toBe('http://127.0.0.1:3000')
+  expect(conflictingTarget({ Web: { 'mac.tailnet.ts.net:443': { Handlers: { '/': { Path: '/srv/docs' } } } } }, [4729])).toBe('/srv/docs')
+  expect(conflictingTarget(serving('http://127.0.0.1:4729'), [4729])).toBeNull()
+  expect(conflictingTarget(serving('http://127.0.0.1:3000', 'mac.tailnet.ts.net:8443'), [4729])).toBeNull()
+  expect(conflictingTarget({}, [4729])).toBeNull()
+})
+
+it("lets publishing replace Escritoire's own earlier port", () => {
+  expect(conflictingTarget(serving('http://127.0.0.1:4729'), [4730, 4729])).toBeNull()
 })
