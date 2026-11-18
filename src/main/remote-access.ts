@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { join } from 'node:path'
-import { defaultRemotePort, type PairedDevice, pairPath, type PushSubscription, type RemoteAccess as RemoteAccessState } from '../shared/remote'
+import { defaultRemotePort, type PairedDevice, pairPath, type PushSubscription, type RemoteAccess as RemoteAccessState, type TailscaleState } from '../shared/remote'
 import type { Hello } from '../shared/api-client'
 import { ApiServer, type Connection, type SendEvent, tokensMatch } from './api-server'
 import { readJson, writeJson } from './json-file'
@@ -23,6 +23,7 @@ export type RemoteAccessOptions = {
   /** Serves a paired device's connection. */
   connect: (send: SendEvent, client: { deviceId: string; activeProjectId: string | null }) => Connection
   onChange: (state: RemoteAccessState) => void
+  tailscale: { state(port: number): Promise<TailscaleState>; publish(port: number): Promise<TailscaleState> }
 }
 
 /**
@@ -38,6 +39,7 @@ export class RemoteAccess {
   private readonly connected = new Map<string, Set<() => void>>()
   private readonly writes = new Set<Promise<void>>()
   private closed = false
+  private tailscale: TailscaleState = { available: false, url: null }
 
   private constructor(
     private readonly options: RemoteAccessOptions,
@@ -61,6 +63,7 @@ export class RemoteAccess {
       error: this.error,
       pairing: this.pairing && { code: this.pairing.code, expiresAt: this.pairing.expiresAt },
       devices: this.saved.devices.map(({ tokenHash: _, pushSubscription: __, ...device }) => ({ ...device, connected: this.connected.has(device.id) })),
+      tailscale: this.tailscale,
     }
   }
 
@@ -77,6 +80,13 @@ export class RemoteAccess {
     this.endPairing()
     this.error = null
     if (enabled) await this.listen()
+    this.changed()
+    return this.state()
+  }
+
+  async publish(): Promise<RemoteAccessState> {
+    if (!this.server) throw new Error('Turn on remote access first.')
+    this.tailscale = await this.options.tailscale.publish(this.saved.port)
     this.changed()
     return this.state()
   }
@@ -147,9 +157,19 @@ export class RemoteAccess {
           response.end()
         }),
       })
+      void this.checkTailscale()
     } catch (error) {
       this.error = error instanceof Error ? error.message : String(error)
     }
+  }
+
+  /** In the background, since the command can be slow and the listener doesn't depend on it. */
+  private async checkTailscale(): Promise<void> {
+    const { port } = this.saved
+    const tailscale = await this.options.tailscale.state(port)
+    if (this.closed || port !== this.saved.port) return
+    this.tailscale = tailscale
+    this.changed()
   }
 
   private async stopListening(): Promise<void> {

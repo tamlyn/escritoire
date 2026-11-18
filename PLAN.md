@@ -28,10 +28,6 @@ Noticed using Escritoire day to day (November 2026).
 - Dropping a file from the tree onto the tabs opens it where it was dropped, including in a new split, as if it had been opened and its tab dragged there.
 - A rendered Markdown view, a simple image viewer, and wrapping long lines in the editor.
 
-### Remote access
-
-- **Offer to run `tailscale serve`** from the remote access dialog when the `tailscale` CLI is found, and show the resulting URL; otherwise show the command to run.
-
 ## Agent integration hardening from Orca
 
 [Orca](https://github.com/stablyai/orca) uses the same Claude Agent SDK and Codex app-server integrations as Escritoire, with far more users finding the edge cases. Its handling of them is a free list of failure modes we will hit too.

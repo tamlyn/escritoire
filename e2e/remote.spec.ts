@@ -184,3 +184,20 @@ test('a phone drives a session from its own layout', async () => {
   await close()
   await rm(root, { recursive: true, force: true })
 })
+
+test('publishes remote access with Tailscale when its command is found', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'escritoire-e2e-')))
+  const { page, close } = await launchApp(join(root, 'data'), {
+    ESCRITOIRE_TAILSCALE_PATH: join(import.meta.dirname, 'fake-tailscale.mjs'),
+    FAKE_TAILSCALE_STATE: join(root, 'tailscale.json'),
+  })
+
+  await page.getByRole('button', { name: 'Remote access' }).click()
+  await page.getByLabel('Port').fill(String(await freePort()))
+  await page.getByRole('button', { name: 'Turn on' }).click()
+  await page.getByRole('button', { name: 'Publish with Tailscale' }).click()
+  await expect(page.getByText('https://phone-test.example.ts.net')).toBeVisible()
+
+  await close()
+  await rm(root, { recursive: true, force: true })
+})

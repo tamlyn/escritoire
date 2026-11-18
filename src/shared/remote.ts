@@ -19,7 +19,11 @@ export type RemoteAccess = {
   /** The code a device can pair with, while one is waiting. */
   pairing: { code: string; expiresAt: number } | null
   devices: PairedDevice[]
+  tailscale: TailscaleState
 }
+
+/** Whether the `tailscale` command can publish the listener, and where it has. */
+export type TailscaleState = { available: boolean; url: string | null }
 
 /** Where the browser's push service delivers messages for it, and the keys to encrypt them to it. */
 export type PushSubscription = { endpoint: string; keys: { p256dh: string; auth: string } }

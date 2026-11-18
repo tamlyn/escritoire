@@ -13,7 +13,8 @@ export async function launchApp(userDataDir?: string, env?: Record<string, strin
   const dataDir = userDataDir ?? (await mkdtemp(join(tmpdir(), 'escritoire-e2e-')))
   const app = await electron.launch({
     args: ['-r', join(import.meta.dirname, 'background.cjs'), '.', `--user-data-dir=${dataDir}`],
-    env: { ...process.env, CLAUDE_CONFIG_DIR: join(dataDir, 'claude'), ...env } as Record<string, string>,
+    // No real `tailscale` command, so tests can't publish anything to the user's tailnet.
+    env: { ...process.env, CLAUDE_CONFIG_DIR: join(dataDir, 'claude'), ESCRITOIRE_TAILSCALE_PATH: '/nonexistent', ...env } as Record<string, string>,
   })
   const page = await app.firstWindow()
   await page.getByRole('banner').waitFor()

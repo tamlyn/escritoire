@@ -110,7 +110,7 @@ describe('events', () => {
     const desktop = connect()
     const phone = connect(false)
 
-    clients.send('remoteAccessChanged', { enabled: true, port: 1, error: null, pairing: { code: '123456', expiresAt: 0 }, devices: [] })
+    clients.send('remoteAccessChanged', { enabled: true, port: 1, error: null, pairing: { code: '123456', expiresAt: 0 }, devices: [], tailscale: { available: false, url: null } })
 
     expect(desktop.received.map((r) => r.name)).toEqual(['remoteAccessChanged'])
     expect(phone.received).toEqual([])

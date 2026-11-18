@@ -150,6 +150,8 @@ export type Api = {
   /** Shows a new pairing code, replacing any other. */
   startPairing(): Promise<RemoteAccess>
   revokeDevice(deviceId: string): Promise<RemoteAccess>
+  /** Runs `tailscale serve` for the listener. */
+  publishRemoteAccess(): Promise<RemoteAccess>
   /** For a paired device: the public key its push subscription must be made with. */
   getPushKey(): Promise<string>
   /** For a paired device: where to send its notifications. */
@@ -225,6 +227,7 @@ const apiMethodSet: Record<keyof Api, true> = {
   changeRemoteAccess: true,
   startPairing: true,
   revokeDevice: true,
+  publishRemoteAccess: true,
   getPushKey: true,
   setPushSubscription: true,
 }

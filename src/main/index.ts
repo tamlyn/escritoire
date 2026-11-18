@@ -34,6 +34,7 @@ import type { PushSubscription } from '../shared/remote'
 import { PushSender } from './push'
 import { PushAttention } from './push-attention'
 import { RemoteAccess } from './remote-access'
+import { TailscaleCli } from './tailscale'
 import { loadShellEnv } from './shell-env'
 import { Supervisor } from './supervisor'
 import { ConnectionStore } from './sql/connection-store'
@@ -206,6 +207,7 @@ function createApi(client: Client, { clients, remote, push, projects, sessions, 
     changeRemoteAccess: async (settings) => desktopOnly(client, () => remote.configure(settings)),
     startPairing: async () => desktopOnly(client, () => remote.startPairing()),
     revokeDevice: async (deviceId) => desktopOnly(client, () => remote.revoke(deviceId)),
+    publishRemoteAccess: async () => desktopOnly(client, () => remote.publish()),
     getPushKey: () => push.publicKey(),
     setPushSubscription: async (subscription) => {
       if (client.deviceId === null) throw new Error('Only a paired device can receive notifications.')
@@ -325,6 +327,7 @@ void app.whenReady().then(async () => {
     rendererDir: join(import.meta.dirname, '../renderer'),
     connect: (send, client) => serve(clients.connect(send, { desktop: false, ...client })),
     onChange: (state) => send('remoteAccessChanged', state),
+    tailscale: new TailscaleCli(),
   })
   const push = new PushSender(dataDir)
   const projectName = (projectId: string) => projects.getState().projects.find((p) => p.id === projectId)?.name ?? ''

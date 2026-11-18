@@ -82,8 +82,24 @@ function RemoteAccessDialog({ remote, onClose }: { remote: RemoteAccess; onClose
 
         {listening ? (
           <div className="grid gap-2 text-sm">
-            <p>Listening on port {remote.port}. To publish it to your tailnet over HTTPS, run:</p>
-            <code className="bg-muted rounded-md px-2 py-1 select-all">tailscale serve --bg {remote.port}</code>
+            {remote.tailscale.url ? (
+              <>
+                <p>Published to your tailnet. Open this address on your phone:</p>
+                <code className="bg-muted rounded-md px-2 py-1 select-all">{remote.tailscale.url}</code>
+              </>
+            ) : remote.tailscale.available ? (
+              <>
+                <p>Listening on port {remote.port}, but not yet published to your tailnet.</p>
+                <Button variant="outline" className="justify-self-start" disabled={busy} onClick={() => void attempt(() => api.publishRemoteAccess())}>
+                  Publish with Tailscale
+                </Button>
+              </>
+            ) : (
+              <>
+                <p>Listening on port {remote.port}. To publish it to your tailnet over HTTPS, run:</p>
+                <code className="bg-muted rounded-md px-2 py-1 select-all">tailscale serve --bg {remote.port}</code>
+              </>
+            )}
           </div>
         ) : (
           <form onSubmit={turnOn} className="flex items-end gap-2">

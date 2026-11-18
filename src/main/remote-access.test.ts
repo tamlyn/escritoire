@@ -46,6 +46,10 @@ function load(): Promise<RemoteAccess> {
     rendererDir,
     connect: () => ({ handle: async (method) => `handled ${method}`, close: () => {} }),
     onChange: (state) => changes.push(state),
+    tailscale: {
+      state: async () => ({ available: true, url: null }),
+      publish: async () => ({ available: true, url: 'https://mac.tailnet.ts.net' }),
+    },
   })
 }
 
@@ -192,4 +196,13 @@ test('keeps a push subscription with its device until the device is revoked', as
   expect(remote.pushTargets()).toEqual([])
   const reloaded = await load()
   expect(reloaded.pushTargets()).toEqual([])
+})
+
+test('publishes the listener through Tailscale once it is on', async () => {
+  await vi.waitFor(() => expect(remote.state().tailscale.available).toBe(true))
+
+  expect((await remote.publish()).tailscale.url).toBe('https://mac.tailnet.ts.net')
+
+  await remote.configure({ enabled: false, port: remote.state().port })
+  await expect(remote.publish()).rejects.toThrow('Turn on remote access first.')
 })
