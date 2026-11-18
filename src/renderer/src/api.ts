@@ -122,10 +122,13 @@ const client = connectApi(connection(), {
   },
 })
 
-window.addEventListener('online', client.checkConnection)
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') client.checkConnection()
-})
+// The desktop's socket is on the loopback interface, so it can't die unnoticed.
+if (!isDesktop) {
+  window.addEventListener('online', client.checkConnection)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') client.checkConnection()
+  })
+}
 
 const pending = new Set<Promise<unknown>>()
 // A query can run for hours, and quitting closes its connection anyway.

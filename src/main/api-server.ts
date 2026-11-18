@@ -37,7 +37,6 @@ const apiPath = '/api'
 const helloTimeoutMs = 10_000
 const policyViolation = 1008
 const defaultHeartbeatMs = 20_000
-/** A client this far behind recovers faster from a fresh snapshot than by catching up. */
 const maxBufferedBytes = 8 * 1024 * 1024
 
 /**
@@ -88,9 +87,13 @@ export class ApiServer {
     const timeout = setTimeout(() => client.close(policyViolation, 'No token'), helloTimeoutMs)
     // A phone leaving range can hold its connection half-open for minutes, still counting as viewing.
     let answered = true
+    let buffered = 0
     client.on('pong', () => { answered = true })
     const heartbeat = setInterval(() => {
-      if (!answered) return client.terminate()
+      const previouslyBuffered = buffered
+      buffered = client.bufferedAmount
+      if (isDraining(buffered, previouslyBuffered)) return
+      if (!answered || buffered > maxBufferedBytes) return client.terminate()
       answered = false
       client.ping()
     }, this.options.heartbeatMs ?? defaultHeartbeatMs)
@@ -101,7 +104,9 @@ export class ApiServer {
     })
     // A malformed frame; the socket closes itself.
     client.on('error', (error) => console.error('API client:', error))
-    const send: SendEvent = (name, payload) => deliver(client, JSON.stringify({ event: name, payload } satisfies Push))
+    const send: SendEvent = (name, payload) => {
+      if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify({ event: name, payload } satisfies Push))
+    }
     client.on('message', (data, isBinary) => {
       // Once revoked, a client could keep sending until ws gives up waiting for it to close.
       if (client.readyState !== WebSocket.OPEN) return
@@ -127,14 +132,17 @@ export class ApiServer {
       console.error(`Error in ${method}:`, error)
       reply = JSON.stringify({ id, error: error instanceof Error ? error.message : String(error) } satisfies Reply)
     }
-    deliver(client, reply)
+    if (client.readyState === WebSocket.OPEN) client.send(reply)
   }
 }
 
-function deliver(client: WebSocket, message: string): void {
-  if (client.readyState !== WebSocket.OPEN) return
-  if (client.bufferedAmount > maxBufferedBytes) client.terminate()
-  else client.send(message)
+/**
+ * A client still working through a large snapshot is healthy however much is
+ * waiting, and its answer to a ping is queued behind that data. Disconnecting
+ * it would only make it ask for the same snapshot again.
+ */
+export function isDraining(buffered: number, previouslyBuffered: number): boolean {
+  return buffered > 0 && buffered < previouslyBuffered
 }
 
 /** Compares in constant time, so the time taken says nothing about how much matched. */

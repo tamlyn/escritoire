@@ -163,6 +163,9 @@ test('serializes writes through canonical aliases and rejects stale saves', asyn
   ])
   expect(await readFile(join(root, 'file.txt'), 'utf8')).toBe('last')
   await expect(files.writeFile('p', 'file.txt', 'stale', 'original')).rejects.toThrow('changed on disk')
+  // Retrying a write that had already landed isn't a conflict.
+  const onDisk = await files.readFile('p', 'file.txt')
+  if (onDisk.kind === 'text') await expect(files.writeFile('p', 'file.txt', onDisk.text, 'original')).resolves.toBeDefined()
   expect(await readFile(join(root, 'file.txt'), 'utf8')).toBe('last')
 })
 

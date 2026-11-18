@@ -132,7 +132,8 @@ export class ProjectFiles {
           throw error
         })
         if (current === undefined) return 'missing' as const
-        if (current !== expected) throw new Error('File changed on disk. Reopen the tab to load it; copy your edits first.')
+        // Already the given text: a retry of a write whose reply was lost with the connection.
+        if (current !== expected && current !== text) throw new Error('File changed on disk. Reopen the tab to load it; copy your edits first.')
       }
       return this.writeQueued(projectId, file, text)
     })

@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import type { Connection, ProjectConnections, StatementResult } from '../../shared/sql'
-import { api, errorMessage } from './api'
+import { api, errorMessage, onViewsReloaded } from './api'
 
 /** The latest run of a SQL file. `results` grows to match `statements` unless it stops early. */
 export type SqlRun = {
@@ -15,6 +15,8 @@ export type SqlRun = {
 const connections = new Map<string, ProjectConnections>()
 const runs = new Map<string, SqlRun>()
 const listeners = new Set<() => void>()
+
+onViewsReloaded(() => connections.clear())
 
 function changed() {
   for (const listener of listeners) listener()

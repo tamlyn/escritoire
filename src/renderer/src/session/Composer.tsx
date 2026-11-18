@@ -1,5 +1,5 @@
 import { ArrowUpIcon, FileIcon, SlashIcon, SquareIcon, XIcon } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import type { ImageAttachment, SessionPointer, SessionSettings, SettingChoices, SlashCommand } from '../../../shared/agent'
 import { baseName, parentPath } from '../../../shared/files'
@@ -47,14 +47,23 @@ export function Composer({
 
   const draft = useRef(text)
   draft.current = text
-  useEffect(() => {
-    const flush = async () => {
-      clearTimeout(saveTimer.current)
+  // Only edits made here are saved, so reconnecting can't overwrite a draft typed on another client.
+  const draftEdited = useRef(false)
+  const saveDraft = useCallback(async () => {
+    clearTimeout(saveTimer.current)
+    if (!draftEdited.current) return
+    draftEdited.current = false
+    try {
       await api.saveDraft(pointer, draft.current)
+    } catch (error) {
+      draftEdited.current = true
+      console.error(error)
     }
-    flushers.add(flush)
-    return () => { flushers.delete(flush) }
   }, [pointer.agentSessionId])
+  useEffect(() => {
+    flushers.add(saveDraft)
+    return () => { flushers.delete(saveDraft) }
+  }, [saveDraft])
 
   const findFiles = useMemo(
     () => (files ? fuzzyFinder(files, { path: (path) => path, limit: mentionLimit }) : null),
@@ -88,8 +97,9 @@ export function Composer({
 
   function changeText(next: string, caret: number) {
     setText(next)
+    draftEdited.current = true
     clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => void api.saveDraft(pointer, next), draftSaveDelayMs)
+    saveTimer.current = setTimeout(() => void saveDraft(), draftSaveDelayMs)
     updateMention(next, caret)
   }
 
@@ -135,7 +145,13 @@ export function Composer({
   function send() {
     if (!canSend) return
     clearTimeout(saveTimer.current)
-    void api.sendMessage(pointer, { text: text.trim(), images })
+    draftEdited.current = false
+    api.sendMessage(pointer, { text: text.trim(), images }).catch((error: unknown) => {
+      console.error(error)
+      draftEdited.current = true
+      setText((current) => current || text)
+      setImages((current) => (current.length > 0 ? current : images))
+    })
     setText('')
     setImages([])
     setAttachErrors([])

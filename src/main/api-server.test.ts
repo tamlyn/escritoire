@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { type ClientOptions, WebSocket as WsClient } from 'ws'
 import type { ProcessInfo } from '../shared/process'
 import { type ApiClient, connectApi, notAuthorized } from '../shared/api-client'
-import { ApiServer, type SendEvent, tokensMatch } from './api-server'
+import { ApiServer, isDraining, type SendEvent, tokensMatch } from './api-server'
 
 const token = 'secret'
 let server: ApiServer
@@ -158,6 +158,13 @@ test('terminates a client that stops reading once too much is waiting for it', a
 
   await vi.waitFor(() => expect(connected[0]!.closed).toBe(true))
   socket.terminate()
+})
+
+test('counts a client as catching up only while its backlog shrinks', () => {
+  expect(isDraining(20, 30)).toBe(true)
+  expect(isDraining(30, 30)).toBe(false)
+  expect(isDraining(40, 30)).toBe(false)
+  expect(isDraining(0, 30)).toBe(false)
 })
 
 describe('reconnecting', () => {
