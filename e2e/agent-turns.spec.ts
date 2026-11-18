@@ -31,6 +31,19 @@ test('shows a turn from the message to the reply', () =>
     await expect(page.getByRole('tab', { name: 'hello there' })).toBeVisible()
   }))
 
+test('keeps a chunk that fails to load to its own tab', () =>
+  withSession(async ({ app, page }) => {
+    await app.evaluate(({ session }) => {
+      session.defaultSession.webRequest.onBeforeRequest({ urls: ['file:///*/highlighted-body-*'] }, (_details, callback) => {
+        callback({ cancel: true })
+      })
+    })
+    await send(page, 'code\n\n```js\nconst answer = 42\n```')
+    await expect(page.getByRole('alert')).toContainText('This tab stopped working.')
+    await expect(page.getByRole('button', { name: 'Reload window' })).toBeVisible()
+    await expect(page.getByRole('banner')).toBeVisible()
+  }))
+
 test('sends the answer to a permission request back to the agent', () =>
   withSession(async ({ page }) => {
     await send(page, 'permission')
