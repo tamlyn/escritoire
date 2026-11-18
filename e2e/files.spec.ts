@@ -139,7 +139,8 @@ test('opens a project file from the switcher by fuzzy name', async () => {
   await page.locator('[data-workspace]').waitFor()
 
   await page.keyboard.press(`${modifier}+o`)
-  await page.getByRole('combobox').fill('srvrt')
+  // The dot keeps the project's random temp path from matching and taking the highlight.
+  await page.getByRole('combobox').fill('srvrt.ts')
   await expect(page.getByRole('group', { name: 'Files' }).getByRole('option')).toHaveText(['src/server/routes.ts'])
   await page.screenshot({ path: 'test-results/open-file.png' })
   await page.keyboard.press('Enter')
