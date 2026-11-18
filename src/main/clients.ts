@@ -18,6 +18,8 @@ export type ClientsDeps = {
   setSessionVisible: (session: SessionPointer, visible: boolean) => void
   /** No client has the session open any more. */
   closeSessionView: (session: SessionPointer) => void
+  /** Whether a client is editing the queued message, which keeps it from being sent. */
+  setQueuedMessageHeld: (session: SessionPointer, id: string, held: boolean) => void
   /** The projects that are some client's active one, which are the ones watched. */
   watch: (projectIds: string[]) => void
 }
@@ -34,6 +36,8 @@ export type Client = {
   present: boolean
   /** By agent session id. */
   readonly sessions: Map<string, SessionView>
+  /** The queued messages this client is editing, by message id. */
+  readonly heldMessages: Map<string, SessionPointer>
   /** By screen id, with the size this client wants it. */
   readonly screens: Map<string, Attachment>
 }
@@ -59,6 +63,7 @@ export class Clients {
       activeProjectId: this.deps.lastActiveProject(),
       present: desktop ? this.desktopPresent : true,
       sessions: new Map(),
+      heldMessages: new Map(),
       screens: new Map(),
     }
     this.clients.add(client)
@@ -69,6 +74,7 @@ export class Clients {
   disconnect(client: Client): void {
     if (!this.clients.delete(client)) return
     for (const { pointer } of client.sessions.values()) this.release(pointer)
+    for (const [id, pointer] of client.heldMessages) this.deps.setQueuedMessageHeld(pointer, id, false)
     for (const screenId of client.screens.keys()) this.detachScreen(client, screenId)
     this.updateWatches()
   }
@@ -123,6 +129,12 @@ export class Clients {
     if (!view) return
     view.visible = visible
     this.updateVisibility(pointer)
+  }
+
+  setQueuedMessageHeld(client: Client, pointer: SessionPointer, id: string, held: boolean): void {
+    if (held) client.heldMessages.set(id, pointer)
+    else client.heldMessages.delete(id)
+    this.deps.setQueuedMessageHeld(pointer, id, held)
   }
 
   /** The session has closed, so no client has it open. */

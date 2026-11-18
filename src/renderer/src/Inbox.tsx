@@ -4,6 +4,7 @@ import type { Project } from '../../shared/api'
 import { needingAttention } from '../../shared/attention'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './components/ui/dropdown-menu'
 import { SessionIndicator } from './session/SessionIndicator'
+import { statusDotColors } from './session/status-dot-colors'
 import { useSessionSummaries } from './sessions'
 
 type Props = {
@@ -34,7 +35,7 @@ export function Inbox({ projects, activeProjectId, onSelect }: Props) {
         title="Sessions in other projects that need you"
         className="hover:bg-accent text-muted-foreground hover:text-foreground flex items-center gap-1.5 rounded-md px-2 py-1 text-xs [-webkit-app-region:no-drag]"
       >
-        <span className={`size-2 rounded-full ${waiting ? 'bg-amber-500' : 'bg-blue-500'}`} />
+        <span className={`size-2 rounded-full ${waiting ? statusDotColors.waiting : statusDotColors.unread}`} />
         {sessions.length}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="max-w-96">

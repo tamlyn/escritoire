@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from './compone
 import { fuzzyFinder } from './fuzzy'
 import { type ProjectActivity, projectActivity } from './project-activity'
 import { useAllProcesses } from './processes'
+import { statusDotColors } from './session/status-dot-colors'
 import { useSessionSummaries } from './sessions'
 import { hasModifier, modifierLabel } from './shortcuts'
 
@@ -216,17 +217,17 @@ function ProjectItem({ project, positions, activity, isActive, onSelect }: Proje
 
 /** Only what is going on, in the colours of session tabs and process dots. */
 function ActivityIndicators({ activity }: { activity: ProjectActivity }) {
-  const dot = (count: number, colour: string, label: string) =>
+  const dot = (count: number, color: string, label: string) =>
     count > 0 && (
       <span role="img" aria-label={`${count} ${label}`} className="flex items-center gap-1">
-        <span className={`size-2 rounded-full ${colour}`} />
+        <span className={`size-2 rounded-full ${color}`} />
         {count > 1 && count}
       </span>
     )
   return (
     <>
-      {dot(activity.waiting, 'bg-amber-500', 'waiting for input')}
-      {dot(activity.unread, 'bg-blue-500', 'unread')}
+      {dot(activity.waiting, statusDotColors.waiting, 'waiting for input')}
+      {dot(activity.unread, statusDotColors.unread, 'unread')}
       {activity.working > 0 && (
         <span role="img" aria-label={`${activity.working} working`} className="flex items-center gap-1">
           <LoaderCircleIcon className="size-3 animate-spin" />

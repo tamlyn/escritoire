@@ -67,6 +67,8 @@ export type Api = {
   sendMessage(session: SessionPointer, input: UserInput): Promise<void>
   editQueuedMessage(session: SessionPointer, id: string, text: string): Promise<void>
   cancelQueuedMessage(session: SessionPointer, id: string): Promise<void>
+  /** While held, as when the user is editing it, the message isn't sent even if the turn ends. */
+  setQueuedMessageHeld(session: SessionPointer, id: string, held: boolean): Promise<void>
   interrupt(session: SessionPointer): Promise<void>
   getSettingChoices(projectId: string, agent: AgentKind): Promise<SettingChoices>
   listCommands(projectId: string, agent: AgentKind): Promise<SlashCommand[]>
@@ -168,6 +170,7 @@ const apiMethodSet: Record<keyof Api, true> = {
   sendMessage: true,
   editQueuedMessage: true,
   cancelQueuedMessage: true,
+  setQueuedMessageHeld: true,
   interrupt: true,
   getSettingChoices: true,
   listCommands: true,

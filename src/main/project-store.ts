@@ -68,6 +68,20 @@ export class ProjectStore {
     await writeJson(this.layoutPath(this.find(projectId).id), layout)
   }
 
+  /** The agent session ids of the project's open tabs. */
+  async sessionTabs(projectId: string): Promise<Set<string>> {
+    const ids = new Set<string>()
+    // The layout's shape belongs to the renderer's workspace library, so only the tab data is assumed.
+    const visit = (value: unknown): void => {
+      if (typeof value !== 'object' || value === null) return
+      const { kind, agentSessionId } = value as Record<string, unknown>
+      if (kind === 'session' && typeof agentSessionId === 'string') ids.add(agentSessionId)
+      Object.values(value).forEach(visit)
+    }
+    visit(await this.loadLayout(projectId))
+    return ids
+  }
+
   private get statePath(): string {
     return join(this.dataDir, 'projects.json')
   }

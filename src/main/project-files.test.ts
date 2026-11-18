@@ -24,6 +24,23 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true })
 })
 
+test('reports changes to an open file outside the project, but not its own writes', async () => {
+  const outside = await realpath(await mkdtemp(join(tmpdir(), 'escritoire-outside-')))
+  const file = join(outside, 'plan.md')
+  await writeFile(file, 'one')
+  await files.readFile('p', file)
+  await new Promise((done) => setTimeout(done, 100))
+  sent.length = 0
+
+  await files.writeFile('p', file, 'two', 'one')
+  await new Promise((done) => setTimeout(done, 200))
+  expect(sent).toEqual([])
+
+  await writeFile(file, 'three')
+  await vi.waitFor(() => expect(sent).toContainEqual({ projectId: 'p', paths: [file] }))
+  await rm(outside, { recursive: true, force: true })
+})
+
 test('lists directories first, in natural order, without .git', async () => {
   await mkdir(join(root, '.git'))
   await mkdir(join(root, 'src'))

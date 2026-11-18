@@ -5,7 +5,7 @@ const checkEveryMs = 10_000
 
 /**
  * Whether the user is at this computer: the screen unlocked and the system
- * used in the last few minutes. Calls `onChange` when that changes.
+ * used in the last minute. Calls `onChange` when that changes.
  */
 export function watchPresence(onChange: (present: boolean) => void): void {
   let present = true

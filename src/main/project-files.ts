@@ -1,3 +1,4 @@
+import { type FSWatcher, watch as watchDirectory } from 'node:fs'
 import { link, lstat, mkdir, open, readdir, readFile, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import watcher from '@parcel/watcher'
@@ -14,6 +15,9 @@ const maxFileSize = 5 * 1024 * 1024
 const maxListedFiles = 20_000
 const scratchDirectory = '.scratch'
 
+/** A directory outside the project holding open files, with the paths clients know each by. */
+type OutsideWatch = { watcher: FSWatcher; paths: Map<string, Set<string>> }
+
 type Options = {
   projectPath: (projectId: string) => string
   send: (payload: FilesChanged) => void
@@ -27,12 +31,16 @@ type Options = {
 export class ProjectFiles {
   private readonly watches = new ProjectWatches(
     (projectId) => this.subscribe(projectId),
-    (projectId) => this.ownWrites.delete(projectId),
+    (projectId) => this.forget(projectId),
   )
   // What the IDE last wrote to each file, to tell its own writes from others'
   // when the watcher reports them. A time window would hide an agent's edit
   // made just after an autosave. By project, so they're forgotten when it's no longer watched.
   private readonly ownWrites = new Map<string, Map<string, string>>()
+  // By project and directory. Each directory alone rather than recursively, since
+  // a file's directory could be the home directory. Kept until the project is no
+  // longer watched, as nothing says when a client stops showing a file.
+  private readonly outsideWatches = new Map<string, Map<string, OutsideWatch>>()
 
   private resolving: Promise<void> = Promise.resolve()
   private readonly writes = new Map<string, Promise<WriteResult>>()
@@ -88,6 +96,7 @@ export class ProjectFiles {
 
   async readFile(projectId: string, path: string): Promise<FileContent> {
     const file = await this.resolveFile(projectId, path)
+    await this.watchIfOutside(projectId, path, file)
     try {
       const info = await stat(file)
       if (!info.isFile()) return { kind: 'missing' }
@@ -220,8 +229,57 @@ export class ProjectFiles {
     this.watches.set(projectIds)
   }
 
-  unwatch(): Promise<void> {
-    return this.watches.clear()
+  async unwatch(): Promise<void> {
+    await this.watches.clear()
+    for (const projectId of this.outsideWatches.keys()) this.forget(projectId)
+  }
+
+  private forget(projectId: string): void {
+    this.ownWrites.delete(projectId)
+    for (const { watcher } of this.outsideWatches.get(projectId)?.values() ?? []) watcher.close()
+    this.outsideWatches.delete(projectId)
+  }
+
+  /** The project's watcher can't see a file outside it, so its directory is watched too. */
+  private async watchIfOutside(projectId: string, path: string, file: string): Promise<void> {
+    if (isInside(await realpath(this.options.projectPath(projectId)), file)) return
+    const directories = this.outsideWatches.get(projectId) ?? new Map<string, OutsideWatch>()
+    this.outsideWatches.set(projectId, directories)
+    const directory = dirname(file)
+    let watch = directories.get(directory)
+    if (!watch) {
+      const paths = new Map<string, Set<string>>()
+      try {
+        const watcher = watchDirectory(directory, { persistent: false }, (_event, name) => {
+          void this.outsideChanged(projectId, directory, paths, name)
+        })
+        watcher.on('error', (error) => {
+          console.error(`Watching ${directory} failed:`, error)
+          watcher.close()
+          directories.delete(directory)
+        })
+        watch = { watcher, paths }
+      } catch {
+        // The file doesn't exist, which the tab shows.
+        return
+      }
+      directories.set(directory, watch)
+    }
+    const name = basename(file)
+    watch.paths.set(name, (watch.paths.get(name) ?? new Set()).add(path))
+  }
+
+  private async outsideChanged(
+    projectId: string,
+    directory: string,
+    paths: Map<string, Set<string>>,
+    name: string | null,
+  ): Promise<void> {
+    const names = name === null ? [...paths.keys()] : paths.has(name) ? [name] : []
+    const others = await Promise.all(
+      names.map(async (file) => ((await this.isOwnWrite(projectId, join(directory, file))) ? [] : [...paths.get(file)!])),
+    )
+    if (others.flat().length > 0) this.options.send({ projectId, paths: others.flat() })
   }
 
   private subscribe(projectId: string) {
@@ -270,10 +328,7 @@ export class ProjectFiles {
   private async resolve(projectId: string, path: string): Promise<string> {
     const root = await realpath(this.options.projectPath(projectId))
     const resolved = await realpathAllowingMissing(resolve(root, path))
-    const fromRoot = relative(root, resolved)
-    if (fromRoot === '..' || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
-      throw new Error(`Outside the project: ${path}`)
-    }
+    if (!isInside(root, resolved)) throw new Error(`Outside the project: ${path}`)
     return resolved
   }
 
@@ -294,6 +349,11 @@ async function realpathAllowingMissing(path: string): Promise<string> {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || parent === path) throw error
     return join(await realpathAllowingMissing(parent), basename(path))
   }
+}
+
+function isInside(root: string, path: string): boolean {
+  const fromRoot = relative(root, path)
+  return fromRoot !== '..' && !fromRoot.startsWith(`..${sep}`) && !isAbsolute(fromRoot)
 }
 
 function toProjectPath(root: string, file: string): string {

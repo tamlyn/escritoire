@@ -1,8 +1,8 @@
-import { type ComponentProps, createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { type ComponentProps, createContext, useContext, useMemo } from 'react'
 import { useParentWorkspace } from 'react-resizable-panels'
 import { defaultComponents, defaultRemarkPlugins, type ExtraProps } from 'streamdown'
-import { api } from '../api'
 import { revealLine } from '../file/reveal'
+import { useProjectFileList } from '../files'
 import { useProject } from '../project-context'
 import { createFileTab, type TabData } from '../tabs'
 import { type FileRef, parseFileHref, remarkFileLinks } from './file-refs'
@@ -15,20 +15,11 @@ type FileLinks = {
 
 const FileLinksContext = createContext<FileLinks | null>(null)
 
-/**
- * Lets links in agent messages open files. `working` refreshes the project's
- * file list as turns start and end, so files an agent creates link too.
- */
-export function FileLinksProvider({ working, children }: { working: boolean; children: React.ReactNode }) {
+/** Lets links in agent messages open files. */
+export function FileLinksProvider({ children }: { children: React.ReactNode }) {
   const project = useProject()
   const workspace = useParentWorkspace<TabData>()
-  const [files, setFiles] = useState<Set<string> | null>(null)
-
-  useEffect(() => {
-    let current = true
-    void api.listProjectFiles(project.id).then((list) => current && setFiles(new Set(list)), console.error)
-    return () => { current = false }
-  }, [project.id, working])
+  const files = useProjectFileList(project.id)
 
   const links = useMemo((): FileLinks => {
     const root = project.path.replace(/\/$/, '')

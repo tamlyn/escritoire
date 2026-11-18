@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { type DirectoryEntry, type FileContent, parentPath } from '../../shared/files'
 import { api, subscribe } from './api'
 
@@ -18,6 +18,57 @@ export function useFileContent(projectId: string, path: string): FileContent | n
     (changed) => changed.includes(path),
     [projectId, path],
   )
+}
+
+// Listing walks the whole project, and an agent can change many files a second.
+const fileListRefreshMs = 2000
+
+type FileList = { files: Set<string> | null; listeners: Set<() => void>; stop: () => void }
+
+/** One list per project, however many session tabs are showing its links. */
+const fileLists = new Map<string, FileList>()
+
+function startFileList(projectId: string): FileList {
+  let latest = 0
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const refresh = () => {
+    timer = undefined
+    const request = ++latest
+    void api.listProjectFiles(projectId).then((files) => {
+      if (request !== latest) return
+      list.files = new Set(files)
+      for (const listener of list.listeners) listener()
+    }, console.error)
+  }
+  const unsubscribe = subscribe('filesChanged', (event) => {
+    if (event.projectId === projectId) timer ??= setTimeout(refresh, fileListRefreshMs)
+  })
+  const list: FileList = {
+    files: null,
+    listeners: new Set(),
+    stop: () => {
+      unsubscribe()
+      clearTimeout(timer)
+    },
+  }
+  refresh()
+  return list
+}
+
+/** The project's files, kept up to date so files an agent creates are included. `null` until listed. */
+export function useProjectFileList(projectId: string): Set<string> | null {
+  const subscribeToList = useCallback((listener: () => void) => {
+    const list = fileLists.get(projectId) ?? startFileList(projectId)
+    fileLists.set(projectId, list)
+    list.listeners.add(listener)
+    return () => {
+      list.listeners.delete(listener)
+      if (list.listeners.size > 0) return
+      list.stop()
+      fileLists.delete(projectId)
+    }
+  }, [projectId])
+  return useSyncExternalStore(subscribeToList, () => fileLists.get(projectId)?.files ?? null)
 }
 
 function useLiveLoad<T>(

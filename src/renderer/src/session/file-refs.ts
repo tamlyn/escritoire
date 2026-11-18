@@ -11,6 +11,8 @@ const lineSuffix = String.raw`(?::(\d+)(?:[-:]\d+)?|#L(\d+)(?:-L?\d+)?)?`
 const inText = new RegExp(String.raw`(?<![\w@.+/:#-])(${pathBody})${lineSuffix}(?![\w/])`, 'g')
 const whole = new RegExp(String.raw`^(${pathBody})${lineSuffix}$`)
 const withLine = /^(.*?)(?::(\d+)(?:[-:]\d+)?|#L(\d+)(?:-L?\d+)?)?$/
+// A query, or an anchor such as a heading: neither is part of the file's name.
+const notLineAnchor = /(?:\?|#(?!L\d+(?:-L?\d+)?$)).*$/
 
 /**
  * Words that could be paths: an absolute path of two or more segments, or a
@@ -50,7 +52,7 @@ export function hrefFileRef(href: string): FileRef | null {
   } catch {
     return null
   }
-  const match = withLine.exec(decoded)!
+  const match = withLine.exec(decoded.replace(notLineAnchor, ''))!
   return match[1] ? toRef(match[1], match[2] ?? match[3]) : null
 }
 

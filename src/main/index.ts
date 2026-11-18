@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron'
 import icon from '../../build/icon.png?asset'
-import { type Api, apiMethods, type Events } from '../shared/api'
+import { type Api, type AppState, apiMethods } from '../shared/api'
 import type { ApiConnection } from '../shared/api-client'
 import { codexAdapter } from './agents/codex'
 import { claudeAdapter } from './agents/claude'
@@ -52,8 +52,21 @@ type Services = {
   databases: Databases
 }
 
+async function restoreUnread(projects: ProjectStore, sessions: SessionManager, projectId: string): Promise<void> {
+  await sessions.restoreUnread(projectId, await projects.sessionTabs(projectId)).catch(console.error)
+}
+
 /** The API as one client sees it. */
 function createApi(client: Client, { clients, remote, projects, sessions, sessionStore, files, terminals, supervisor, connections, databases }: Services): Api {
+  /** Closing a project forgets its unread sessions, so reopening it finds them again. */
+  async function activate(change: () => Promise<AppState>): Promise<AppState> {
+    const wasOpen = new Set(projects.getState().projects.filter((p) => p.isOpen).map((p) => p.id))
+    const state = await change()
+    if (state.activeProjectId && !wasOpen.has(state.activeProjectId)) {
+      await restoreUnread(projects, sessions, state.activeProjectId)
+    }
+    return clients.activate(client, state)
+  }
   const terminalHost: ScreenHost = {
     attach: (projectId, terminalId, size) => terminals.attach(projectId, terminalId, size),
     detach: (terminalId) => terminals.detach(terminalId),
@@ -68,8 +81,8 @@ function createApi(client: Client, { clients, remote, projects, sessions, sessio
   }
   return {
     getState: async () => clients.state(client, projects.getState()),
-    openProject: async (path) => clients.activate(client, await projects.openProject(path)),
-    activateProject: async (id) => clients.activate(client, await projects.activateProject(id)),
+    openProject: (path) => activate(() => projects.openProject(path)),
+    activateProject: (id) => activate(() => projects.activateProject(id)),
     closeProject: async (id) => {
       // Failing to save sessions or scrollback mustn't stop the project closing.
       logFailures(await Promise.allSettled([
@@ -105,6 +118,7 @@ function createApi(client: Client, { clients, remote, projects, sessions, sessio
     sendMessage: async (session, input) => sessions.sendMessage(session, input),
     editQueuedMessage: async (session, id, text) => sessions.editQueuedMessage(session, id, text),
     cancelQueuedMessage: async (session, id) => sessions.cancelQueuedMessage(session, id),
+    setQueuedMessageHeld: async (session, id, held) => clients.setQueuedMessageHeld(client, session, id, held),
     interrupt: (session) => sessions.interrupt(session),
     getSettingChoices: (projectId, agent) => sessions.settingChoices(projectId, agent),
     listCommands: (projectId, agent) => sessions.listCommands(projectId, agent),
@@ -283,6 +297,7 @@ void app.whenReady().then(async () => {
     lastActiveProject: () => projects.getState().activeProjectId,
     setSessionVisible: (session, visible) => sessions.setVisible(session, visible),
     closeSessionView: (session) => sessions.closeSessionView(session),
+    setQueuedMessageHeld: (session, id, held) => sessions.setQueuedMessageHeld(session, id, held),
     watch: (projectIds) => {
       files.watch(projectIds)
       gitWatcher.watch(projectIds)
@@ -307,12 +322,10 @@ void app.whenReady().then(async () => {
     store: sessionStore,
     projectPath: (projectId) => projects.getProject(projectId).path,
     ideConnection: (projectId) => ideServer.connection(projectId),
-    send: (name, payload) => {
-      send(name, payload)
-      if (name === 'sessionsChanged') attention.update(payload as Events['sessionsChanged'])
-    },
+    send,
+    onSummariesChanged: (summaries) => attention.update(summaries),
   })
-  await sessions.restoreUnread(projects.getState().projects.filter((p) => p.isOpen).map((p) => p.id))
+  await Promise.all(projects.getState().projects.filter((p) => p.isOpen).map((p) => restoreUnread(projects, sessions, p.id)))
   const files = new ProjectFiles({
     projectPath: (projectId) => projects.getProject(projectId).path,
     send: (payload) => send('filesChanged', payload),

@@ -51,6 +51,7 @@ export type SessionManagerDeps = {
   /** The IDE's MCP server for a project, given to every session the IDE starts. */
   ideConnection?: (projectId: string) => IdeServerConnection
   send: <K extends keyof Events>(name: K, payload: Events[K]) => void
+  onSummariesChanged?: (summaries: SessionSummary[]) => void
   now?: () => number
 }
 
@@ -64,6 +65,8 @@ export class SessionManager {
   private readonly sessions = new Map<string, Session>()
   /** By agent session id. Replaced by the session once it loads. */
   private readonly unread = new Map<string, UnreadSession>()
+  /** Queued messages a client is editing, which wait until it finishes. */
+  private readonly heldMessages = new Set<string>()
   /**
    * Where each reset conversation continues, so a client that missed the reset
    * (its tab wasn't mounted, or it wasn't connected) still follows it.
@@ -110,18 +113,16 @@ export class SessionManager {
   }
 
   /**
-   * Sessions load only when a client shows them, so after a restart this finds
-   * the open projects' unread sessions for the summaries. Nothing can be waiting
-   * after a restart, since agents only resume when sent a message.
+   * Sessions load only when a client shows them, so when a project opens this
+   * finds the unread sessions in its tabs for the summaries. Sessions without a
+   * tab were dismissed. Nothing can be waiting, since agents only resume when
+   * sent a message.
    */
-  async restoreUnread(projectIds: string[]): Promise<void> {
-    const results = await Promise.allSettled(projectIds.map(async (projectId) => {
-      for (const [agentSessionId, record] of Object.entries(await this.deps.store.list(projectId))) {
-        if (record.lastTurnEndedAt <= record.lastSeenAt || this.sessions.has(agentSessionId)) continue
-        this.unread.set(agentSessionId, { projectId, pointer: { agent: record.agent, agentSessionId }, title: record.title })
-      }
-    }))
-    for (const result of results) if (result.status === 'rejected') console.error(result.reason)
+  async restoreUnread(projectId: string, tabs: Set<string>): Promise<void> {
+    for (const [agentSessionId, record] of Object.entries(await this.deps.store.list(projectId))) {
+      if (!tabs.has(agentSessionId) || record.lastTurnEndedAt <= record.lastSeenAt || this.sessions.has(agentSessionId)) continue
+      this.unread.set(agentSessionId, { projectId, pointer: { agent: record.agent, agentSessionId }, title: record.title })
+    }
     this.broadcastSummaries()
   }
 
@@ -201,7 +202,8 @@ export class SessionManager {
     const session = this.get(pointer)
     session.record.draft = ''
     this.save(session)
-    if (session.view.status === 'working') {
+    // A message left in the queue is being edited, and this one goes after it.
+    if (session.view.status === 'working' || session.view.queued.length > 0) {
       this.setQueue(session, [...session.view.queued, { ...input, id: randomUUID() }])
     } else {
       this.dispatch(session, input)
@@ -218,6 +220,17 @@ export class SessionManager {
     this.setQueue(session, session.view.queued.filter((message) => message.id !== id))
   }
 
+  /** Keeps a message from being sent while a client edits it, so the edit can't arrive too late. */
+  setQueuedMessageHeld(pointer: SessionPointer, id: string, held: boolean): void {
+    if (held) {
+      this.heldMessages.add(id)
+      return
+    }
+    this.heldMessages.delete(id)
+    const session = this.following(pointer)
+    if (session && session.view.status !== 'working') this.sendQueued(session)
+  }
+
   private setQueue(session: Session, queued: QueuedMessage[]): void {
     this.apply(session, { type: 'queueChanged', queued })
   }
@@ -225,7 +238,7 @@ export class SessionManager {
   /** Whatever ended the turn, including an interruption or a failure, the next queued message goes. */
   private sendQueued(session: Session): void {
     const [next, ...rest] = session.view.queued
-    if (!next) return
+    if (!next || this.heldMessages.has(next.id)) return
     this.setQueue(session, rest)
     this.dispatch(session, { text: next.text, images: next.images })
   }
@@ -305,6 +318,13 @@ export class SessionManager {
         this.save(session)
       }
       this.stop(session)
+      return
+    }
+    // Still loading, so it can only be closed once it has.
+    for (const project of this.projects.values()) {
+      const loading = project.loading.get(pointer.agentSessionId)
+      if (!loading) continue
+      void loading.catch(() => {}).then(() => this.closeSession(pointer))
       return
     }
     const unread = this.unread.get(pointer.agentSessionId)
@@ -476,6 +496,13 @@ export class SessionManager {
     return session
   }
 
+  /** The session now, which a reset may have given a new id since the client last heard. */
+  private following(pointer: SessionPointer): Session | undefined {
+    let id = pointer.agentSessionId
+    for (let next = this.moved.get(id); next; next = this.moved.get(id)) id = next
+    return this.sessions.get(id)
+  }
+
   private save(session: Session): void {
     // A closed project's sessions were saved as it closed, and its agents' late events don't matter.
     const project = this.projects.get(session.projectId)
@@ -491,7 +518,9 @@ export class SessionManager {
   }
 
   private broadcastSummaries(): void {
-    this.deps.send('sessionsChanged', this.summaries())
+    const summaries = this.summaries()
+    this.deps.send('sessionsChanged', summaries)
+    this.deps.onSummariesChanged?.(summaries)
   }
 }
 

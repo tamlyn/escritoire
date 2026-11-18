@@ -11,6 +11,7 @@ let lastActive: string | null
 let visible: Map<string, boolean>
 let closedViews: string[]
 let watched: string[]
+let held: Set<string>
 let clients: Clients
 
 beforeEach(() => {
@@ -18,10 +19,12 @@ beforeEach(() => {
   visible = new Map()
   closedViews = []
   watched = []
+  held = new Set()
   clients = new Clients({
     lastActiveProject: () => lastActive,
     setSessionVisible: (session, isVisible) => visible.set(session.agentSessionId, isVisible),
     closeSessionView: (session) => closedViews.push(session.agentSessionId),
+    setQueuedMessageHeld: (_session, id, isHeld) => { if (isHeld) held.add(id); else held.delete(id) },
     watch: (projectIds) => { watched = projectIds },
   })
 })
@@ -34,6 +37,18 @@ function connect(desktop = true): { client: Client; received: Received } {
 
 const project = (id: string, isOpen = true): Project => ({ id, path: `/${id}`, name: id, isOpen, lastActiveAt: 0 })
 const app = (activeProjectId: string | null, ...projects: Project[]): AppState => ({ projects, activeProjectId })
+
+it('releases the queued messages a client was editing when it disconnects', () => {
+  const { client } = connect()
+  const session: SessionPointer = { agent: 'claude', agentSessionId: 's1' }
+  clients.setQueuedMessageHeld(client, session, 'm1', true)
+  clients.setQueuedMessageHeld(client, session, 'm2', true)
+  clients.setQueuedMessageHeld(client, session, 'm2', false)
+  expect([...held]).toEqual(['m1'])
+
+  clients.disconnect(client)
+  expect([...held]).toEqual([])
+})
 
 describe('projects', () => {
   it('gives each client its own active project, watching all of them', () => {

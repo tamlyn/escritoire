@@ -1,5 +1,5 @@
 import { ImageIcon, PencilIcon, XIcon } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { QueuedMessage, SessionPointer } from '../../../shared/agent'
 import { api } from '../api'
 
@@ -20,6 +20,14 @@ function Queued({ message, pointer }: { message: QueuedMessage; pointer: Session
   // Escape removes the textarea, which may blur it, and that mustn't save.
   const discarding = useRef(false)
   const cancel = () => void api.cancelQueuedMessage(pointer, message.id)
+
+  // Released after a save has gone, so the message is sent as edited.
+  const isEditing = editing !== null
+  useEffect(() => {
+    if (!isEditing) return
+    void api.setQueuedMessageHeld(pointer, message.id, true)
+    return () => void api.setQueuedMessageHeld(pointer, message.id, false)
+  }, [isEditing, pointer.agent, pointer.agentSessionId, message.id])
 
   function save(text: string) {
     setEditing(null)

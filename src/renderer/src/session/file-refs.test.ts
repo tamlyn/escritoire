@@ -38,6 +38,13 @@ describe('hrefFileRef', () => {
     expect(hrefFileRef('mailto:someone@example.com')).toBe(null)
     expect(hrefFileRef('#heading')).toBe(null)
   })
+
+  it('leaves out anchors and queries that are not line numbers', () => {
+    expect(hrefFileRef('PLAN.md#remote-access')).toEqual({ path: 'PLAN.md' })
+    expect(hrefFileRef('PLAN.md#Lists')).toEqual({ path: 'PLAN.md' })
+    expect(hrefFileRef('src/a.ts?raw')).toEqual({ path: 'src/a.ts' })
+    expect(hrefFileRef('src/a.ts#L3-L5')).toEqual({ path: 'src/a.ts', line: 3 })
+  })
 })
 
 it('round-trips the link it makes', () => {

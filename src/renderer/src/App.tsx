@@ -24,8 +24,12 @@ export function App() {
 
   /** Switches to the session's project if need be, then shows the session there. */
   const goToSession = useCallback((session: PendingSession) => {
-    if (session.projectId !== activeProjectId) void api.activateProject(session.projectId).then(setState)
     setPendingSession(session)
+    if (session.projectId === activeProjectId) return
+    void api.activateProject(session.projectId).then(setState, (error: unknown) => {
+      console.error(error)
+      setPendingSession(null)
+    })
   }, [activeProjectId])
 
   useEffect(() => subscribe('focusSession', goToSession), [goToSession])

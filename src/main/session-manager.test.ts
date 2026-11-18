@@ -208,7 +208,7 @@ describe('SessionManager', () => {
       projectPath: () => '/work/project',
       send: (_name, payload) => sent.push(payload),
     })
-    await restarted.restoreUnread(['p1'])
+    await restarted.restoreUnread('p1', new Set([pointer.agentSessionId]))
     const unread = { ...pointer, projectId: 'p1', title: 'Hi', status: 'idle', attention: 'unread' }
     expect(restarted.summaries()).toEqual([unread])
     expect(sent).toEqual([[unread]])
@@ -237,13 +237,70 @@ describe('SessionManager', () => {
       projectPath: () => '/work/project',
       send: () => {},
     })
-    await restarted.restoreUnread(['p1'])
+    await restarted.restoreUnread('p1', new Set(['session-2']))
     expect(restarted.summaries().map((s) => s.title)).toEqual(['Two'])
     restarted.closeSession({ agent: 'claude', agentSessionId: 'session-2' })
     expect(restarted.summaries()).toEqual([])
     await restarted.closeProject('p1')
     const second = (await new SessionStore(dataDir).get('p1', 'session-2'))!
     expect(second.lastSeenAt).toBeGreaterThanOrEqual(second.lastTurnEndedAt)
+  })
+
+  it('restores only the unread sessions that still have a tab', async () => {
+    const { dataDir } = await setup()
+    const store = new SessionStore(dataDir)
+    const record = { agent: 'claude' as const, title: 'Open', draft: '', lastSeenAt: 0, lastTurnEndedAt: 5 }
+    await store.put('p1', 'open', record)
+    await store.put('p1', 'dismissed', { ...record, title: 'Dismissed' })
+    const restarted = new SessionManager({ adapters: { claude: fakeAdapter().adapter }, store, projectPath: () => '/work/project', send: () => {} })
+
+    await restarted.restoreUnread('p1', new Set(['open']))
+
+    expect(restarted.summaries().map((s) => s.title)).toEqual(['Open'])
+  })
+
+  it('closes a session whose tab closed while it was loading', async () => {
+    const { dataDir } = await setup()
+    const store = new SessionStore(dataDir)
+    await store.put('p1', 's1', { agent: 'claude', title: 'Unread', draft: '', lastSeenAt: 0, lastTurnEndedAt: 5 })
+    const { adapter } = fakeAdapter()
+    let finishLoading = () => {}
+    adapter.loadHistory = () => new Promise((resolve) => { finishLoading = () => resolve({ items: [] }) })
+    const manager = new SessionManager({ adapters: { claude: adapter }, store, projectPath: () => '/work/project', send: () => {}, now: () => 100 })
+    const pointer = { agent: 'claude' as const, agentSessionId: 's1' }
+    await manager.restoreUnread('p1', new Set(['s1']))
+
+    const opening = manager.openSession('p1', pointer)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    manager.closeSession(pointer)
+    finishLoading()
+    await opening
+    await new Promise((resolve) => setTimeout(resolve, 10))
+
+    expect(manager.summaries()).toEqual([])
+    await manager.closeProject('p1')
+    expect((await store.get('p1', 's1'))!.lastSeenAt).toBe(100)
+  })
+
+  it('holds a queued message while it is edited, and whatever is sent after it', async () => {
+    const { manager, runs } = await setup()
+    const pointer = await manager.createSession('p1', 'claude')
+    await manager.openSession('p1', pointer)
+    manager.sendMessage(pointer, say('First'))
+    manager.sendMessage(pointer, say('Secnod'))
+    const { view } = await manager.openSession('p1', pointer)
+    const id = view.queued[0]!.id
+
+    manager.setQueuedMessageHeld(pointer, id, true)
+    runs[0]!.emit({ type: 'statusChanged', status: 'idle' })
+    manager.sendMessage(pointer, say('Third'))
+    expect(runs[0]!.sent).toEqual(['First'])
+
+    manager.editQueuedMessage(pointer, id, 'Second')
+    manager.setQueuedMessageHeld(pointer, id, false)
+    expect(runs[0]!.sent).toEqual(['First', 'Second'])
+    runs[0]!.emit({ type: 'statusChanged', status: 'idle' })
+    expect(runs[0]!.sent).toEqual(['First', 'Second', 'Third'])
   })
 
   it('starts runs with the chosen settings and changes the running one', async () => {

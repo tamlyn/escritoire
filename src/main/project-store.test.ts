@@ -23,6 +23,23 @@ afterEach(async () => {
 })
 
 describe('ProjectStore', () => {
+  it('finds the session tabs anywhere in a saved layout', async () => {
+    const store = await ProjectStore.load(dataDir)
+    const { activeProjectId } = await store.openProject(alpha)
+    await store.saveLayout(activeProjectId!, {
+      root: {
+        type: 'split',
+        children: [
+          { type: 'tabset', tabs: [{ id: 'a', data: { kind: 'session', agent: 'claude', agentSessionId: 's1' } }] },
+          { type: 'tabset', tabs: [{ id: 'b', data: { kind: 'file', path: 'a.ts' } }] },
+        ],
+      },
+      floating: [{ type: 'tabset', tabs: [{ id: 'c', data: { kind: 'session', agent: 'codex', agentSessionId: 's2' } }] }],
+    })
+
+    expect(await store.sessionTabs(activeProjectId!)).toEqual(new Set(['s1', 's2']))
+  })
+
   it('opens a directory as the active project', async () => {
     const store = await ProjectStore.load(dataDir)
     const state = await store.openProject(alpha)

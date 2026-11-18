@@ -63,7 +63,7 @@ export function SessionTab({ tab, pointer }: { tab: Tab; pointer: SessionPointer
 
   return (
     <div className="flex h-full flex-col">
-      <FileLinksProvider working={working}>
+      <FileLinksProvider>
         <Transcript items={view.items} working={working} />
       </FileLinksProvider>
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-2 px-4 pb-4">
