@@ -126,6 +126,12 @@ test('a phone drives a session from its own layout', async () => {
   await phone.getByRole('button', { name: 'Pair' }).click()
 
   await expect(phone.getByRole('button', { name: 'New Claude session' })).toBeVisible()
+  const manifest = await context.request.get(`http://127.0.0.1:${port}/manifest.webmanifest`)
+  expect(manifest.headers()['content-type']).toBe('application/manifest+json')
+  expect((await context.request.get(`http://127.0.0.1:${port}/sw.js`)).ok()).toBe(true)
+  await phone.getByRole('button', { name: 'Notifications' }).click()
+  await expect(phone.getByRole('menuitem', { name: 'Add to Home Screen to get notifications' })).toBeVisible()
+  await phone.keyboard.press('Escape')
   await expect(phone.locator('[data-workspace]')).toHaveCount(0)
 
   await phone.getByRole('banner').getByRole('button', { name: 'beta' }).click()

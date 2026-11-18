@@ -30,6 +30,9 @@ import { ProjectStore } from './project-store'
 import { SessionManager } from './session-manager'
 import { SessionStore } from './session-store'
 import { watchPresence } from './presence'
+import type { PushSubscription } from '../shared/remote'
+import { PushSender } from './push'
+import { PushAttention } from './push-attention'
 import { RemoteAccess } from './remote-access'
 import { loadShellEnv } from './shell-env'
 import { Supervisor } from './supervisor'
@@ -42,6 +45,7 @@ import { Work } from './work'
 type Services = {
   clients: Clients
   remote: RemoteAccess
+  push: PushSender
   projects: ProjectStore
   sessions: SessionManager
   sessionStore: SessionStore
@@ -57,7 +61,7 @@ async function restoreUnread(projects: ProjectStore, sessions: SessionManager, p
 }
 
 /** The API as one client sees it. */
-function createApi(client: Client, { clients, remote, projects, sessions, sessionStore, files, terminals, supervisor, connections, databases }: Services): Api {
+function createApi(client: Client, { clients, remote, push, projects, sessions, sessionStore, files, terminals, supervisor, connections, databases }: Services): Api {
   /** Closing a project forgets its unread sessions, so reopening it finds them again. */
   async function activate(change: () => Promise<AppState>): Promise<AppState> {
     const wasOpen = new Set(projects.getState().projects.filter((p) => p.isOpen).map((p) => p.id))
@@ -202,7 +206,18 @@ function createApi(client: Client, { clients, remote, projects, sessions, sessio
     changeRemoteAccess: async (settings) => desktopOnly(client, () => remote.configure(settings)),
     startPairing: async () => desktopOnly(client, () => remote.startPairing()),
     revokeDevice: async (deviceId) => desktopOnly(client, () => remote.revoke(deviceId)),
+    getPushKey: () => push.publicKey(),
+    setPushSubscription: async (subscription) => {
+      if (client.deviceId === null) throw new Error('Only a paired device can receive notifications.')
+      if (subscription !== null && !isPushSubscription(subscription)) throw new Error('Not a push subscription.')
+      await remote.setPushSubscription(client.deviceId, subscription)
+    },
   }
+}
+
+/** Main will send requests to this address, so it must at least be a secure web address. */
+function isPushSubscription({ endpoint, keys }: PushSubscription): boolean {
+  return URL.canParse(endpoint) && new URL(endpoint).protocol === 'https:' && typeof keys?.p256dh === 'string' && typeof keys.auth === 'string'
 }
 
 function desktopOnly<T>(client: Client, action: () => T): T {
@@ -305,8 +320,25 @@ void app.whenReady().then(async () => {
     },
   })
   const send = clients.send
+  const remote = await RemoteAccess.load({
+    dataDir,
+    rendererDir: join(import.meta.dirname, '../renderer'),
+    connect: (send, client) => serve(clients.connect(send, { desktop: false, ...client })),
+    onChange: (state) => send('remoteAccessChanged', state),
+  })
+  const push = new PushSender(dataDir)
+  const projectName = (projectId: string) => projects.getState().projects.find((p) => p.id === projectId)?.name ?? ''
+  const pushAttention = new PushAttention({
+    targets: () => remote.pushTargets(),
+    desktopPresent: () => clients.desktopPresent,
+    deviceShows: (deviceId, agentSessionId) => clients.deviceShows(deviceId, agentSessionId),
+    projectName,
+    send: async ({ deviceId, subscription }, payload) => {
+      if ((await push.send(subscription, payload)) === 'gone') await remote.forgetPushSubscription(deviceId, subscription.endpoint)
+    },
+  })
   const attention = new DesktopAttention({
-    projectName: (projectId) => projects.getState().projects.find((p) => p.id === projectId)?.name ?? '',
+    projectName,
     focusSession: (session) => send('focusSession', session),
   })
   const supervisor = new Supervisor({
@@ -324,7 +356,10 @@ void app.whenReady().then(async () => {
     projectPath: (projectId) => projects.getProject(projectId).path,
     ideConnection: (projectId) => ideServer.connection(projectId),
     send,
-    onSummariesChanged: (summaries) => attention.update(summaries),
+    onSummariesChanged: (summaries) => {
+      attention.update(summaries)
+      pushAttention.update(summaries)
+    },
   })
   await Promise.all(projects.getState().projects.filter((p) => p.isOpen).map((p) => restoreUnread(projects, sessions, p.id)))
   const files = new ProjectFiles({
@@ -350,13 +385,7 @@ void app.whenReady().then(async () => {
   watchPresence((present) => clients.setDesktopPresent(present))
 
   const apiWork = new Work()
-  const remote = await RemoteAccess.load({
-    dataDir,
-    rendererDir: join(import.meta.dirname, '../renderer'),
-    connect: (send, activeProjectId) => serve(clients.connect(send, { desktop: false, activeProjectId })),
-    onChange: (state) => send('remoteAccessChanged', state),
-  })
-  const services: Services = { clients, remote, projects, sessions, sessionStore, files, terminals, supervisor, connections, databases }
+  const services: Services = { clients, remote, push, projects, sessions, sessionStore, files, terminals, supervisor, connections, databases }
   // The API work belongs to the app rather than the connection, so quitting waits for it all.
   function serve(client: Client): Connection {
     return { handle: handleApi(createApi(client, services), apiWork), close: () => clients.disconnect(client) }

@@ -8,6 +8,12 @@ export function needingAttention(summaries: SessionSummary[]): SessionSummary[] 
   ]
 }
 
+/** What to tell the user about a session that needs them. */
+export function attentionMessage(session: SessionSummary): string {
+  const title = session.title || 'New session'
+  return session.attention === 'waiting' ? `${title} needs your input` : `${title} has finished`
+}
+
 /**
  * The sessions that started needing the user between two lists: ones that
  * began waiting, or became unread having needed nothing. A session missing

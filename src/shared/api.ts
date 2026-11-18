@@ -35,7 +35,7 @@ import type {
   GitSummary,
 } from './git'
 import type { ProcessInfo, ProcessSpec } from './process'
-import type { RemoteAccess } from './remote'
+import type { PushSubscription, RemoteAccess } from './remote'
 import type { ScreenOutput, ScreenSize, ScreenSnapshot } from './screen'
 import type { Connection, ProjectConnections, StatementResult } from './sql'
 
@@ -150,6 +150,10 @@ export type Api = {
   /** Shows a new pairing code, replacing any other. */
   startPairing(): Promise<RemoteAccess>
   revokeDevice(deviceId: string): Promise<RemoteAccess>
+  /** For a paired device: the public key its push subscription must be made with. */
+  getPushKey(): Promise<string>
+  /** For a paired device: where to send its notifications. */
+  setPushSubscription(subscription: PushSubscription | null): Promise<void>
 }
 
 // A record rather than an array so the compiler rejects a missing or misspelt method.
@@ -221,6 +225,8 @@ const apiMethodSet: Record<keyof Api, true> = {
   changeRemoteAccess: true,
   startPairing: true,
   revokeDevice: true,
+  getPushKey: true,
+  setPushSubscription: true,
 }
 
 export const apiMethods = Object.keys(apiMethodSet) as (keyof Api)[]

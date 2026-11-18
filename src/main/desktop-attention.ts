@@ -1,7 +1,7 @@
 import { app, type BrowserWindow, Notification } from 'electron'
 import type { SessionSummary } from '../shared/agent'
 import type { Events } from '../shared/api'
-import { needingAttention, newlyNeedingAttention } from '../shared/attention'
+import { attentionMessage, needingAttention, newlyNeedingAttention } from '../shared/attention'
 
 export type DesktopAttentionDeps = {
   projectName: (projectId: string) => string
@@ -47,10 +47,9 @@ export class DesktopAttention {
 
   private notify(session: SessionSummary): void {
     if (!Notification.isSupported()) return
-    const title = session.title || 'New session'
     const notification = new Notification({
       title: this.deps.projectName(session.projectId),
-      body: session.attention === 'waiting' ? `${title} needs your input` : `${title} has finished`,
+      body: attentionMessage(session),
     })
     this.shown.add(notification)
     notification.on('close', () => this.shown.delete(notification))

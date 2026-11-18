@@ -51,6 +51,21 @@ it('releases the queued messages a client was editing when it disconnects', () =
   expect([...held]).toEqual([])
 })
 
+it('says which device has a session on its screen', () => {
+  const pointer: SessionPointer = { agent: 'claude', agentSessionId: 's1' }
+  const phone = clients.connect(() => {}, { desktop: false, deviceId: 'phone' })
+
+  clients.openSessionView(phone, pointer)
+  expect(clients.deviceShows('phone', 's1')).toBe(false)
+
+  clients.setSessionVisible(phone, pointer, true)
+  expect(clients.deviceShows('phone', 's1')).toBe(true)
+  expect(clients.deviceShows('tablet', 's1')).toBe(false)
+
+  clients.disconnect(phone)
+  expect(clients.deviceShows('phone', 's1')).toBe(false)
+})
+
 describe('projects', () => {
   it('returns a reconnecting client to its project while that is open', () => {
     const activeProject = (activeProjectId: string | null) =>

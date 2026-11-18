@@ -1,14 +1,14 @@
 import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { join } from 'node:path'
-import { defaultRemotePort, type PairedDevice, pairPath, type RemoteAccess as RemoteAccessState } from '../shared/remote'
+import { defaultRemotePort, type PairedDevice, pairPath, type PushSubscription, type RemoteAccess as RemoteAccessState } from '../shared/remote'
 import type { Hello } from '../shared/api-client'
 import { ApiServer, type Connection, type SendEvent, tokensMatch } from './api-server'
 import { readJson, writeJson } from './json-file'
 import { serveFile } from './static-files'
 
 /** Only a hash of each token is kept, so reading the data directory yields nothing usable. */
-type SavedDevice = Omit<PairedDevice, 'connected'> & { tokenHash: string }
+type SavedDevice = Omit<PairedDevice, 'connected'> & { tokenHash: string; pushSubscription?: PushSubscription }
 type Saved = { enabled: boolean; port: number; devices: SavedDevice[] }
 
 const pairingLifetimeMs = 5 * 60_000
@@ -21,7 +21,7 @@ export type RemoteAccessOptions = {
   /** The renderer's built files, served to browsers. */
   rendererDir: string
   /** Serves a paired device's connection. */
-  connect: (send: SendEvent, activeProjectId: string | null) => Connection
+  connect: (send: SendEvent, client: { deviceId: string; activeProjectId: string | null }) => Connection
   onChange: (state: RemoteAccessState) => void
 }
 
@@ -60,7 +60,7 @@ export class RemoteAccess {
       port: this.saved.port,
       error: this.error,
       pairing: this.pairing && { code: this.pairing.code, expiresAt: this.pairing.expiresAt },
-      devices: this.saved.devices.map(({ tokenHash: _, ...device }) => ({ ...device, connected: this.connected.has(device.id) })),
+      devices: this.saved.devices.map(({ tokenHash: _, pushSubscription: __, ...device }) => ({ ...device, connected: this.connected.has(device.id) })),
     }
   }
 
@@ -107,6 +107,26 @@ export class RemoteAccess {
     return this.state()
   }
 
+  /** The devices to notify. Turning remote access off pauses them without forgetting their subscriptions. */
+  pushTargets(): { deviceId: string; subscription: PushSubscription }[] {
+    if (!this.saved.enabled) return []
+    return this.saved.devices.flatMap(({ id, pushSubscription }) => pushSubscription ? [{ deviceId: id, subscription: pushSubscription }] : [])
+  }
+
+  async setPushSubscription(deviceId: string, subscription: PushSubscription | null): Promise<void> {
+    const device = this.saved.devices.find((d) => d.id === deviceId)
+    if (!device) return
+    if (subscription) device.pushSubscription = subscription
+    else delete device.pushSubscription
+    await this.save()
+  }
+
+  /** The browser withdrew this subscription, unless the device has since sent a newer one. */
+  async forgetPushSubscription(deviceId: string, endpoint: string): Promise<void> {
+    const device = this.saved.devices.find((d) => d.id === deviceId)
+    if (device?.pushSubscription?.endpoint === endpoint) await this.setPushSubscription(deviceId, null)
+  }
+
   /** Waits for saves in flight. Devices disconnecting from now on aren't recorded as seen. */
   async close(): Promise<void> {
     this.closed = true
@@ -146,7 +166,7 @@ export class RemoteAccess {
     disconnects.add(disconnect)
     this.connected.set(device.id, disconnects)
     this.seen(device)
-    const connection = this.options.connect(send, activeProjectId ?? null)
+    const connection = this.options.connect(send, { deviceId: device.id, activeProjectId: activeProjectId ?? null })
     return {
       handle: connection.handle,
       close: () => {

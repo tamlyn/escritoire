@@ -1,3 +1,5 @@
+import type { SessionPointer } from './agent'
+
 /** A browser paired to use Escritoire remotely. Its token is known only to it. */
 export type PairedDevice = {
   id: string
@@ -17,6 +19,16 @@ export type RemoteAccess = {
   /** The code a device can pair with, while one is waiting. */
   pairing: { code: string; expiresAt: number } | null
   devices: PairedDevice[]
+}
+
+/** Where the browser's push service delivers messages for it, and the keys to encrypt them to it. */
+export type PushSubscription = { endpoint: string; keys: { p256dh: string; auth: string } }
+
+/** A notification for a phone, and the session tapping it goes to. */
+export type PushPayload = {
+  title: string
+  body: string
+  session: { projectId: string; pointer: SessionPointer; title: string }
 }
 
 export const defaultRemotePort = 4729

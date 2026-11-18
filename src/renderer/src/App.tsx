@@ -7,6 +7,7 @@ import { useIsCompact } from './phone/compact'
 import { PhoneWorkspace } from './phone/PhoneWorkspace'
 import { ProjectSwitcher } from './ProjectSwitcher'
 import { type PendingSession, ProjectWorkspace, type ProjectWorkspaceHandle } from './ProjectWorkspace'
+import { followNotifications } from './remote/push'
 import { RemoteAccessButton } from './remote/RemoteAccessButton'
 import { isMac, modifierLabel, useShortcut } from './shortcuts'
 
@@ -40,6 +41,7 @@ export function App() {
   }, [activeProjectId])
 
   useEffect(() => subscribe('focusSession', goToSession), [goToSession])
+  useEffect(() => followNotifications(goToSession), [goToSession])
 
   const clearPendingSession = useCallback(() => setPendingSession(null), [])
 

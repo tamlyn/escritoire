@@ -166,3 +166,30 @@ test('ends the code after a few minutes', async () => {
     vi.useRealTimers()
   }
 })
+
+test('keeps a push subscription with its device until the device is revoked', async () => {
+  const subscription = { endpoint: 'https://push.example/1', keys: { p256dh: 'p', auth: 'a' } }
+  remote.startPairing()
+  await pair(remote.state().pairing!.code)
+  const [device] = remote.state().devices
+  await remote.setPushSubscription(device!.id, subscription)
+
+  expect(remote.pushTargets()).toEqual([{ deviceId: device!.id, subscription }])
+  expect(JSON.stringify(remote.state())).not.toContain('push.example')
+
+  // Paused while remote access is off, and back once it's on.
+  const { port } = remote.state()
+  await remote.configure({ enabled: false, port })
+  expect(remote.pushTargets()).toEqual([])
+  await remote.configure({ enabled: true, port })
+  expect(remote.pushTargets()).toHaveLength(1)
+
+  // A newer subscription isn't forgotten when an older one is withdrawn.
+  await remote.forgetPushSubscription(device!.id, 'https://push.example/old')
+  expect(remote.pushTargets()).toHaveLength(1)
+
+  await remote.revoke(device!.id)
+  expect(remote.pushTargets()).toEqual([])
+  const reloaded = await load()
+  expect(reloaded.pushTargets()).toEqual([])
+})

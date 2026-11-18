@@ -5,6 +5,7 @@ import { isDesktop, pairedToken, reloadViews, useConnectionState } from './api'
 import { App } from './App'
 import { followVisualViewport } from './phone/compact'
 import { Pairing } from './remote/Pairing'
+import { refreshPushSubscription } from './remote/push'
 import './styles.css'
 
 function Root() {
@@ -30,6 +31,7 @@ function Root() {
 }
 
 if (!isDesktop) followVisualViewport()
+if (pairedToken()) refreshPushSubscription()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -33,6 +33,8 @@ export type Client = {
   readonly send: SendEvent
   /** The desktop's presence comes from the system; other clients report their own visibility. */
   readonly desktop: boolean
+  /** The paired device this connection belongs to; `null` for the desktop. */
+  readonly deviceId: string | null
   activeProjectId: string | null
   present: boolean
   /** By agent session id. */
@@ -53,17 +55,21 @@ export class Clients {
   private readonly clients = new Set<Client>()
   /** The size each attached screen was last given. */
   private readonly screenSizes = new Map<string, ScreenSize>()
-  private desktopPresent = true
+  private present = true
 
   constructor(private readonly deps: ClientsDeps) {}
 
   /** `activeProjectId` is where a reconnecting client was, which doesn't count as activating it. */
-  connect(send: SendEvent, { desktop, activeProjectId = null }: { desktop: boolean; activeProjectId?: string | null }): Client {
+  connect(
+    send: SendEvent,
+    { desktop, deviceId = null, activeProjectId = null }: { desktop: boolean; deviceId?: string | null; activeProjectId?: string | null },
+  ): Client {
     const client: Client = {
       send,
       desktop,
+      deviceId,
       activeProjectId: activeProjectId !== null && this.deps.isProjectOpen(activeProjectId) ? activeProjectId : this.deps.lastActiveProject(),
-      present: desktop ? this.desktopPresent : true,
+      present: desktop ? this.present : true,
       sessions: new Map(),
       heldMessages: new Map(),
       screens: new Map(),
@@ -144,8 +150,17 @@ export class Clients {
     for (const client of this.clients) client.sessions.delete(pointer.agentSessionId)
   }
 
+  get desktopPresent(): boolean {
+    return this.present
+  }
+
+  /** Whether the device has the session on its screen. */
+  deviceShows(deviceId: string, agentSessionId: string): boolean {
+    return [...this.clients].some((client) => client.deviceId === deviceId && client.present && client.sessions.get(agentSessionId)?.visible)
+  }
+
   setDesktopPresent(present: boolean): void {
-    this.desktopPresent = present
+    this.present = present
     for (const client of this.clients) {
       if (!client.desktop || client.present === present) continue
       client.present = present
