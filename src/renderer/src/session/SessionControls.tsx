@@ -118,7 +118,7 @@ function Picker({
       <DropdownMenuTrigger
         title={title}
         disabled={options.length === 0}
-        className="hover:bg-muted hover:text-foreground data-[state=open]:bg-muted flex items-center gap-1 rounded px-1.5 py-1 outline-none"
+        className="hover:bg-muted hover:text-foreground data-[state=open]:bg-muted flex items-center gap-1 rounded px-1.5 py-1 outline-none max-sm:py-2"
       >
         {label}
         <ChevronDownIcon className="size-3" />

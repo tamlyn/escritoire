@@ -54,19 +54,17 @@ Noticed using Escritoire day to day (November 2026).
 
 Use Escritoire from a phone, and later from another computer, over the user's Tailscale network. The phone is for keeping agents moving away from the desk: seeing what needs attention, reading sessions, answering questions and permission requests, and sending messages. Tailscale isn't allowed on the work machine, so this is for the personal machine only.
 
-Pairing, revocation, serving the renderer to a browser and reconnecting by snapshot are built (see Remote access in HISTORY.md).
+Pairing, revocation, serving the renderer to a browser, reconnecting by snapshot and the phone layout for sessions are built (see Remote access in HISTORY.md).
 
 - **Attachments other than images**, or uploads into the project, get an HTTP upload on the same listener only when needed.
-- **The phone is for driving agent sessions.** Its layout covers the attention loop first: the inbox, the project switcher, and session tabs (read, send, answer, interrupt, switch model and mode). Terminals and file editors are an occasional convenience there, added after the session loop works; git and processes come only when missed.
-- **The phone keeps no workspace layout.** A project's saved layout belongs to the desktop. The phone derives its view from the session list and opens anything else as a transient view, so it never overwrites the desktop's tabs.
+- **Terminals and file editors on the phone** are an occasional convenience, opened as transient views so they never overwrite the desktop's tabs; git and processes come only when missed.
 - **Notifications:** Web Push to paired phones when the user is away from the desktop (presence, in HISTORY.md), not on window focus, so walking away with Escritoire focused still notifies the phone. Push on the same transitions as the desktop's notifications (`newlyNeedingAttention` in `shared/attention.ts`). The dock badge and OS notifications stay with the desktop shell. On iOS this needs the web app added to the home screen.
 - **Remote sessions between computers come later.** The same transport lets Escritoire on one computer view a project hosted by Escritoire on another, so agents keep running while a laptop sleeps. Paths, processes, terminals and agents then belong to the host, not the viewing machine. Running main headless (without a window) belongs to that later slice.
 
 Build order:
 
-1. The phone layout for sessions and attention.
-2. Web Push.
-3. Terminals and file editors on the phone.
+1. Web Push.
+2. Terminals and file editors on the phone.
 
 ## Later, if use shows a need
 

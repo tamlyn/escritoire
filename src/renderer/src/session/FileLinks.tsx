@@ -25,6 +25,8 @@ export function FileLinksProvider({ children }: { children: React.ReactNode }) {
     const root = project.path.replace(/\/$/, '')
     return {
       resolve(ref, detected) {
+        // Files open in tabs, which the phone doesn't have.
+        if (!workspace) return null
         let path = ref.path.replace(/^\.\//, '')
         if (path.startsWith(`${root}/`)) path = path.slice(root.length + 1)
         // Absolute paths are unambiguous; relative ones in prose often aren't paths at all.

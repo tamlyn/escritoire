@@ -109,6 +109,19 @@
   }
 }
 
+/* Outside the layers, so these override utilities. */
+@media (max-width: 640px) {
+  #root {
+    height: var(--viewport-height, 100dvh);
+  }
+  /* iOS zooms the page when a smaller input is focused. */
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
 /* CodeMirror syntax highlighting (`classHighlighter` from @lezer/highlight). */
 .tok-keyword,
 .tok-operator.tok-definition,

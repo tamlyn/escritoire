@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils'
 import type { ImageAttachment, SessionPointer, SessionSettings, SettingChoices, SlashCommand } from '../../../shared/agent'
 import { baseName, parentPath } from '../../../shared/files'
 import { api, flushers } from '../api'
+import { useIsCompact } from '../phone/compact'
 import { imageFiles, toAttachment } from './images'
 import { fuzzyFinder } from '../fuzzy'
 import { activeCommand, activeMention, insertMention, type Mention } from './mentions'
@@ -43,6 +44,7 @@ export function Composer({
   /** The user moved the selection, so Enter means that option. */
   const [picked, setPicked] = useState(false)
   const textarea = useRef<HTMLTextAreaElement>(null)
+  const compact = useIsCompact()
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   const draft = useRef(text)
@@ -179,7 +181,8 @@ export function Composer({
         return
       }
     }
-    if (event.key === 'Enter' && !event.shiftKey) {
+    // A phone's keyboard has no Shift+Enter, so there the button sends.
+    if (event.key === 'Enter' && !event.shiftKey && !compact) {
       event.preventDefault()
       send()
     } else if (event.key === 'Tab' && event.shiftKey) {
@@ -265,7 +268,7 @@ export function Composer({
                   type="button"
                   title="Remove"
                   onClick={() => setImages(images.filter((_, i) => i !== index))}
-                  className="bg-background absolute -top-1.5 -right-1.5 hidden rounded-full border p-0.5 group-hover:block"
+                  className="bg-background absolute -top-1.5 -right-1.5 hidden rounded-full border p-0.5 group-hover:block max-sm:block"
                 >
                   <XIcon className="size-3" />
                 </button>
@@ -284,7 +287,7 @@ export function Composer({
             onPaste={onPaste}
             autoFocus={autoFocus}
             rows={1}
-            placeholder={working ? 'Queue a message for when the agent finishes' : 'Message agent, @ to mention a file, / for commands'}
+            placeholder={working ? (compact ? 'Queue a message' : 'Queue a message for when the agent finishes') : compact ? 'Message agent' : 'Message agent, @ to mention a file, / for commands'}
             className="placeholder:text-muted-foreground field-sizing-content max-h-60 min-h-9 flex-1 resize-none bg-transparent px-2 py-1.5 outline-none"
           />
           {working && !canSend ? (
@@ -292,17 +295,17 @@ export function Composer({
               type="button"
               title="Interrupt"
               onClick={() => void api.interrupt(pointer)}
-              className="bg-primary text-primary-foreground flex size-8 shrink-0 items-center justify-center rounded-lg"
+              className="bg-primary text-primary-foreground flex size-8 shrink-0 items-center justify-center rounded-lg max-sm:size-10"
             >
               <SquareIcon className="size-3.5 fill-current" />
             </button>
           ) : (
             <button
               type="button"
-              title="Send (Enter)"
+              title={compact ? 'Send' : 'Send (Enter)'}
               disabled={!canSend}
               onClick={send}
-              className="bg-primary text-primary-foreground flex size-8 shrink-0 items-center justify-center rounded-lg disabled:opacity-40"
+              className="bg-primary text-primary-foreground flex size-8 shrink-0 items-center justify-center rounded-lg disabled:opacity-40 max-sm:size-10"
             >
               <ArrowUpIcon className="size-4" />
             </button>

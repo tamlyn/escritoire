@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AppState } from '../../shared/api'
 import { api, isDesktop, rememberActiveProject, subscribe } from './api'
 import { Inbox } from './Inbox'
+import { useIsCompact } from './phone/compact'
+import { PhoneWorkspace } from './phone/PhoneWorkspace'
 import { ProjectSwitcher } from './ProjectSwitcher'
 import { type PendingSession, ProjectWorkspace, type ProjectWorkspaceHandle } from './ProjectWorkspace'
 import { RemoteAccessButton } from './remote/RemoteAccessButton'
@@ -14,6 +16,7 @@ export function App() {
   const [pendingSession, setPendingSession] = useState<PendingSession | null>(null)
   const workspaceRef = useRef<ProjectWorkspaceHandle>(null)
   const activeProjectId = state?.activeProjectId
+  const compact = useIsCompact()
 
   useEffect(() => {
     // Pushes and replies arrive in the order main sent them, so whichever comes last is current.
@@ -49,7 +52,7 @@ export function App() {
   return (
     <div className="flex h-full flex-col">
       <header
-        className={`bg-chrome flex h-10 shrink-0 items-center border-b px-2 [-webkit-app-region:drag] ${isDesktop && isMac ? 'pl-20' : ''}`}
+        className={`bg-chrome flex h-10 shrink-0 items-center border-b px-2 [-webkit-app-region:drag] max-sm:box-content max-sm:pt-[env(safe-area-inset-top)] ${isDesktop && isMac ? 'pl-20' : ''}`}
         // Clear of the window controls drawn over the header on Windows and Linux.
         style={isDesktop ? { paddingRight: 'calc(100% - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100%) + 0.5rem)' } : undefined}
       >
@@ -74,7 +77,14 @@ export function App() {
         )}
       </header>
       <main className="min-h-0 flex-1">
-        {activeProject ? (
+        {activeProject && compact ? (
+          <PhoneWorkspace
+            key={activeProject.id}
+            project={activeProject}
+            pendingSession={pendingSession}
+            onPendingSessionShown={clearPendingSession}
+          />
+        ) : activeProject ? (
           <ProjectWorkspace
             key={activeProject.id}
             project={activeProject}
@@ -84,7 +94,7 @@ export function App() {
           />
         ) : (
           <div className="text-muted-foreground flex h-full items-center justify-center">
-            Press {modifierLabel}O to open a project
+            {compact ? 'Tap No project to open one' : `Press ${modifierLabel}O to open a project`}
           </div>
         )}
       </main>

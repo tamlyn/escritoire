@@ -2,7 +2,8 @@ import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { chromium, expect, test, webkit } from '@playwright/test'
+import { chromium, devices, expect, test, webkit } from '@playwright/test'
+import { fakeCodex, openProject } from './agent'
 import { launchApp } from './app'
 
 async function freePort(): Promise<number> {
@@ -95,6 +96,59 @@ test('a paired browser recovers in its own project when the connection returns',
   await page.getByRole('button', { name: 'Turn on' }).click()
   await expect(remote.getByRole('status')).toHaveCount(0, { timeout: 15_000 })
   await expect(remote.getByRole('banner')).toContainText('alpha')
+
+  await browser.close()
+  await close()
+  await rm(root, { recursive: true, force: true })
+})
+
+test('a phone drives a session from its own layout', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'escritoire-e2e-')))
+  await mkdir(join(root, 'alpha'))
+  await mkdir(join(root, 'beta'))
+  const agent = fakeCodex(join(root, 'codex'))
+  const { page, close } = await launchApp(join(root, 'data'), agent.env)
+  await openProject(page, join(root, 'alpha'))
+  await openProject(page, join(root, 'beta'))
+
+  const port = await freePort()
+  await page.getByRole('button', { name: 'Remote access' }).click()
+  await page.getByLabel('Port').fill(String(port))
+  await page.getByRole('button', { name: 'Turn on' }).click()
+  await page.getByRole('button', { name: 'Pair a device' }).click()
+  const code = await page.getByLabel('Pairing code').textContent()
+
+  const browser = await webkit.launch()
+  const context = await browser.newContext({ ...devices['iPhone 13'] })
+  const phone = await context.newPage()
+  await phone.goto(`http://127.0.0.1:${port}/`)
+  await phone.getByLabel('Pairing code').fill(code!)
+  await phone.getByRole('button', { name: 'Pair' }).click()
+
+  await expect(phone.getByRole('button', { name: 'New Claude session' })).toBeVisible()
+  await expect(phone.locator('[data-workspace]')).toHaveCount(0)
+
+  await phone.getByRole('banner').getByRole('button', { name: 'beta' }).click()
+  await phone.getByRole('option', { name: /^alpha/ }).click()
+  await expect(phone.getByRole('banner')).toContainText('alpha')
+
+  await phone.getByRole('button', { name: 'New Codex session' }).click()
+  const composer = phone.getByPlaceholder(/Message agent/)
+  await composer.fill('first line')
+  await composer.press('Enter')
+  await expect(composer).toHaveValue('first line\n')
+  await composer.fill('code\n\n```js\nconst long = "' + 'x'.repeat(300) + '"\n```')
+  await phone.getByRole('button', { name: 'Send' }).click()
+  await expect(phone.getByText('Reply to: code')).toBeVisible()
+
+  // Long lines scroll inside their block rather than widening the page.
+  const overflow = await phone.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
+  expect(overflow).toBeLessThanOrEqual(0)
+  const log = phone.getByRole('log')
+  expect(await log.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0)
+
+  await phone.getByRole('button', { name: 'Back to sessions' }).click()
+  await expect(phone.getByRole('button', { name: /^code/ })).toBeVisible()
 
   await browser.close()
   await close()

@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { Button } from '@/components/ui/button'
 import { isDesktop, pairedToken, reloadViews, useConnectionState } from './api'
 import { App } from './App'
+import { followVisualViewport } from './phone/compact'
 import { Pairing } from './remote/Pairing'
 import './styles.css'
 
@@ -27,6 +28,8 @@ function Root() {
     </div>
   )
 }
+
+if (!isDesktop) followVisualViewport()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

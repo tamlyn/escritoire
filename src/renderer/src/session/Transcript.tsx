@@ -77,7 +77,7 @@ function ItemView({
     case 'userMessage':
       return (
         <Message from="user">
-          <MessageContent className="whitespace-pre-wrap">
+          <MessageContent className="wrap-anywhere whitespace-pre-wrap">
             {item.images && <Thumbnails images={item.images} />}
             {item.text}
           </MessageContent>

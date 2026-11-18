@@ -17,7 +17,7 @@ export function BackgroundTasks({ tasks, pointer }: { tasks: BackgroundTask[]; p
             type="button"
             title="Stop"
             onClick={() => void api.stopTask(pointer, task.id)}
-            className="hover:text-foreground opacity-0 group-hover:opacity-100"
+            className="hover:text-foreground opacity-0 group-hover:opacity-100 max-sm:p-2 max-sm:opacity-100"
           >
             <SquareIcon className="size-3 fill-current" />
           </button>
