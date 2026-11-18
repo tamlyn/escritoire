@@ -18,10 +18,11 @@ import { Transcript } from './Transcript'
  * whether its tab or screen is on display; `onMoved` is told the session the
  * conversation continues in after the agent resets it.
  */
-export function SessionView({ pointer, shown, onMoved }: {
+export function SessionView({ pointer, shown, onMoved, onOpenFile }: {
   pointer: SessionPointer
   shown: boolean
   onMoved: (agentSessionId: string) => void
+  onOpenFile?: (path: string) => void
 }) {
   const project = useProject()
   const session = useSession(project.id, pointer)
@@ -46,7 +47,7 @@ export function SessionView({ pointer, shown, onMoved }: {
 
   return (
     <div className="flex h-full flex-col">
-      <FileLinksProvider>
+      <FileLinksProvider onOpenFile={onOpenFile}>
         <Transcript items={view.items} working={working} />
       </FileLinksProvider>
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-2 px-4 pb-4 compact:px-2 compact:pb-[max(0.5rem,env(safe-area-inset-bottom))]">

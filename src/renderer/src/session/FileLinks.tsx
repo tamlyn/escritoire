@@ -15,8 +15,8 @@ type FileLinks = {
 
 const FileLinksContext = createContext<FileLinks | null>(null)
 
-/** Lets links in agent messages open files. */
-export function FileLinksProvider({ children }: { children: React.ReactNode }) {
+/** Lets links in agent messages open files, in tabs unless told how else to. */
+export function FileLinksProvider({ onOpenFile, children }: { onOpenFile?: (path: string) => void; children: React.ReactNode }) {
   const project = useProject()
   const workspace = useParentWorkspace<TabData>()
   const files = useProjectFileList(project.id)
@@ -25,8 +25,6 @@ export function FileLinksProvider({ children }: { children: React.ReactNode }) {
     const root = project.path.replace(/\/$/, '')
     return {
       resolve(ref, detected) {
-        // Files open in tabs, which the phone doesn't have.
-        if (!workspace) return null
         let path = ref.path.replace(/^\.\//, '')
         if (path.startsWith(`${root}/`)) path = path.slice(root.length + 1)
         // Absolute paths are unambiguous; relative ones in prose often aren't paths at all.
@@ -34,12 +32,13 @@ export function FileLinksProvider({ children }: { children: React.ReactNode }) {
         return path
       },
       open(path, line) {
-        workspace?.addTab(createFileTab(path))
+        if (onOpenFile) onOpenFile(path)
+        else workspace?.addTab(createFileTab(path))
         // After the tab is shown, so an editor that was already open can scroll.
         if (line) requestAnimationFrame(() => revealLine(project.id, path, line))
       },
     }
-  }, [project.id, project.path, files, workspace])
+  }, [project.id, project.path, files, workspace, onOpenFile])
 
   return <FileLinksContext.Provider value={links}>{children}</FileLinksContext.Provider>
 }

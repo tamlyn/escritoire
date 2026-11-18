@@ -1,5 +1,6 @@
 import { PlayIcon, RotateCwIcon, SquareIcon } from 'lucide-react'
 import type { ProcessInfo, TaskRef } from '../../../shared/process'
+import { useParentTabState } from 'react-resizable-panels'
 import { api } from '../api'
 import { useProcess } from '../processes'
 import { useProject } from '../project-context'
@@ -17,6 +18,7 @@ type ProcessTabProps = { processId: string; command: string; cwd: string; task?:
 export function ProcessTab({ processId, command, cwd, task }: ProcessTabProps) {
   const projectId = useProject().id
   const process = useProcess(processId)
+  const shown = useParentTabState()?.isVisible ?? false
   const start = () => void api.startProcess(projectId, task ? { task } : { command, cwd })
 
   return (
@@ -48,6 +50,7 @@ export function ProcessTab({ processId, command, cwd, task }: ProcessTabProps) {
         {process ? (
           <ScreenView
             screenId={processId}
+            shown={shown}
             connection={{
               attach: (size) => api.attachProcess(projectId, processId, size),
               detach: () => void api.detachProcess(processId),

@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 import type { PastSession, SessionSummary } from '../../../shared/agent'
-import { listSessions, maxPastSessions } from './session-list'
+import { listSessions, maxPastSessions, terminalsIn, withCtrl } from './phone-views'
 
 const summary = (agentSessionId: string, projectId = 'p'): SessionSummary =>
   ({ agent: 'claude', agentSessionId, projectId, title: agentSessionId, status: 'idle', attention: null })
@@ -28,4 +28,28 @@ it('limits the past sessions after removing loaded ones', () => {
   const { past: listed } = listSessions('p', [summary('0')], sessions)
   expect(listed).toHaveLength(maxPastSessions)
   expect(listed[0]!.agentSessionId).toBe('1')
+})
+
+it("finds the terminals in the desktop's layout", () => {
+  const tab = (id: string, kind: string) => ({ id, title: id, data: { kind } })
+  const layout = {
+    version: 1,
+    root: {
+      type: 'split',
+      id: 'root',
+      orientation: 'horizontal',
+      children: [
+        { type: 'tabset', id: 'left', tabs: [tab('t1', 'terminal'), tab('f1', 'file')], selectedId: 't1' },
+        { type: 'tabset', id: 'right', tabs: [tab('t2', 'terminal')], selectedId: 't2' },
+      ],
+    },
+  }
+  expect(terminalsIn(layout).map((t) => t.id)).toEqual(['t1', 't2'])
+  expect(terminalsIn(null)).toEqual([])
+})
+
+it('turns a letter into its control character, leaving other input alone', () => {
+  expect(withCtrl('c')).toBe('\x03')
+  expect(withCtrl('C')).toBe('\x03')
+  expect(withCtrl('\x1b[A')).toBe('\x1b[A')
 })

@@ -54,15 +54,11 @@ Noticed using Escritoire day to day (November 2026).
 
 Use Escritoire from a phone, and later from another computer, over the user's Tailscale network. The phone is for keeping agents moving away from the desk: seeing what needs attention, reading sessions, answering questions and permission requests, and sending messages. Tailscale isn't allowed on the work machine, so this is for the personal machine only.
 
-Pairing, revocation, serving the renderer to a browser, reconnecting by snapshot, the phone layout for sessions and Web Push are built (see Remote access in HISTORY.md).
+Pairing, revocation, serving the renderer to a browser, reconnecting by snapshot, the phone layout, and Web Push are built (see Remote access in HISTORY.md).
 
 - **Attachments other than images**, or uploads into the project, get an HTTP upload on the same listener only when needed.
-- **Terminals and file editors on the phone** are an occasional convenience, opened as transient views so they never overwrite the desktop's tabs; git and processes come only when missed.
+- **Git and processes on the phone** come only when missed.
 - **Remote sessions between computers come later.** The same transport lets Escritoire on one computer view a project hosted by Escritoire on another, so agents keep running while a laptop sleeps. Paths, processes, terminals and agents then belong to the host, not the viewing machine. Running main headless (without a window) belongs to that later slice.
-
-Build order:
-
-1. Terminals and file editors on the phone.
 
 ## Later, if use shows a need
 

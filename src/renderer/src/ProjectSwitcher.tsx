@@ -48,7 +48,7 @@ export function ProjectSwitcher(props: Props) {
   const isPath = query.startsWith('/') || query.startsWith('~')
   const completions = useDirectoryCompletions(isPath ? query : null)
   const compact = useIsCompact()
-  const files = useProjectFiles(open && !compact ? state.activeProjectId : null)
+  const files = useProjectFiles(open ? state.activeProjectId : null)
 
   useEffect(() => {
     if (open) {

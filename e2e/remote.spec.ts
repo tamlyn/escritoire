@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, realpath, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -106,6 +106,7 @@ test('a phone drives a session from its own layout', async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'escritoire-e2e-')))
   await mkdir(join(root, 'alpha'))
   await mkdir(join(root, 'beta'))
+  await writeFile(join(root, 'alpha', 'notes.txt'), 'some notes')
   const agent = fakeCodex(join(root, 'codex'))
   const { page, close } = await launchApp(join(root, 'data'), agent.env)
   await openProject(page, join(root, 'alpha'))
@@ -155,11 +156,29 @@ test('a phone drives a session from its own layout', async () => {
 
   // Turned on its side, a phone keeps the phone layout and so stays away from the desktop's saved layout.
   await phone.setViewportSize({ width: 844, height: 390 })
-  await expect(phone.getByRole('button', { name: 'Back to sessions' })).toBeVisible()
+  await expect(phone.getByRole('button', { name: 'Back' })).toBeVisible()
   await expect(phone.locator('[data-workspace]')).toHaveCount(0)
 
-  await phone.getByRole('button', { name: 'Back to sessions' }).click()
+  await phone.getByRole('button', { name: 'Back' }).click()
   await expect(phone.getByRole('button', { name: /^code/ })).toBeVisible()
+  await phone.setViewportSize({ width: 390, height: 664 })
+
+  // A file from the switcher, edited in a view of its own.
+  await phone.getByRole('banner').getByRole('button', { name: 'alpha' }).click()
+  await phone.getByRole('combobox').fill('notes')
+  await phone.getByRole('option', { name: 'notes.txt' }).click()
+  await expect(phone.getByText('some notes')).toBeVisible()
+  await phone.getByRole('button', { name: 'Back' }).click()
+
+  // A terminal the phone starts, with the keys a phone's keyboard lacks.
+  await phone.getByRole('button', { name: 'New terminal' }).click()
+  await expect(phone.getByRole('button', { name: 'Ctrl' })).toBeVisible()
+  await phone.locator('.xterm').click()
+  await phone.keyboard.type('echo from-the-phone')
+  await phone.keyboard.press('Enter')
+  await expect(phone.locator('.xterm-rows')).toContainText('from-the-phone')
+  await phone.getByRole('button', { name: 'Back' }).click()
+  await expect(phone.getByRole('button', { name: 'New terminal' })).toBeVisible()
 
   await browser.close()
   await close()

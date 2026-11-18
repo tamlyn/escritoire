@@ -88,6 +88,7 @@ export function App() {
             project={activeProject}
             pendingSession={pendingSession}
             onPendingSessionShown={clearPendingSession}
+            ref={workspaceRef}
           />
         ) : activeProject ? (
           <ProjectWorkspace

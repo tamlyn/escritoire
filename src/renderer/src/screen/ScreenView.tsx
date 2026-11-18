@@ -2,9 +2,9 @@ import '@xterm/xterm/css/xterm.css'
 import { FitAddon } from '@xterm/addon-fit'
 import { type ITheme, Terminal } from '@xterm/xterm'
 import { useEffect, useRef } from 'react'
-import { useParentTabState } from 'react-resizable-panels'
 import type { ScreenOutput, ScreenSize, ScreenSnapshot } from '../../../shared/screen'
 import { subscribe } from '../api'
+import { useIsCompact } from '../phone/compact'
 
 export type ScreenConnection = {
   /** Sends `screenOutput` for this screen from now on, and returns what's on it so far. */
@@ -17,12 +17,12 @@ export type ScreenConnection = {
 /**
  * Draws a pty that runs in main, which keeps the screen. Each mount starts
  * from main's snapshot, so unmounting (switching projects) loses nothing.
- * `connection` is read once per `screenId`.
+ * `connection` is read once per `screenId`. `shown` says its tab or screen is on display.
  */
-export function ScreenView({ screenId, connection }: { screenId: string; connection: ScreenConnection }) {
+export function ScreenView({ screenId, connection, shown: visible }: { screenId: string; connection: ScreenConnection; shown: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal>(null)
-  const visible = useParentTabState()?.isVisible ?? false
+  const compact = useIsCompact()
   const connectionRef = useRef(connection)
   connectionRef.current = connection
 
@@ -94,8 +94,9 @@ export function ScreenView({ screenId, connection }: { screenId: string; connect
   }, [screenId])
 
   useEffect(() => {
-    if (visible) terminalRef.current?.focus()
-  }, [visible])
+    // On a phone, focusing would cover the screen with the keyboard before it's asked for.
+    if (visible && !compact) terminalRef.current?.focus()
+  }, [visible, compact])
 
   // Padded outside the container, which the fit addon measures.
   return (
