@@ -44,4 +44,3 @@ Agentic IDE built with Electron. `HISTORY.md` holds the decisions, tech stack an
 - The shadcn CLI writes `import { cn } from "cn"` and adds an unrelated `cn` npm package. Fix the import to `@/lib/utils` and remove the package after `shadcn add`.
 - pnpm enforces a minimum release age. Pin a slightly older version rather than adding exclusions.
 - Shells started from VS Code inherit `ELECTRON_RUN_AS_NODE=1`, which makes Electron refuse Playwright's flags ("bad option: --remote-debugging-port"). Run e2e tests with `env -u ELECTRON_RUN_AS_NODE`.
-
