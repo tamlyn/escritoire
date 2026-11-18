@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input'
 import type { DirectoryEntry } from '../../shared/files'
 import { api, errorMessage, flushers } from './api'
+import { tabsetsIn } from './layout-tree'
 import { isWithin, newFileTarget, normalizePath } from './new-file'
 import { useProject } from './project-context'
 import { reloadConnections } from './sql'
@@ -239,24 +240,17 @@ async function flushEditors(): Promise<void> {
  * closes them if it was deleted (`to` is `null`).
  */
 function moveFileTabs(workspace: Workspace, from: string, to: string | null): void {
-  const model = workspace.getModel()
-  const visit = (node: WorkspaceNode<TabData>) => {
-    if (node.type === 'split') {
-      node.children.forEach(visit)
-      return
-    }
-    for (const tab of node.tabs) {
+  for (const tabset of tabsetsIn(workspace.getModel())) {
+    for (const tab of tabset.tabs) {
       if (tab.data.kind !== 'file' || !isWithin(tab.data.path, from)) continue
       if (to !== null) {
         const path = to + tab.data.path.slice(from.length)
         workspace.addTab(
           { ...createFileTab(path), data: { ...tab.data, path } },
-          { tabsetId: node.id, index: node.tabs.indexOf(tab), select: node.selectedId === tab.id },
+          { tabsetId: tabset.id, index: tabset.tabs.indexOf(tab), select: tabset.selectedId === tab.id },
         )
       }
       workspace.closeTab(tab.id)
     }
   }
-  visit(model.root)
-  model.floating?.forEach(visit)
 }

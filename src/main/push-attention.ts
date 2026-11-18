@@ -1,8 +1,6 @@
-import type { SessionSummary } from '../shared/agent'
-import { attentionMessage, needingAttention, newlyNeedingAttention } from '../shared/attention'
-import type { PushPayload, PushSubscription } from '../shared/remote'
-
-export type PushTarget = { deviceId: string; subscription: PushSubscription }
+import { sessionTarget, type SessionSummary } from '../shared/agent'
+import { attentionMessage, newlyNeedingAttention } from '../shared/attention'
+import type { PushPayload, PushTarget } from '../shared/remote'
 
 export type PushAttentionDeps = {
   /** The subscribed devices, none while remote access is off. */
@@ -28,15 +26,13 @@ export class PushAttention {
   update(summaries: SessionSummary[]): void {
     const news = newlyNeedingAttention(this.summaries, summaries)
     this.summaries = summaries
-    const needing = new Set(needingAttention(summaries).map((session) => session.agentSessionId))
-    for (const id of this.held) if (!needing.has(id)) this.held.delete(id)
     if (this.deps.desktopPresent()) for (const session of news) this.held.add(session.agentSessionId)
     else this.push(news)
   }
 
   /** The user has left the desktop. */
   desktopLeft(): void {
-    this.push(this.summaries.filter((session) => this.held.has(session.agentSessionId)))
+    this.push(this.summaries.filter((session) => session.attention !== null && this.held.has(session.agentSessionId)))
     this.held.clear()
   }
 
@@ -53,11 +49,7 @@ export class PushAttention {
     return {
       title: this.deps.projectName(session.projectId),
       body: attentionMessage(session),
-      session: {
-        projectId: session.projectId,
-        pointer: { agent: session.agent, agentSessionId: session.agentSessionId },
-        title: session.title,
-      },
+      session: sessionTarget(session),
     }
   }
 }

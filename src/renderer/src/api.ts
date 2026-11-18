@@ -59,7 +59,7 @@ export function rememberActiveProject(id: string | null): void {
   } catch { /* It only misses returning to this project after a reload. */ }
 }
 
-export type ConnectionState = {
+type ConnectionState = {
   reconnecting: boolean
   /** Edits that couldn't be saved on reconnecting, which reloading the views would discard. */
   unsavedError: string | null
@@ -69,7 +69,6 @@ export type ConnectionState = {
 
 let connectionState: ConnectionState = { reconnecting: false, unsavedError: null, epoch: 0 }
 const connectionListeners = new Set<() => void>()
-const reloadListeners = new Set<() => void>()
 
 function setConnectionState(next: Partial<ConnectionState>): void {
   connectionState = { ...connectionState, ...next }
@@ -86,13 +85,7 @@ export function useConnectionState(): ConnectionState {
   )
 }
 
-/** For stores that outlive the views, to fetch their lists again. */
-export function onViewsReloaded(listener: () => void): void {
-  reloadListeners.add(listener)
-}
-
 export function reloadViews(): void {
-  for (const listener of reloadListeners) listener()
   setConnectionState({ unsavedError: null, epoch: connectionState.epoch + 1 })
 }
 

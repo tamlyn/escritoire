@@ -1,8 +1,9 @@
 import { useCallback, useEffect } from 'react'
-import { useParentTabState, useParentWorkspace, type WorkspaceNode } from 'react-resizable-panels'
+import { useParentTabState, useParentWorkspace } from 'react-resizable-panels'
 import type { SessionPointer } from '../../../shared/agent'
+import { tabsetsIn } from '../layout-tree'
 import { useSessionSummary } from '../sessions'
-import { createSessionTab, type Tab, type TabData } from '../tabs'
+import { createFileTab, createSessionTab, type Tab, type TabData } from '../tabs'
 import { SessionView } from './SessionView'
 
 export function SessionTab({ tab, pointer }: { tab: Tab; pointer: SessionPointer }) {
@@ -18,24 +19,19 @@ export function SessionTab({ tab, pointer }: { tab: Tab; pointer: SessionPointer
   const followConversation = useCallback((movedTo: string) => {
     if (!workspace) return
     // The tab follows the conversation, in its place.
-    const visit = (node: WorkspaceNode<TabData>) => {
-      if (node.type === 'split') {
-        node.children.forEach(visit)
-        return
-      }
-      const index = node.tabs.findIndex((other) => other.id === tab.id)
-      if (index === -1) return
+    for (const tabset of tabsetsIn(workspace.getModel())) {
+      const index = tabset.tabs.findIndex((other) => other.id === tab.id)
+      if (index === -1) continue
       workspace.addTab(createSessionTab({ agent: pointer.agent, agentSessionId: movedTo }, ''), {
-        tabsetId: node.id,
+        tabsetId: tabset.id,
         index,
-        select: node.selectedId === tab.id,
+        select: tabset.selectedId === tab.id,
       })
       workspace.closeTab(tab.id)
     }
-    const model = workspace.getModel()
-    visit(model.root)
-    model.floating?.forEach(visit)
   }, [workspace, tab.id, pointer.agent])
 
-  return <SessionView pointer={pointer} shown={shown} onMoved={followConversation} />
+  const openFile = useCallback((path: string) => workspace?.addTab(createFileTab(path)), [workspace])
+
+  return <SessionView pointer={pointer} shown={shown} autoFocus={shown} onMoved={followConversation} onOpenFile={openFile} />
 }

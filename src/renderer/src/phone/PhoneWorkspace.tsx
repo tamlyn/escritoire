@@ -1,6 +1,6 @@
-import { ChevronLeftIcon, SquareTerminalIcon } from 'lucide-react'
+import { ChevronLeftIcon } from 'lucide-react'
 import { type Ref, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
-import type { PastSession } from '../../../shared/agent'
+import type { PastSession, SessionPointer } from '../../../shared/agent'
 import type { Project } from '../../../shared/api'
 import { baseName } from '../../../shared/files'
 import { api } from '../api'
@@ -9,7 +9,7 @@ import { ProjectContext } from '../project-context'
 import type { PendingSession, ProjectWorkspaceHandle } from '../ProjectWorkspace'
 import { SessionIndicator } from '../session/SessionIndicator'
 import { SessionView } from '../session/SessionView'
-import { NewSessionButton, PastSessionRow, startButton, useStartSession } from '../session/StartSession'
+import { NewSessionButton, NewTerminalButton, PastSessionRow, useStartSession } from '../session/StartSession'
 import { useSessionSummaries, useSessionSummary } from '../sessions'
 import { TabErrorBoundary } from '../TabErrorBoundary'
 import { createTerminalTab } from '../tabs'
@@ -42,21 +42,19 @@ type Show = (view: PhoneView | null) => void
  */
 export function PhoneWorkspace({ project, pendingSession, onPendingSessionShown, ref }: Props) {
   const [view, setView] = useState(() => openViewIn(project.id))
-  const current = useRef(view)
 
   const show = useCallback<Show>((next) => {
-    current.current = next
     rememberOpenView(project.id, next)
     setView(next)
   }, [project.id])
 
   useImperativeHandle(ref, () => ({
-    openFile: (path) => show({ kind: 'file', path, from: current.current?.kind === 'session' ? current.current : null }),
-  }), [show])
+    openFile: (path) => show({ kind: 'file', path, from: view?.kind === 'session' ? view : null }),
+  }), [show, view])
 
   /** Nothing else would ever close a terminal the phone started. Other ways of leaving keep it running. */
-  function leaveTerminal(terminalId: string, startedHere: boolean) {
-    if (startedHere) {
+  function leaveTerminal(terminalId: string) {
+    if (startedTerminalsIn(project.id).includes(terminalId)) {
       forgetStartedTerminal(project.id, terminalId)
       void api.closeTerminal(project.id, terminalId)
     }
@@ -76,7 +74,7 @@ export function PhoneWorkspace({ project, pendingSession, onPendingSessionShown,
       ) : view?.kind === 'file' ? (
         <OpenFile key={view.path} path={view.path} onBack={() => show(view.from)} />
       ) : view?.kind === 'terminal' ? (
-        <Screen title={view.title} onBack={() => leaveTerminal(view.terminalId, view.startedHere)}>
+        <Screen title={view.title} onBack={() => leaveTerminal(view.terminalId)}>
           <PhoneTerminal key={view.terminalId} terminalId={view.terminalId} />
         </Screen>
       ) : (
@@ -117,9 +115,7 @@ function OpenSession({ view, onShow }: { view: SessionPhoneView; onShow: Show })
     (agentSessionId: string) => onShow({ kind: 'session', pointer: { agent, agentSessionId }, title }),
     [agent, title, onShow],
   )
-  const viewRef = useRef(view)
-  viewRef.current = view
-  const openFile = useCallback((path: string) => onShow({ kind: 'file', path, from: viewRef.current }), [onShow])
+  const openFile = useCallback((path: string) => onShow({ kind: 'file', path, from: view }), [view, onShow])
 
   // Closed on another client, such as by closing its desktop tab.
   const wasLoaded = useRef(false)
@@ -151,6 +147,32 @@ function OpenFile({ path, onBack }: { path: string; onBack: () => void }) {
   )
 }
 
+const pastSessionsLifetimeMs = 30_000
+const recentPastSessions = new Map<string, { at: number; sessions: Promise<PastSession[]> }>()
+
+/** Listing Codex's sessions starts a process, which going back to the list shouldn't do every time. */
+function pastSessionsOf(projectId: string): Promise<PastSession[]> {
+  const recent = recentPastSessions.get(projectId)
+  if (recent && Date.now() - recent.at < pastSessionsLifetimeMs) return recent.sessions
+  const sessions = api.listPastSessions(projectId)
+  recentPastSessions.set(projectId, { at: Date.now(), sessions })
+  sessions.catch(() => recentPastSessions.delete(projectId))
+  return sessions
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="flex flex-col gap-1">
+      <h2 className="text-muted-foreground mb-1 px-2 text-xs font-medium">{title}</h2>
+      {children}
+    </section>
+  )
+}
+
+function TerminalRow({ title, onOpen }: { title: string; onOpen: () => void }) {
+  return <button type="button" onClick={onOpen} className="hover:bg-accent rounded-md px-2 py-2.5 text-left">{title}</button>
+}
+
 function ProjectHome({ projectId, onOpen }: { projectId: string; onOpen: Show }) {
   const summaries = useSessionSummaries()
   const [pastSessions, setPastSessions] = useState<PastSession[]>([])
@@ -159,7 +181,7 @@ function ProjectHome({ projectId, onOpen }: { projectId: string; onOpen: Show })
 
   useEffect(() => {
     let cancelled = false
-    api.listPastSessions(projectId).then(
+    pastSessionsOf(projectId).then(
       (sessions) => { if (!cancelled) setPastSessions(sessions) },
       (error: unknown) => console.error(error),
     )
@@ -172,83 +194,55 @@ function ProjectHome({ projectId, onOpen }: { projectId: string; onOpen: Show })
 
   const { loaded, past } = listSessions(projectId, summaries, pastSessions)
   const started = startedTerminalsIn(projectId)
+  const openSession = ({ agent, agentSessionId, title }: SessionPointer & { title: string }) =>
+    onOpen({ kind: 'session', pointer: { agent, agentSessionId }, title })
+  const openTerminal = (terminalId: string, title: string) => onOpen({ kind: 'terminal', terminalId, title })
+
+  function startTerminal() {
+    const terminalId = createTerminalTab().id
+    rememberStartedTerminal(projectId, terminalId)
+    openTerminal(terminalId, 'Terminal')
+  }
 
   return (
     <div className="flex h-full flex-col gap-6 overflow-y-auto p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
       {loaded.length > 0 && (
-        <section className="flex flex-col gap-1">
-          <h2 className="text-muted-foreground mb-1 px-2 text-xs font-medium">Sessions</h2>
+        <Section title="Sessions">
           {loaded.map((session) => (
             <button
               key={session.agentSessionId}
               type="button"
-              onClick={() => onOpen({ kind: 'session', pointer: { agent: session.agent, agentSessionId: session.agentSessionId }, title: session.title })}
+              onClick={() => openSession(session)}
               className="hover:bg-accent flex items-center gap-2 rounded-md px-2 py-2.5 text-left"
             >
               <span className="min-w-0 flex-1 truncate">{session.title || 'New session'}</span>
               <SessionIndicator summary={session} />
             </button>
           ))}
-        </section>
+        </Section>
       )}
       <div className="flex flex-col gap-2">
         <NewSessionButton agent="claude" starting={starting} onStart={(agent) => void start(agent)} />
         <NewSessionButton agent="codex" starting={starting} onStart={(agent) => void start(agent)} />
-        <button
-          type="button"
-          onClick={() => {
-            const terminalId = createTerminalTab().id
-            rememberStartedTerminal(projectId, terminalId)
-            onOpen({ kind: 'terminal', terminalId, title: 'Terminal', startedHere: true })
-          }}
-          className={startButton}
-        >
-          <SquareTerminalIcon className="text-muted-foreground size-5" />
-          <span className="font-medium">New terminal</span>
-        </button>
+        <NewTerminalButton onClick={startTerminal} />
         {startError && <p role="alert" className="text-destructive px-1 text-sm">{startError}</p>}
       </div>
       {started.length > 0 && (
-        <section className="flex flex-col gap-1">
-          <h2 className="text-muted-foreground mb-1 px-2 text-xs font-medium">Terminals on this phone</h2>
+        <Section title="Terminals on this phone">
           {started.map((terminalId, index) => (
-            <button
-              key={terminalId}
-              type="button"
-              onClick={() => onOpen({ kind: 'terminal', terminalId, title: 'Terminal', startedHere: true })}
-              className="hover:bg-accent rounded-md px-2 py-2.5 text-left"
-            >
-              Terminal {index + 1}
-            </button>
+            <TerminalRow key={terminalId} title={`Terminal ${index + 1}`} onOpen={() => openTerminal(terminalId, 'Terminal')} />
           ))}
-        </section>
+        </Section>
       )}
       {terminals.length > 0 && (
-        <section className="flex flex-col gap-1">
-          <h2 className="text-muted-foreground mb-1 px-2 text-xs font-medium">Desktop terminals</h2>
-          {terminals.map((terminal) => (
-            <button
-              key={terminal.id}
-              type="button"
-              onClick={() => onOpen({ kind: 'terminal', terminalId: terminal.id, title: terminal.title, startedHere: false })}
-              className="hover:bg-accent rounded-md px-2 py-2.5 text-left"
-            >
-              {terminal.title}
-            </button>
-          ))}
-        </section>
+        <Section title="Desktop terminals">
+          {terminals.map(({ id, title }) => <TerminalRow key={id} title={title} onOpen={() => openTerminal(id, title)} />)}
+        </Section>
       )}
       {past.length > 0 && (
-        <section className="flex flex-col gap-1">
-          <h2 className="text-muted-foreground mb-1 px-2 text-xs font-medium">Recent sessions</h2>
-          {past.map((session) => (
-            <PastSessionRow
-              key={session.agentSessionId}
-              session={session}
-              onOpen={() => onOpen({ kind: 'session', pointer: { agent: session.agent, agentSessionId: session.agentSessionId }, title: session.title })}
-            />
-          ))}
-        </section>
+        <Section title="Recent sessions">
+          {past.map((session) => <PastSessionRow key={session.agentSessionId} session={session} onOpen={() => openSession(session)} />)}
+        </Section>
       )}
     </div>
   )

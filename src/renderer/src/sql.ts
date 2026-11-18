@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import type { Connection, ProjectConnections, StatementResult } from '../../shared/sql'
-import { api, errorMessage, onViewsReloaded } from './api'
+import { api, errorMessage } from './api'
 
 /** The latest run of a SQL file. `results` grows to match `statements` unless it stops early. */
 export type SqlRun = {
@@ -15,8 +15,6 @@ export type SqlRun = {
 const connections = new Map<string, ProjectConnections>()
 const runs = new Map<string, SqlRun>()
 const listeners = new Set<() => void>()
-
-onViewsReloaded(() => connections.clear())
 
 function changed() {
   for (const listener of listeners) listener()
@@ -39,7 +37,7 @@ function update(projectId: string, request: Promise<ProjectConnections>): Promis
 /** `undefined` until loaded. */
 export function useConnections(projectId: string): ProjectConnections | undefined {
   useEffect(() => {
-    if (!connections.has(projectId)) void update(projectId, api.listConnections(projectId))
+    void update(projectId, api.listConnections(projectId))
   }, [projectId])
   return useStore(() => connections.get(projectId))
 }

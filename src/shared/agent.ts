@@ -238,6 +238,16 @@ export type Attention = 'waiting' | 'unread' | null
 
 export type PastSession = SessionPointer & { title: string; lastActiveAt: number }
 
+/** How many past sessions to offer. */
+export const maxPastSessions = 20
+
+/** A session to go to, from a notification or the inbox. */
+export type SessionTarget = { projectId: string; pointer: SessionPointer; title: string }
+
+export function sessionTarget({ projectId, agent, agentSessionId, title }: SessionSummary): SessionTarget {
+  return { projectId, pointer: { agent, agentSessionId }, title }
+}
+
 export type OpenedSession = {
   view: SessionView
   /** Events with this sequence number or lower are already in `view`. */

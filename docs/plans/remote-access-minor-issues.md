@@ -13,7 +13,6 @@ Found while reviewing each step and left for now. None loses work.
 
 - **The phone can't close a session.** A session started on the phone has no desktop tab, so its agent keeps running until the project closes. The plan accepted this (problem 5); a close control may be wanted once it's been used.
 - **Sessions with no desktop tab lose their unread state on restart**, because `restoreUnread` only restores sessions that have a tab. (`main/index.ts`)
-- **The desktop window gets the `compact` styles when narrowed**, such as larger inputs, though it keeps the desktop layout. (`renderer/src/styles.css`)
 - **The phone's back gesture leaves the app** rather than returning to the session list, since opening a session adds no history entry. (`phone/PhoneWorkspace.tsx`)
 
 ## Step 3: Web Push

@@ -62,8 +62,9 @@ export class Clients {
   /** `activeProjectId` is where a reconnecting client was, which doesn't count as activating it. */
   connect(
     send: SendEvent,
-    { desktop, deviceId = null, activeProjectId = null }: { desktop: boolean; deviceId?: string | null; activeProjectId?: string | null },
+    { deviceId = null, activeProjectId = null }: { deviceId?: string | null; activeProjectId?: string | null },
   ): Client {
+    const desktop = deviceId === null
     const client: Client = {
       send,
       desktop,

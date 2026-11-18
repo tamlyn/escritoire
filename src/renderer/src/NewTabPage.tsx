@@ -1,15 +1,14 @@
-import { FilePlusIcon, SquareTerminalIcon } from 'lucide-react'
+import { FilePlusIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useParentTab, useParentWorkspace } from 'react-resizable-panels'
-import type { PastSession } from '../../shared/agent'
+import { maxPastSessions, type PastSession } from '../../shared/agent'
 import { api } from './api'
 import { useFileActions } from './file-actions'
 import { useProject } from './project-context'
-import { NewSessionButton, PastSessionRow, startButton, useStartSession } from './session/StartSession'
+import { NewSessionButton, NewTerminalButton, PastSessionRow, startButton, useStartSession } from './session/StartSession'
 import { modifierLabel } from './shortcuts'
 import { createFileTab, createSessionTab, createTerminalTab, type Tab, type TabData } from './tabs'
 
-const maxPastSessions = 20
 
 /** What an empty tab offers: start a session, or resume a recent one. */
 export function NewTabPage({ tab }: { tab: Tab }) {
@@ -43,10 +42,7 @@ export function NewTabPage({ tab }: { tab: Tab }) {
         <div className="flex flex-col gap-2">
           <NewSessionButton agent="claude" starting={starting} onStart={(agent) => void start(agent)} autoFocus />
           <NewSessionButton agent="codex" starting={starting} onStart={(agent) => void start(agent)} />
-          <button type="button" onClick={() => replaceWith(createTerminalTab())} className={startButton}>
-            <SquareTerminalIcon className="text-muted-foreground size-5" />
-            <span className="font-medium">New terminal</span>
-          </button>
+          <NewTerminalButton onClick={() => replaceWith(createTerminalTab())} />
           <button
             type="button"
             onClick={() => fileActions.newFile('', (path) => replaceWith(createFileTab(path)))}

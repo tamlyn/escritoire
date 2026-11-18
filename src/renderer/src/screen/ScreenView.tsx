@@ -4,7 +4,6 @@ import { type ITheme, Terminal } from '@xterm/xterm'
 import { type RefObject, useEffect, useRef } from 'react'
 import type { ScreenOutput, ScreenSize, ScreenSnapshot } from '../../../shared/screen'
 import { subscribe } from '../api'
-import { useIsCompact } from '../phone/compact'
 
 export type ScreenConnection = {
   /** Sends `screenOutput` for this screen from now on, and returns what's on it so far. */
@@ -17,19 +16,18 @@ export type ScreenConnection = {
 /**
  * Draws a pty that runs in main, which keeps the screen. Each mount starts
  * from main's snapshot, so unmounting (switching projects) loses nothing.
- * `connection` is read once per `screenId`. `shown` says its tab or screen is on display.
+ * `connection` is read once per `screenId`.
  */
-export function ScreenView({ screenId, connection, shown: visible, terminalRef: givenRef }: {
+export function ScreenView({ screenId, connection, autoFocus = false, terminalRef: givenRef }: {
   screenId: string
   connection: ScreenConnection
-  shown: boolean
+  autoFocus?: boolean
   /** Set to the terminal while it exists. */
   terminalRef?: RefObject<Terminal | null>
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const ownRef = useRef<Terminal>(null)
   const terminalRef = givenRef ?? ownRef
-  const compact = useIsCompact()
   const connectionRef = useRef(connection)
   connectionRef.current = connection
 
@@ -101,9 +99,8 @@ export function ScreenView({ screenId, connection, shown: visible, terminalRef: 
   }, [screenId])
 
   useEffect(() => {
-    // On a phone, focusing would cover the screen with the keyboard before it's asked for.
-    if (visible && !compact) terminalRef.current?.focus()
-  }, [visible, compact])
+    if (autoFocus) terminalRef.current?.focus()
+  }, [autoFocus])
 
   // Padded outside the container, which the fit addon measures.
   return (

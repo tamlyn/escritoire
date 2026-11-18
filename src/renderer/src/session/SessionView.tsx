@@ -2,7 +2,6 @@ import { LoaderCircleIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { SessionPointer, SessionStatus } from '../../../shared/agent'
 import { api } from '../api'
-import { useIsCompact } from '../phone/compact'
 import { useProject } from '../project-context'
 import { useSession, useSettingChoices } from '../sessions'
 import { BackgroundTasks } from './BackgroundTasks'
@@ -18,17 +17,17 @@ import { Transcript } from './Transcript'
  * whether its tab or screen is on display; `onMoved` is told the session the
  * conversation continues in after the agent resets it.
  */
-export function SessionView({ pointer, shown, onMoved, onOpenFile }: {
+export function SessionView({ pointer, shown, autoFocus = false, onMoved, onOpenFile }: {
   pointer: SessionPointer
   shown: boolean
+  autoFocus?: boolean
   onMoved: (agentSessionId: string) => void
-  onOpenFile?: (path: string) => void
+  onOpenFile: (path: string) => void
 }) {
   const project = useProject()
   const session = useSession(project.id, pointer)
   const choices = useSettingChoices(project.id, pointer.agent)
   const pageViewed = usePageViewed()
-  const compact = useIsCompact()
   const loaded = session !== null
   const visible = loaded && shown && pageViewed
 
@@ -60,8 +59,7 @@ export function SessionView({ pointer, shown, onMoved, onOpenFile }: {
           pointer={pointer}
           initialDraft={session.draft}
           working={working}
-          // On a phone, focusing would cover the transcript with the keyboard.
-          autoFocus={shown && !compact}
+          autoFocus={autoFocus}
           settings={view.settings}
           choices={choices}
         >

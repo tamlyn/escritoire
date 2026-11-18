@@ -2,7 +2,16 @@ import { useParentTabState } from 'react-resizable-panels'
 import { api } from '../api'
 import { useProject } from '../project-context'
 import type { Tab } from '../tabs'
-import { ScreenView } from './ScreenView'
+import { type ScreenConnection, ScreenView } from './ScreenView'
+
+export function terminalConnection(projectId: string, terminalId: string): ScreenConnection {
+  return {
+    attach: (size) => api.attachTerminal(projectId, terminalId, size),
+    detach: () => void api.detachTerminal(terminalId),
+    write: (data) => void api.writeTerminal(terminalId, data),
+    resize: (size) => void api.resizeTerminal(terminalId, size),
+  }
+}
 
 /** An interactive shell; the tab's id identifies it in main. */
 export function TerminalTab({ tab }: { tab: Tab }) {
@@ -12,13 +21,8 @@ export function TerminalTab({ tab }: { tab: Tab }) {
   return (
     <ScreenView
       screenId={terminalId}
-      shown={shown}
-      connection={{
-        attach: (size) => api.attachTerminal(projectId, terminalId, size),
-        detach: () => void api.detachTerminal(terminalId),
-        write: (data) => void api.writeTerminal(terminalId, data),
-        resize: (size) => void api.resizeTerminal(terminalId, size),
-      }}
+      autoFocus={shown}
+      connection={terminalConnection(projectId, terminalId)}
     />
   )
 }

@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
-import type { PastSession, SessionSummary } from '../../../shared/agent'
-import { listSessions, maxPastSessions, terminalsIn, withCtrl } from './phone-views'
+import { maxPastSessions, type PastSession, type SessionSummary } from '../../../shared/agent'
+import { listSessions, terminalsIn, withCtrl } from './phone-views'
 
 const summary = (agentSessionId: string, projectId = 'p'): SessionSummary =>
   ({ agent: 'claude', agentSessionId, projectId, title: agentSessionId, status: 'idle', attention: null })

@@ -17,13 +17,14 @@ import {
   usePanelRef,
   useWorkspaceRef,
 } from 'react-resizable-panels'
-import type { SessionPointer } from '../../shared/agent'
+import type { SessionTarget } from '../../shared/agent'
 import type { Project } from '../../shared/api'
 import { api } from './api'
 import { FileTree } from './FileTree'
 import { FileActionsProvider, useFileActions } from './file-actions'
 import { diffSide } from './git/DiffTab'
 import { GitStatusRow } from './git/GitStatusRow'
+import { tabsetsIn } from './layout-tree'
 import { ProjectContext } from './project-context'
 import { SessionIndicator } from './session/SessionIndicator'
 import { useSessionSummary } from './sessions'
@@ -53,7 +54,7 @@ const emptyModel: WorkspaceModelInput<TabData> = {
 export type ProjectWorkspaceHandle = { openFile: (path: string) => void }
 
 /** A session to show once the project's tabs have loaded. */
-export type PendingSession = { projectId: string; pointer: SessionPointer; title: string }
+export type PendingSession = SessionTarget
 
 type Props = {
   project: Project
@@ -173,14 +174,7 @@ function NewFileShortcut() {
 }
 
 function tabsIn(model: WorkspaceModel<TabData>): Map<string, TabData> {
-  const tabs = new Map<string, TabData>()
-  const visit = (node: WorkspaceNode<TabData>) => {
-    if (node.type === 'split') node.children.forEach(visit)
-    else for (const tab of node.tabs) tabs.set(tab.id, tab.data)
-  }
-  visit(model.root)
-  model.floating?.forEach(visit)
-  return tabs
+  return new Map([...tabsetsIn(model)].flatMap((tabset) => tabset.tabs.map((tab) => [tab.id, tab.data] as const)))
 }
 
 function release(projectId: string, tabId: string, data: TabData): void {

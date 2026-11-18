@@ -1,11 +1,12 @@
 import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { join } from 'node:path'
-import { defaultRemotePort, type PairedDevice, pairPath, type PushSubscription, type RemoteAccess as RemoteAccessState, type TailscaleState } from '../shared/remote'
+import { defaultRemotePort, type PairedDevice, pairPath, type PushSubscription, type PushTarget, type RemoteAccess as RemoteAccessState, type TailscaleState } from '../shared/remote'
 import type { Hello } from '../shared/api-client'
 import { ApiServer, type Connection, type SendEvent, tokensMatch } from './api-server'
 import { readJson, writeJson } from './json-file'
 import { serveFile } from './static-files'
+import type { TailscaleCli } from './tailscale'
 
 /** Only a hash of each token is kept, so reading the data directory yields nothing usable. */
 type SavedDevice = Omit<PairedDevice, 'connected'> & { tokenHash: string; pushSubscription?: PushSubscription }
@@ -23,7 +24,7 @@ export type RemoteAccessOptions = {
   /** Serves a paired device's connection. */
   connect: (send: SendEvent, client: { deviceId: string; activeProjectId: string | null }) => Connection
   onChange: (state: RemoteAccessState) => void
-  tailscale: { state(port: number): Promise<TailscaleState>; publish(port: number, previousPort: number | null): Promise<TailscaleState> }
+  tailscale: Pick<TailscaleCli, 'state' | 'publish'>
 }
 
 /**
@@ -128,23 +129,24 @@ export class RemoteAccess {
   }
 
   /** The devices to notify. Turning remote access off pauses them without forgetting their subscriptions. */
-  pushTargets(): { deviceId: string; subscription: PushSubscription }[] {
+  pushTargets(): PushTarget[] {
     if (!this.saved.enabled) return []
     return this.saved.devices.flatMap(({ id, pushSubscription }) => pushSubscription ? [{ deviceId: id, subscription: pushSubscription }] : [])
   }
 
-  async setPushSubscription(deviceId: string, subscription: PushSubscription | null): Promise<void> {
+  async setPushSubscription(deviceId: string, subscription: PushSubscription): Promise<void> {
     const device = this.saved.devices.find((d) => d.id === deviceId)
     if (!device) return
-    if (subscription) device.pushSubscription = subscription
-    else delete device.pushSubscription
+    device.pushSubscription = subscription
     await this.save()
   }
 
   /** The browser withdrew this subscription, unless the device has since sent a newer one. */
   async forgetPushSubscription(deviceId: string, endpoint: string): Promise<void> {
     const device = this.saved.devices.find((d) => d.id === deviceId)
-    if (device?.pushSubscription?.endpoint === endpoint) await this.setPushSubscription(deviceId, null)
+    if (device?.pushSubscription?.endpoint !== endpoint) return
+    delete device.pushSubscription
+    await this.save()
   }
 
   /** Waits for saves in flight. Devices disconnecting from now on aren't recorded as seen. */

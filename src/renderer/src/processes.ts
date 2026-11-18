@@ -1,6 +1,6 @@
 import { useMemo, useSyncExternalStore } from 'react'
 import type { ProcessInfo } from '../../shared/process'
-import { api, onViewsReloaded, subscribe } from './api'
+import { subscribe } from './api'
 
 let processes: ProcessInfo[] = []
 const listeners = new Set<() => void>()
@@ -10,18 +10,8 @@ function setProcesses(next: ProcessInfo[]) {
   for (const listener of listeners) listener()
 }
 
-// The initial list mustn't overwrite a newer one pushed while it was loading.
-let pushed = false
-subscribe('processesChanged', (next) => {
-  pushed = true
-  setProcesses(next)
-})
-function loadProcesses() {
-  pushed = false
-  api.listProcesses().then((initial) => pushed || setProcesses(initial)).catch((error: unknown) => console.error(error))
-}
-loadProcesses()
-onViewsReloaded(loadProcesses)
+// Main sends the list as each connection opens, then whenever it changes.
+subscribe('processesChanged', setProcesses)
 
 export function useAllProcesses(): ProcessInfo[] {
   return useSyncExternalStore(

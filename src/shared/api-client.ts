@@ -29,7 +29,7 @@ export type ApiClient = {
   checkConnection(): void
 }
 
-export type ApiClientOptions = {
+type ApiClientOptions = {
   /** Disconnected and retrying, or for good if the error is `notAuthorized`. */
   onLost?: (error: Error) => void
   onReconnected?: () => void
@@ -141,14 +141,14 @@ export function connectApi(
   }
 
   async function call(method: string, args: unknown[]): Promise<unknown> {
-    const open = await whenOpen()
+    const ready = await whenOpen()
     // JSON turns a trailing undefined argument into null; left off, it arrives as undefined.
-    let end = args.length
-    while (end > 0 && args[end - 1] === undefined) end--
+    let argCount = args.length
+    while (argCount > 0 && args[argCount - 1] === undefined) argCount--
     const id = nextId++
     return new Promise((resolve, reject) => {
       calls.set(id, { resolve, reject })
-      open.send(JSON.stringify({ id, method, args: args.slice(0, end) } satisfies Request))
+      ready.send(JSON.stringify({ id, method, args: args.slice(0, argCount) } satisfies Request))
     })
   }
 

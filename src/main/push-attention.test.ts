@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Attention, SessionSummary } from '../shared/agent'
-import { PushAttention, type PushTarget } from './push-attention'
+import type { PushTarget } from '../shared/remote'
+import { PushAttention, type PushAttentionDeps } from './push-attention'
 
 const subscription = { endpoint: 'https://push.example/1', keys: { p256dh: 'p', auth: 'a' } }
 const phone: PushTarget = { deviceId: 'phone', subscription }
@@ -13,14 +14,19 @@ let desktopPresent: boolean
 let shownOn: string[]
 const send = vi.fn(async () => {})
 
-function becomeWaiting(): void {
-  const attention = new PushAttention({
+function create(): PushAttention {
+  const deps: PushAttentionDeps = {
     targets: () => targets,
     desktopPresent: () => desktopPresent,
     deviceShows: (deviceId) => shownOn.includes(deviceId),
     projectName: () => 'Project',
     send,
-  })
+  }
+  return new PushAttention(deps)
+}
+
+function becomeWaiting(): void {
+  const attention = create()
   attention.update([summary(null)])
   attention.update([summary('waiting')])
 }
@@ -66,13 +72,7 @@ describe('pushes a session that needs the user', () => {
 describe('holds what comes up while the user is at the desktop', () => {
   function attentionWhilePresent() {
     desktopPresent = true
-    const attention = new PushAttention({
-      targets: () => targets,
-      desktopPresent: () => desktopPresent,
-      deviceShows: () => false,
-      projectName: () => 'Project',
-      send,
-    })
+    const attention = create()
     attention.update([summary(null)])
     attention.update([summary('waiting')])
     return attention
@@ -98,13 +98,6 @@ describe('holds what comes up while the user is at the desktop', () => {
 })
 
 it('pushes nothing for a session that has only just loaded', () => {
-  const attention = new PushAttention({
-    targets: () => targets,
-    desktopPresent: () => false,
-    deviceShows: () => false,
-    projectName: () => 'Project',
-    send,
-  })
-  attention.update([summary('waiting')])
+  create().update([summary('waiting')])
   expect(send).not.toHaveBeenCalled()
 })

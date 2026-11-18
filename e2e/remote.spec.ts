@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { chromium, devices, expect, test, webkit } from '@playwright/test'
+import { chromium, devices, expect, type Page, test, webkit } from '@playwright/test'
 import { fakeCodex, openProject } from './agent'
 import { launchApp } from './app'
 
@@ -14,23 +14,33 @@ async function freePort(): Promise<number> {
   return port
 }
 
+async function turnOnRemoteAccess(page: Page): Promise<number> {
+  const port = await freePort()
+  await page.getByRole('button', { name: 'Remote access' }).click()
+  await page.getByLabel('Port').fill(String(port))
+  await page.getByRole('button', { name: 'Turn on' }).click()
+  return port
+}
+
+/** With the remote access dialog open on the desktop. */
+async function pair(page: Page, remote: Page, port: number): Promise<void> {
+  await page.getByRole('button', { name: 'Pair a device' }).click()
+  const code = await page.getByLabel('Pairing code').textContent()
+  await remote.goto(`http://127.0.0.1:${port}/`)
+  await remote.getByLabel('Pairing code').fill(code!)
+  await remote.getByRole('button', { name: 'Pair' }).click()
+}
+
 for (const [name, browserType] of [['Chromium', chromium], ['WebKit', webkit]] as const) {
   test(`pairs ${name} with a code, serves it the app, and revokes it`, async () => {
     const { page, close } = await launchApp()
-    const port = await freePort()
 
-    await page.getByRole('button', { name: 'Remote access' }).click()
-    await page.getByLabel('Port').fill(String(port))
-    await page.getByRole('button', { name: 'Turn on' }).click()
+    const port = await turnOnRemoteAccess(page)
     await expect(page.getByText(`tailscale serve --bg ${port}`)).toBeVisible()
-    await page.getByRole('button', { name: 'Pair a device' }).click()
-    const code = await page.getByLabel('Pairing code').textContent()
 
     const browser = await browserType.launch()
     const remote = await browser.newPage()
-    await remote.goto(`http://127.0.0.1:${port}/`)
-    await remote.getByLabel('Pairing code').fill(code!)
-    await remote.getByRole('button', { name: 'Pair' }).click()
+    await pair(page, remote, port)
 
     await expect(remote.getByRole('banner')).toContainText('No project')
     await expect(remote.getByRole('button', { name: 'Remote access' })).toHaveCount(0)
@@ -57,25 +67,13 @@ test('a paired browser recovers in its own project when the connection returns',
   await mkdir(join(root, 'beta'))
   const { page, close } = await launchApp()
   const modifier = process.platform === 'darwin' ? 'Meta' : 'Control'
-  for (const name of ['alpha', 'beta']) {
-    await page.keyboard.press(`${modifier}+o`)
-    await page.getByRole('combobox').fill(`${root}/${name}/`)
-    await page.getByRole('option', { name: `Open ${root}/${name}/` }).click()
-    await expect(page.getByRole('banner')).toContainText(name)
-  }
+  await openProject(page, join(root, 'alpha'))
+  await openProject(page, join(root, 'beta'))
 
-  const port = await freePort()
-  await page.getByRole('button', { name: 'Remote access' }).click()
-  await page.getByLabel('Port').fill(String(port))
-  await page.getByRole('button', { name: 'Turn on' }).click()
-  await page.getByRole('button', { name: 'Pair a device' }).click()
-  const code = await page.getByLabel('Pairing code').textContent()
-
+  const port = await turnOnRemoteAccess(page)
   const browser = await chromium.launch()
   const remote = await browser.newPage()
-  await remote.goto(`http://127.0.0.1:${port}/`)
-  await remote.getByLabel('Pairing code').fill(code!)
-  await remote.getByRole('button', { name: 'Pair' }).click()
+  await pair(page, remote, port)
   await expect(remote.getByRole('banner')).toContainText('beta')
 
   await remote.getByRole('banner').getByRole('button', { name: 'beta' }).click()
@@ -112,19 +110,11 @@ test('a phone drives a session from its own layout', async () => {
   await openProject(page, join(root, 'alpha'))
   await openProject(page, join(root, 'beta'))
 
-  const port = await freePort()
-  await page.getByRole('button', { name: 'Remote access' }).click()
-  await page.getByLabel('Port').fill(String(port))
-  await page.getByRole('button', { name: 'Turn on' }).click()
-  await page.getByRole('button', { name: 'Pair a device' }).click()
-  const code = await page.getByLabel('Pairing code').textContent()
-
+  const port = await turnOnRemoteAccess(page)
   const browser = await webkit.launch()
   const context = await browser.newContext({ ...devices['iPhone 13'] })
   const phone = await context.newPage()
-  await phone.goto(`http://127.0.0.1:${port}/`)
-  await phone.getByLabel('Pairing code').fill(code!)
-  await phone.getByRole('button', { name: 'Pair' }).click()
+  await pair(page, phone, port)
 
   await expect(phone.getByRole('button', { name: 'New Claude session' })).toBeVisible()
   const manifest = await context.request.get(`http://127.0.0.1:${port}/manifest.webmanifest`)
@@ -192,9 +182,7 @@ test('publishes remote access with Tailscale when its command is found', async (
     FAKE_TAILSCALE_STATE: join(root, 'tailscale.json'),
   })
 
-  await page.getByRole('button', { name: 'Remote access' }).click()
-  await page.getByLabel('Port').fill(String(await freePort()))
-  await page.getByRole('button', { name: 'Turn on' }).click()
+  await turnOnRemoteAccess(page)
   await page.getByRole('button', { name: 'Publish with Tailscale' }).click()
   await expect(page.getByText('https://phone-test.example.ts.net')).toBeVisible()
 

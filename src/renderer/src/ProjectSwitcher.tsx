@@ -13,7 +13,6 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
 import { fuzzyFinder } from './fuzzy'
 import { type ProjectActivity, projectActivity } from './project-activity'
-import { useIsCompact } from './phone/compact'
 import { useAllProcesses } from './processes'
 import { statusDotColors } from './session/status-dot-colors'
 import { useSessionSummaries } from './sessions'
@@ -47,7 +46,6 @@ export function ProjectSwitcher(props: Props) {
   const [error, setError] = useState<string | null>(null)
   const isPath = query.startsWith('/') || query.startsWith('~')
   const completions = useDirectoryCompletions(isPath ? query : null)
-  const compact = useIsCompact()
   const files = useProjectFiles(open ? state.activeProjectId : null)
 
   useEffect(() => {
@@ -179,21 +177,19 @@ export function ProjectSwitcher(props: Props) {
               </>
             )}
           </CommandList>
-          {!compact && (
-            <div className="text-muted-foreground flex gap-4 border-t px-3 py-2 text-xs">
-              {isPath ? (
-                <span>Tab to complete · Enter to open</span>
-              ) : isFileHighlighted ? (
-                <span>Enter to open</span>
-              ) : (
-                <>
-                  <span>Enter to switch</span>
-                  <span>{modifierLabel}W to close</span>
-                  <span>{modifierLabel}⌫ to remove from list</span>
-                </>
-              )}
-            </div>
-          )}
+          <div className="text-muted-foreground compact:hidden flex gap-4 border-t px-3 py-2 text-xs">
+            {isPath ? (
+              <span>Tab to complete · Enter to open</span>
+            ) : isFileHighlighted ? (
+              <span>Enter to open</span>
+            ) : (
+              <>
+                <span>Enter to switch</span>
+                <span>{modifierLabel}W to close</span>
+                <span>{modifierLabel}⌫ to remove from list</span>
+              </>
+            )}
+          </div>
         </Command>
       </DialogContent>
     </Dialog>

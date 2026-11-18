@@ -1,17 +1,17 @@
 import { api, isDesktop } from '../api'
 import type { PendingSession } from '../ProjectWorkspace'
 
-/** What the inbox offers this browser: to turn on notifications, or how to become able to. */
-export type PushOffer = 'enable' | 'install' | null
+const pushSupported = !isDesktop && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
 
-export function pushOffer(): PushOffer {
+/** What the inbox offers this browser: to turn on notifications, or how to become able to. */
+export function pushOffer(): 'enable' | 'install' | null {
   if (isDesktop) return null
   const standalone = window.matchMedia('(display-mode: standalone)').matches
   // iOS only allows push for a web app added to the home screen.
   // iPadOS Safari says it's a Mac, but Macs have no touch screen.
   const iOS = /iPhone|iPad/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1)
   if (iOS && !standalone) return 'install'
-  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return null
+  if (!pushSupported) return null
   return Notification.permission === 'default' ? 'enable' : null
 }
 
@@ -22,8 +22,7 @@ export async function enablePush(): Promise<void> {
 
 /** Browsers can rotate a subscription, so it's sent again each time the app loads. */
 export function refreshPushSubscription(): void {
-  if (isDesktop || !('serviceWorker' in navigator) || !('Notification' in window)) return
-  if (Notification.permission === 'granted') sendSubscription().catch((error: unknown) => console.error(error))
+  if (pushSupported && Notification.permission === 'granted') sendSubscription().catch((error: unknown) => console.error(error))
 }
 
 async function sendSubscription(): Promise<void> {
@@ -59,7 +58,7 @@ export function notificationSessionShown(): void {
 
 /** Goes to the session of each notification tapped, including the one that opened the app. */
 export function followNotifications(goToSession: (session: PendingSession) => void): () => void {
-  if (isDesktop || !('serviceWorker' in navigator)) return () => {}
+  if (!pushSupported) return () => {}
   if (tapped) goToSession(tapped)
   const onMessage = (event: MessageEvent<{ goToSession?: PendingSession }>) => {
     if (!event.data.goToSession) return

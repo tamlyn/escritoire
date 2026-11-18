@@ -50,7 +50,7 @@ export function ProcessTab({ processId, command, cwd, task }: ProcessTabProps) {
         {process ? (
           <ScreenView
             screenId={processId}
-            shown={shown}
+            autoFocus={shown}
             connection={{
               attach: (size) => api.attachProcess(projectId, processId, size),
               detach: () => void api.detachProcess(processId),

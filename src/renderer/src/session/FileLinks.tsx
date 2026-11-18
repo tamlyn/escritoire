@@ -1,10 +1,8 @@
 import { type ComponentProps, createContext, useContext, useMemo } from 'react'
-import { useParentWorkspace } from 'react-resizable-panels'
 import { defaultComponents, defaultRemarkPlugins, type ExtraProps } from 'streamdown'
 import { revealLine } from '../file/reveal'
 import { useProjectFileList } from '../files'
 import { useProject } from '../project-context'
-import { createFileTab, type TabData } from '../tabs'
 import { type FileRef, parseFileHref, remarkFileLinks } from './file-refs'
 
 type FileLinks = {
@@ -15,10 +13,9 @@ type FileLinks = {
 
 const FileLinksContext = createContext<FileLinks | null>(null)
 
-/** Lets links in agent messages open files, in tabs unless told how else to. */
-export function FileLinksProvider({ onOpenFile, children }: { onOpenFile?: (path: string) => void; children: React.ReactNode }) {
+/** Lets links in agent messages open files. */
+export function FileLinksProvider({ onOpenFile, children }: { onOpenFile: (path: string) => void; children: React.ReactNode }) {
   const project = useProject()
-  const workspace = useParentWorkspace<TabData>()
   const files = useProjectFileList(project.id)
 
   const links = useMemo((): FileLinks => {
@@ -32,13 +29,12 @@ export function FileLinksProvider({ onOpenFile, children }: { onOpenFile?: (path
         return path
       },
       open(path, line) {
-        if (onOpenFile) onOpenFile(path)
-        else workspace?.addTab(createFileTab(path))
+        onOpenFile(path)
         // After the tab is shown, so an editor that was already open can scroll.
         if (line) requestAnimationFrame(() => revealLine(project.id, path, line))
       },
     }
-  }, [project.id, project.path, files, workspace, onOpenFile])
+  }, [project.id, project.path, files, onOpenFile])
 
   return <FileLinksContext.Provider value={links}>{children}</FileLinksContext.Provider>
 }

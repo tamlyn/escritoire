@@ -33,7 +33,7 @@ beforeEach(() => {
 function connect(desktop = true): { client: Client; received: Received } {
   const received: Received = []
   const send: SendEvent = (name, payload) => received.push({ name, payload })
-  return { client: clients.connect(send, { desktop }), received }
+  return { client: clients.connect(send, { deviceId: desktop ? null : 'phone' }), received }
 }
 
 const project = (id: string, isOpen = true): Project => ({ id, path: `/${id}`, name: id, isOpen, lastActiveAt: 0 })
@@ -53,7 +53,7 @@ it('releases the queued messages a client was editing when it disconnects', () =
 
 it('says which device has a session on its screen', () => {
   const pointer: SessionPointer = { agent: 'claude', agentSessionId: 's1' }
-  const phone = clients.connect(() => {}, { desktop: false, deviceId: 'phone' })
+  const phone = clients.connect(() => {}, { deviceId: 'phone' })
 
   clients.openSessionView(phone, pointer)
   expect(clients.deviceShows('phone', 's1')).toBe(false)
@@ -69,7 +69,7 @@ it('says which device has a session on its screen', () => {
 describe('projects', () => {
   it('returns a reconnecting client to its project while that is open', () => {
     const activeProject = (activeProjectId: string | null) =>
-      clients.connect(() => {}, { desktop: false, activeProjectId }).activeProjectId
+      clients.connect(() => {}, { deviceId: 'phone', activeProjectId }).activeProjectId
 
     expect(activeProject('b')).toBe('b')
     expect(activeProject('closed')).toBe('a')

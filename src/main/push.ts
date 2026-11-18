@@ -1,5 +1,4 @@
 import { join } from 'node:path'
-import { generateVAPIDKeys, sendNotification, WebPushError } from 'web-push'
 import type { PushPayload, PushSubscription } from '../shared/remote'
 import { readJson, writeJson } from './json-file'
 
@@ -9,6 +8,8 @@ type VapidKeys = { publicKey: string; privateKey: string }
 // Apple refuses subjects it considers local, so this is a public domain's.
 const subject = 'mailto:push@example.com'
 const timeToLiveSeconds = 24 * 60 * 60
+// Loaded when needed, since most launches never send a notification.
+const webPush = () => import('web-push')
 
 /** Sends Web Push messages, encrypted to the browser, so the push services can't read them. */
 export class PushSender {
@@ -22,6 +23,7 @@ export class PushSender {
 
   /** `gone` means the browser has withdrawn the subscription, so it should be forgotten. */
   async send(subscription: PushSubscription, payload: PushPayload): Promise<'sent' | 'gone'> {
+    const { sendNotification, WebPushError } = await webPush()
     try {
       await sendNotification(subscription, JSON.stringify(payload), {
         TTL: timeToLiveSeconds,
@@ -47,7 +49,7 @@ export class PushSender {
     const path = join(this.dataDir, 'web-push.json')
     const saved = (await readJson(path)) as VapidKeys | undefined
     if (saved) return saved
-    const keys = generateVAPIDKeys()
+    const keys = (await webPush()).generateVAPIDKeys()
     await writeJson(path, keys)
     return keys
   }

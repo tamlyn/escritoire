@@ -20,6 +20,7 @@ import type {
   SessionPointer,
   SessionSettings,
   SessionSummary,
+  SessionTarget,
   SettingChoices,
   SlashCommand,
   UserInput,
@@ -57,7 +58,6 @@ export type Api = {
   /** Directories matching a partially typed path, for completion in the project switcher. */
   completeDirectory(partialPath: string): Promise<string[]>
 
-  getSessionSummaries(): Promise<SessionSummary[]>
   listPastSessions(projectId: string): Promise<PastSession[]>
   createSession(projectId: string, agent: AgentKind): Promise<SessionPointer>
   /** Loads the session if needed and subscribes to its `sessionEvent`s. */
@@ -155,7 +155,7 @@ export type Api = {
   /** For a paired device: the public key its push subscription must be made with. */
   getPushKey(): Promise<string>
   /** For a paired device: where to send its notifications. */
-  setPushSubscription(subscription: PushSubscription | null): Promise<void>
+  setPushSubscription(subscription: PushSubscription): Promise<void>
 }
 
 // A record rather than an array so the compiler rejects a missing or misspelt method.
@@ -168,7 +168,6 @@ const apiMethodSet: Record<keyof Api, true> = {
   loadLayout: true,
   saveLayout: true,
   completeDirectory: true,
-  getSessionSummaries: true,
   listPastSessions: true,
   createSession: true,
   openSession: true,
@@ -250,7 +249,7 @@ export type Events = {
   stateChanged: AppState
   remoteAccessChanged: RemoteAccess
   /** The user clicked a notification about the session: show it. Desktop only. */
-  focusSession: { projectId: string; pointer: SessionPointer; title: string }
+  focusSession: SessionTarget
 }
 
 const eventNameSet: Record<keyof Events, true> = {

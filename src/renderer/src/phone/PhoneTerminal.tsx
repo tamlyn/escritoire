@@ -3,6 +3,7 @@ import { useRef, useState } from 'react'
 import { api } from '../api'
 import { useProject } from '../project-context'
 import { ScreenView } from '../screen/ScreenView'
+import { terminalConnection } from '../screen/TerminalTab'
 import { withCtrl } from './phone-views'
 
 const arrows = [
@@ -36,14 +37,8 @@ export function PhoneTerminal({ terminalId }: { terminalId: string }) {
       <div className="min-h-0 flex-1">
         <ScreenView
           screenId={terminalId}
-          shown
           terminalRef={screen}
-          connection={{
-            attach: (size) => api.attachTerminal(projectId, terminalId, size),
-            detach: () => void api.detachTerminal(terminalId),
-            write,
-            resize: (size) => void api.resizeTerminal(terminalId, size),
-          }}
+          connection={{ ...terminalConnection(projectId, terminalId), write }}
         />
       </div>
       {/* Pressing a key mustn't take focus from the terminal, which would close the keyboard. */}

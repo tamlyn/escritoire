@@ -1,8 +1,15 @@
 import { useSyncExternalStore } from 'react'
 import { isDesktop } from '../api'
 
-// The height keeps a phone turned on its side in the phone layout. The same query as the `compact` CSS variant.
+// The height keeps a phone turned on its side in the phone layout.
 const query = window.matchMedia('(max-width: 640px), (max-height: 640px) and (pointer: coarse)')
+
+const isCompact = () => !isDesktop && query.matches
+
+// For the `compact` CSS variant.
+const markRoot = () => document.documentElement.toggleAttribute('data-compact', isCompact())
+markRoot()
+query.addEventListener('change', markRoot)
 
 /** A browser small enough for the phone layout, whatever the device. The desktop window never is. */
 export function useIsCompact(): boolean {
@@ -11,7 +18,7 @@ export function useIsCompact(): boolean {
       query.addEventListener('change', listener)
       return () => query.removeEventListener('change', listener)
     },
-    () => !isDesktop && query.matches,
+    isCompact,
   )
 }
 

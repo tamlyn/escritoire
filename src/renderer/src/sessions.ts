@@ -8,7 +8,7 @@ import {
   type SessionView,
   type SettingChoices,
 } from '../../shared/agent'
-import { api, onViewsReloaded, subscribe } from './api'
+import { api, subscribe } from './api'
 
 let summaries: SessionSummary[] = []
 const summaryListeners = new Set<() => void>()
@@ -18,18 +18,8 @@ function setSummaries(next: SessionSummary[]) {
   for (const listener of summaryListeners) listener()
 }
 
-// The initial list mustn't overwrite a newer one pushed while it was loading.
-let pushed = false
-subscribe('sessionsChanged', (next) => {
-  pushed = true
-  setSummaries(next)
-})
-function loadSummaries() {
-  pushed = false
-  api.getSessionSummaries().then((initial) => pushed || setSummaries(initial)).catch((error: unknown) => console.error(error))
-}
-loadSummaries()
-onViewsReloaded(loadSummaries)
+// Main sends the list as each connection opens, then whenever it changes.
+subscribe('sessionsChanged', setSummaries)
 
 /** Live state of every loaded session, across all projects. */
 export function useSessionSummaries(): SessionSummary[] {

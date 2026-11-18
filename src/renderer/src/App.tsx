@@ -1,5 +1,6 @@
 import { ChevronsUpDownIcon } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { sessionTarget } from '../../shared/agent'
 import type { AppState } from '../../shared/api'
 import { api, isDesktop, rememberActiveProject, subscribe } from './api'
 import { Inbox } from './Inbox'
@@ -73,7 +74,7 @@ export function App() {
         <Inbox
           projects={state.projects}
           activeProjectId={compact ? null : state.activeProjectId}
-          onSelect={(s) => goToSession({ projectId: s.projectId, pointer: { agent: s.agent, agentSessionId: s.agentSessionId }, title: s.title })}
+          onSelect={(s) => goToSession(sessionTarget(s))}
         />
         {isDesktop && (
           <div className="ml-auto">

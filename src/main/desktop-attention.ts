@@ -1,5 +1,5 @@
 import { app, type BrowserWindow, Notification } from 'electron'
-import type { SessionSummary } from '../shared/agent'
+import { sessionTarget, type SessionSummary } from '../shared/agent'
 import type { Events } from '../shared/api'
 import { attentionMessage, needingAttention, newlyNeedingAttention } from '../shared/attention'
 
@@ -60,11 +60,7 @@ export class DesktopAttention {
       if (window.isMinimized()) window.restore()
       window.show()
       window.focus()
-      this.deps.focusSession({
-        projectId: session.projectId,
-        pointer: { agent: session.agent, agentSessionId: session.agentSessionId },
-        title: session.title,
-      })
+      this.deps.focusSession(sessionTarget(session))
     })
     notification.show()
   }

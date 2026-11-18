@@ -1,10 +1,10 @@
-import { LoaderCircleIcon, MessageSquarePlusIcon } from 'lucide-react'
+import { LoaderCircleIcon, MessageSquarePlusIcon, SquareTerminalIcon } from 'lucide-react'
 import { useState } from 'react'
 import type { AgentKind, PastSession, SessionPointer } from '../../../shared/agent'
 import { api, errorMessage } from '../api'
 import { relativeTime } from '../lib/time'
 
-export const agentNames: Record<AgentKind, string> = { claude: 'Claude', codex: 'Codex' }
+const agentNames: Record<AgentKind, string> = { claude: 'Claude', codex: 'Codex' }
 export const startButton =
   'hover:bg-accent focus-visible:ring-ring flex items-center gap-3 rounded-lg border px-4 py-3 text-left outline-none focus-visible:ring-2'
 
@@ -45,6 +45,15 @@ export function NewSessionButton({ agent, starting, onStart, autoFocus = false }
       <span className="font-medium">
         {starting === agent ? `Starting ${agentNames[agent]}…` : `New ${agentNames[agent]} session`}
       </span>
+    </button>
+  )
+}
+
+export function NewTerminalButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className={startButton}>
+      <SquareTerminalIcon className="text-muted-foreground size-5" />
+      <span className="font-medium">New terminal</span>
     </button>
   )
 }

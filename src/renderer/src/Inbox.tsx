@@ -4,7 +4,7 @@ import type { SessionSummary } from '../../shared/agent'
 import type { Project } from '../../shared/api'
 import { needingAttention } from '../../shared/attention'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './components/ui/dropdown-menu'
-import { enablePush, type PushOffer, pushOffer } from './remote/push'
+import { enablePush, pushOffer } from './remote/push'
 import { SessionIndicator } from './session/SessionIndicator'
 import { statusDotColors } from './session/status-dot-colors'
 import { useSessionSummaries } from './sessions'
@@ -23,7 +23,7 @@ export function Inbox({ projects, activeProjectId, onSelect }: Props) {
     () => needingAttention(summaries).filter((s) => s.projectId !== activeProjectId),
     [summaries, activeProjectId],
   )
-  const [offer, setOffer] = useState<PushOffer>(pushOffer)
+  const [offer, setOffer] = useState(pushOffer)
   const [pushFailed, setPushFailed] = useState(false)
   if (sessions.length === 0 && !offer) return null
 

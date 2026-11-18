@@ -4,15 +4,8 @@
 @source '../../../node_modules/@streamdown/code/dist/*.js';
 
 @custom-variant dark (@media (prefers-color-scheme: dark));
-/* The same query as `useIsCompact`. */
-@custom-variant compact {
-  @media (max-width: 640px) {
-    @slot;
-  }
-  @media (max-height: 640px) and (pointer: coarse) {
-    @slot;
-  }
-}
+/* Set by `phone/compact.ts`. */
+@custom-variant compact (&:where([data-compact], [data-compact] *));
 
 :root {
   color-scheme: light dark;
@@ -119,17 +112,13 @@
 }
 
 /* Outside the layers, so these override utilities. */
-@media (max-width: 640px), (max-height: 640px) and (pointer: coarse) {
-  #root {
-    height: var(--viewport-height, 100dvh);
-    padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
-  }
-  /* iOS zooms the page when a smaller input is focused. */
-  input,
-  textarea,
-  select {
-    font-size: 16px;
-  }
+[data-compact] #root {
+  height: var(--viewport-height, 100dvh);
+  padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
+}
+/* iOS zooms the page when a smaller input is focused. */
+[data-compact] :is(input, textarea, select) {
+  font-size: 16px;
 }
 
 /* CodeMirror syntax highlighting (`classHighlighter` from @lezer/highlight). */

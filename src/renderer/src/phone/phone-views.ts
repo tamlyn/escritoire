@@ -1,8 +1,7 @@
-import { normalizeWorkspaceModel, type WorkspaceNode } from 'react-resizable-panels'
-import type { PastSession, SessionPointer, SessionSummary } from '../../../shared/agent'
+import { normalizeWorkspaceModel } from 'react-resizable-panels'
+import { maxPastSessions, type PastSession, type SessionPointer, type SessionSummary } from '../../../shared/agent'
+import { tabsetsIn } from '../layout-tree'
 import type { TabData } from '../tabs'
-
-export const maxPastSessions = 20
 
 /** A session on the phone's screen. The title is for sessions main knows no title for yet. */
 export type SessionPhoneView = { kind: 'session'; pointer: SessionPointer; title: string }
@@ -11,20 +10,15 @@ export type SessionPhoneView = { kind: 'session'; pointer: SessionPointer; title
 export type PhoneView =
   | SessionPhoneView
   | { kind: 'file'; path: string; from: SessionPhoneView | null }
-  | { kind: 'terminal'; terminalId: string; title: string; startedHere: boolean }
+  | { kind: 'terminal'; terminalId: string; title: string }
 
 /** The terminals in the desktop's saved layout, which is only read. */
 export function terminalsIn(layout: unknown): { id: string; title: string }[] {
   const model = normalizeWorkspaceModel<TabData>(layout)
   if (!model) return []
-  const terminals: { id: string; title: string }[] = []
-  const visit = (node: WorkspaceNode<TabData>) => {
-    if (node.type === 'split') node.children.forEach(visit)
-    else for (const tab of node.tabs) if (tab.data?.kind === 'terminal') terminals.push({ id: tab.id, title: tab.title ?? 'Terminal' })
-  }
-  visit(model.root)
-  model.floating?.forEach(visit)
-  return terminals
+  return [...tabsetsIn(model)].flatMap((tabset) => tabset.tabs
+    .filter((tab) => tab.data?.kind === 'terminal')
+    .map((tab) => ({ id: tab.id, title: tab.title ?? 'Terminal' })))
 }
 
 /** What Ctrl and a key send: the key's control character if it has one, and other input unchanged. */
@@ -54,49 +48,39 @@ export function listSessions(
 const openViewsKey = 'escritoire.phoneOpenViews'
 const startedTerminalsKey = 'escritoire.phoneStartedTerminals'
 
-function startedTerminals(): Record<string, string[]> {
+function readByProject<T>(key: string): Record<string, T> {
   try {
-    return JSON.parse(sessionStorage.getItem(startedTerminalsKey) ?? '{}') as Record<string, string[]>
+    return JSON.parse(sessionStorage.getItem(key) ?? '{}') as Record<string, T>
   } catch {
     return {}
   }
 }
 
-function saveStartedTerminals(projectId: string, terminalIds: string[]): void {
+function saveForProject<T>(key: string, projectId: string, value: T | null): void {
+  const { [projectId]: _, ...others } = readByProject<T>(key)
   try {
-    sessionStorage.setItem(startedTerminalsKey, JSON.stringify({ ...startedTerminals(), [projectId]: terminalIds }))
-  } catch { /* It only misses offering to return to the terminal. */ }
+    sessionStorage.setItem(key, JSON.stringify(value === null ? others : { ...others, [projectId]: value }))
+  } catch { /* It only misses returning to where the phone was. */ }
 }
 
 /** The terminals the phone started in this project and hasn't closed, so it can return to them. */
 export function startedTerminalsIn(projectId: string): string[] {
-  return startedTerminals()[projectId] ?? []
+  return readByProject<string[]>(startedTerminalsKey)[projectId] ?? []
 }
 
 export function rememberStartedTerminal(projectId: string, terminalId: string): void {
-  saveStartedTerminals(projectId, [...startedTerminalsIn(projectId), terminalId])
+  saveForProject(startedTerminalsKey, projectId, [...startedTerminalsIn(projectId), terminalId])
 }
 
 export function forgetStartedTerminal(projectId: string, terminalId: string): void {
-  saveStartedTerminals(projectId, startedTerminalsIn(projectId).filter((id) => id !== terminalId))
-}
-
-function openViews(): Record<string, PhoneView> {
-  try {
-    return JSON.parse(sessionStorage.getItem(openViewsKey) ?? '{}') as Record<string, PhoneView>
-  } catch {
-    return {}
-  }
+  saveForProject(startedTerminalsKey, projectId, startedTerminalsIn(projectId).filter((id) => id !== terminalId))
 }
 
 /** What the phone was showing in this project, which reconnecting or reloading returns to. */
 export function openViewIn(projectId: string): PhoneView | null {
-  return openViews()[projectId] ?? null
+  return readByProject<PhoneView>(openViewsKey)[projectId] ?? null
 }
 
 export function rememberOpenView(projectId: string, view: PhoneView | null): void {
-  const { [projectId]: _, ...others } = openViews()
-  try {
-    sessionStorage.setItem(openViewsKey, JSON.stringify(view ? { ...others, [projectId]: view } : others))
-  } catch { /* It only misses returning to this view. */ }
+  saveForProject(openViewsKey, projectId, view)
 }

@@ -112,7 +112,6 @@ function createApi(client: Client, { clients, remote, push, projects, sessions, 
     loadLayout: (projectId) => projects.loadLayout(projectId),
     saveLayout: (projectId, layout) => projects.saveLayout(projectId, layout),
     completeDirectory,
-    getSessionSummaries: async () => sessions.summaries(),
     listPastSessions: (projectId) => sessions.listPastSessions(projectId),
     createSession: (projectId, agent) => sessions.createSession(projectId, agent),
     openSession: (projectId, session) => {
@@ -214,7 +213,7 @@ function createApi(client: Client, { clients, remote, push, projects, sessions, 
     getPushKey: () => push.publicKey(),
     setPushSubscription: async (subscription) => {
       if (client.deviceId === null) throw new Error('Only a paired device can receive notifications.')
-      if (subscription !== null && !isPushSubscription(subscription)) throw new Error('Not a push subscription.')
+      if (!isPushSubscription(subscription)) throw new Error('Not a push subscription.')
       await remote.setPushSubscription(client.deviceId, subscription)
     },
   }
@@ -328,7 +327,7 @@ void app.whenReady().then(async () => {
   const remote = await RemoteAccess.load({
     dataDir,
     rendererDir: join(import.meta.dirname, '../renderer'),
-    connect: (send, client) => serve(clients.connect(send, { desktop: false, ...client })),
+    connect: (send, client) => serve(clients.connect(send, client)),
     onChange: (state) => send('remoteAccessChanged', state),
     tailscale: new TailscaleCli(),
   })
@@ -397,6 +396,9 @@ void app.whenReady().then(async () => {
   const services: Services = { clients, remote, push, projects, sessions, sessionStore, files, terminals, supervisor, connections, databases }
   // The API work belongs to the app rather than the connection, so quitting waits for it all.
   function serve(client: Client): Connection {
+    // A client that is reconnecting missed whatever changed while it was away.
+    client.send('sessionsChanged', sessions.summaries())
+    client.send('processesChanged', supervisor.list())
     return { handle: handleApi(createApi(client, services), apiWork), close: () => clients.disconnect(client) }
   }
 
@@ -409,7 +411,7 @@ void app.whenReady().then(async () => {
   const server = await ApiServer.start({
     port: 0,
     admits: (request) => request.headers.origin === undefined || request.headers.origin === desktopOrigin,
-    connect: ({ token, activeProjectId }, send) => tokensMatch(token, desktopToken) ? serve(clients.connect(send, { desktop: true, activeProjectId })) : undefined,
+    connect: ({ token, activeProjectId }, send) => tokensMatch(token, desktopToken) ? serve(clients.connect(send, { activeProjectId })) : undefined,
   })
   await remote.start()
 
