@@ -6,7 +6,8 @@ import { readJson, writeJson } from './json-file'
 type VapidKeys = { publicKey: string; privateKey: string }
 
 // Push services want a contact for the sender, which needn't be anyone's address.
-const subject = 'mailto:push@escritoire.invalid'
+// Apple refuses subjects it considers local, so this is a public domain's.
+const subject = 'mailto:push@example.com'
 const timeToLiveSeconds = 24 * 60 * 60
 
 /** Sends Web Push messages, encrypted to the browser, so the push services can't read them. */
@@ -35,7 +36,10 @@ export class PushSender {
   }
 
   private vapidKeys(): Promise<VapidKeys> {
-    this.keys ??= this.loadKeys()
+    this.keys ??= this.loadKeys().catch((error: unknown) => {
+      this.keys = undefined
+      throw error
+    })
     return this.keys
   }
 

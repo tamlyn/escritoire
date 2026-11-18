@@ -15,3 +15,9 @@ Found while reviewing each step and left for now. None loses work.
 - **Sessions with no desktop tab lose their unread state on restart**, because `restoreUnread` only restores sessions that have a tab. (`main/index.ts`)
 - **The desktop window gets the `compact` styles when narrowed**, such as larger inputs, though it keeps the desktop layout. (`renderer/src/styles.css`)
 - **The phone's back gesture leaves the app** rather than returning to the session list, since opening a session adds no history entry. (`phone/PhoneWorkspace.tsx`)
+
+## Step 3: Web Push
+
+- **A subscription rotated while the app is closed stops notifications** until the app is next opened, because `sw.js` has no `pushsubscriptionchange` handler. (`renderer/public/sw.js`)
+- **A phone that vanishes while showing a session can miss a push** for up to about 40 seconds, until the heartbeat ends its connection. (`main/clients.ts`)
+- **The VAPID private key and push subscriptions are plain JSON in the data directory**, so anyone who can read it could send notifications to the paired phone. (`main/push.ts`)

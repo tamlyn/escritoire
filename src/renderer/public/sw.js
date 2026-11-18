@@ -3,7 +3,7 @@
 self.addEventListener('push', (event) => {
   const { title, body, session } = event.data.json()
   // The tag makes a newer notification for a session replace the older one.
-  event.waitUntil(self.registration.showNotification(title, { body, tag: session.pointer.agentSessionId, icon: '/icon-192.png', data: session }))
+  event.waitUntil(self.registration.showNotification(title, { body, tag: session.pointer.agentSessionId, renotify: true, icon: '/icon-192.png', data: session }))
 })
 
 self.addEventListener('notificationclick', (event) => {

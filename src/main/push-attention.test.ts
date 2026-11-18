@@ -63,6 +63,40 @@ describe('pushes a session that needs the user', () => {
   })
 })
 
+describe('holds what comes up while the user is at the desktop', () => {
+  function attentionWhilePresent() {
+    desktopPresent = true
+    const attention = new PushAttention({
+      targets: () => targets,
+      desktopPresent: () => desktopPresent,
+      deviceShows: () => false,
+      projectName: () => 'Project',
+      send,
+    })
+    attention.update([summary(null)])
+    attention.update([summary('waiting')])
+    return attention
+  }
+
+  it('and pushes it once they leave', () => {
+    const attention = attentionWhilePresent()
+    desktopPresent = false
+    attention.desktopLeft()
+    expect(send).toHaveBeenCalledOnce()
+
+    attention.desktopLeft()
+    expect(send).toHaveBeenCalledOnce()
+  })
+
+  it('unless they dealt with it first', () => {
+    const attention = attentionWhilePresent()
+    attention.update([summary(null)])
+    desktopPresent = false
+    attention.desktopLeft()
+    expect(send).not.toHaveBeenCalled()
+  })
+})
+
 it('pushes nothing for a session that has only just loaded', () => {
   const attention = new PushAttention({
     targets: () => targets,

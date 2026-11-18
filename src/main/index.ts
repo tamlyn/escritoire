@@ -382,7 +382,10 @@ void app.whenReady().then(async () => {
     projectPath: (projectId) => projects.getProject(projectId).path,
     connection: (projectId, connectionId) => connections.getConnection(projectId, connectionId),
   })
-  watchPresence((present) => clients.setDesktopPresent(present))
+  watchPresence((present) => {
+    clients.setDesktopPresent(present)
+    if (!present) pushAttention.desktopLeft()
+  })
 
   const apiWork = new Work()
   const services: Services = { clients, remote, push, projects, sessions, sessionStore, files, terminals, supervisor, connections, databases }

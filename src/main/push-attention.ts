@@ -1,5 +1,5 @@
 import type { SessionSummary } from '../shared/agent'
-import { attentionMessage, newlyNeedingAttention } from '../shared/attention'
+import { attentionMessage, needingAttention, newlyNeedingAttention } from '../shared/attention'
 import type { PushPayload, PushSubscription } from '../shared/remote'
 
 export type PushTarget = { deviceId: string; subscription: PushSubscription }
@@ -15,18 +15,33 @@ export type PushAttentionDeps = {
 
 /**
  * Tells paired phones about sessions that start needing the user while the
- * user is away from the desktop, unless the phone is already showing the session.
+ * user is away from the desktop, unless the phone is already showing the
+ * session. It takes a minute to count as away, so what comes up while the user
+ * is present is held, and sent if they leave without dealing with it.
  */
 export class PushAttention {
   private summaries: SessionSummary[] = []
+  private readonly held = new Set<string>()
 
   constructor(private readonly deps: PushAttentionDeps) {}
 
   update(summaries: SessionSummary[]): void {
     const news = newlyNeedingAttention(this.summaries, summaries)
     this.summaries = summaries
-    if (news.length === 0 || this.deps.desktopPresent()) return
-    for (const session of news) {
+    const needing = new Set(needingAttention(summaries).map((session) => session.agentSessionId))
+    for (const id of this.held) if (!needing.has(id)) this.held.delete(id)
+    if (this.deps.desktopPresent()) for (const session of news) this.held.add(session.agentSessionId)
+    else this.push(news)
+  }
+
+  /** The user has left the desktop. */
+  desktopLeft(): void {
+    this.push(this.summaries.filter((session) => this.held.has(session.agentSessionId)))
+    this.held.clear()
+  }
+
+  private push(sessions: SessionSummary[]): void {
+    for (const session of sessions) {
       for (const target of this.deps.targets()) {
         if (this.deps.deviceShows(target.deviceId, session.agentSessionId)) continue
         this.deps.send(target, this.payload(session)).catch((error: unknown) => console.error("Couldn't send a notification:", error))
