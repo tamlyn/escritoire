@@ -54,7 +54,7 @@ export function PastSessionRow({ session, onOpen }: { session: PastSession; onOp
     <button
       type="button"
       onClick={onOpen}
-      className="hover:bg-accent focus-visible:bg-accent flex items-baseline gap-3 rounded-md px-2 py-1.5 text-left outline-none max-sm:py-2.5"
+      className="hover:bg-accent focus-visible:bg-accent flex items-baseline gap-3 rounded-md px-2 py-1.5 text-left outline-none compact:py-2.5"
     >
       <span className="min-w-0 flex-1 truncate">{session.title || 'Untitled session'}</span>
       <span className="text-muted-foreground shrink-0 text-xs">

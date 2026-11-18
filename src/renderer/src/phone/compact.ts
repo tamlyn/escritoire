@@ -1,9 +1,10 @@
 import { useSyncExternalStore } from 'react'
 import { isDesktop } from '../api'
 
-const query = window.matchMedia('(max-width: 640px)')
+// The height keeps a phone turned on its side in the phone layout. The same query as the `compact` CSS variant.
+const query = window.matchMedia('(max-width: 640px), (max-height: 640px) and (pointer: coarse)')
 
-/** A browser narrow enough for the phone layout, whatever the device. The desktop window never is. */
+/** A browser small enough for the phone layout, whatever the device. The desktop window never is. */
 export function useIsCompact(): boolean {
   return useSyncExternalStore(
     (listener) => {

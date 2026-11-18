@@ -147,6 +147,11 @@ test('a phone drives a session from its own layout', async () => {
   const log = phone.getByRole('log')
   expect(await log.evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(0)
 
+  // Turned on its side, a phone keeps the phone layout and so stays away from the desktop's saved layout.
+  await phone.setViewportSize({ width: 844, height: 390 })
+  await expect(phone.getByRole('button', { name: 'Back to sessions' })).toBeVisible()
+  await expect(phone.locator('[data-workspace]')).toHaveCount(0)
+
   await phone.getByRole('button', { name: 'Back to sessions' }).click()
   await expect(phone.getByRole('button', { name: /^code/ })).toBeVisible()
 

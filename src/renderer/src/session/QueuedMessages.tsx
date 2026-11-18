@@ -74,7 +74,7 @@ function Queued({ message, pointer }: { message: QueuedMessage; pointer: Session
             discarding.current = false
             setEditing(message.text)
           }}
-          className="text-muted-foreground hover:text-foreground mt-0.5 opacity-0 group-hover:opacity-100"
+          className="text-muted-foreground hover:text-foreground mt-0.5 opacity-0 group-hover:opacity-100 compact:p-1.5 compact:opacity-100"
         >
           <PencilIcon className="size-3.5" />
         </button>
@@ -85,7 +85,7 @@ function Queued({ message, pointer }: { message: QueuedMessage; pointer: Session
         // Keeps an edit from saving on blur before the message is cancelled.
         onMouseDown={(event) => event.preventDefault()}
         onClick={cancel}
-        className="text-muted-foreground hover:text-foreground mt-0.5 opacity-0 group-hover:opacity-100"
+        className="text-muted-foreground hover:text-foreground mt-0.5 opacity-0 group-hover:opacity-100 compact:p-1.5 compact:opacity-100"
       >
         <XIcon className="size-3.5" />
       </button>

@@ -9,14 +9,12 @@ import { useSessionSummaries } from './sessions'
 
 type Props = {
   projects: Project[]
+  /** The project whose tabs already show its sessions, if any. */
   activeProjectId: string | null
   onSelect: (session: SessionSummary) => void
 }
 
-/**
- * Sessions in other projects that need the user. The active project's are
- * left out, since its tabs show them. Hidden while there are none.
- */
+/** Sessions that need the user and aren't on show in tabs. Hidden while there are none. */
 export function Inbox({ projects, activeProjectId, onSelect }: Props) {
   const summaries = useSessionSummaries()
   const sessions = useMemo(
@@ -32,7 +30,7 @@ export function Inbox({ projects, activeProjectId, onSelect }: Props) {
     <DropdownMenu>
       <DropdownMenuTrigger
         aria-label={`${sessions.length} ${sessions.length === 1 ? 'session needs' : 'sessions need'} you`}
-        title="Sessions in other projects that need you"
+        title="Sessions that need you"
         className="hover:bg-accent text-muted-foreground hover:text-foreground flex items-center gap-1.5 rounded-md px-2 py-1 text-xs [-webkit-app-region:no-drag]"
       >
         <span className={`size-2 rounded-full ${waiting ? statusDotColors.waiting : statusDotColors.unread}`} />

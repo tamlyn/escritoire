@@ -17,6 +17,12 @@ it('leaves loaded sessions out of the past sessions', () => {
   expect(listed.map((s) => s.agentSessionId)).toEqual(['b'])
 })
 
+it('titles a resumed session from its history until it has a title of its own', () => {
+  const untitled = { ...summary('a'), title: '' }
+  const { loaded } = listSessions('p', [untitled], [past('a')])
+  expect(loaded[0]!.title).toBe('a')
+})
+
 it('limits the past sessions after removing loaded ones', () => {
   const sessions = Array.from({ length: maxPastSessions + 1 }, (_, index) => past(String(index)))
   const { past: listed } = listSessions('p', [summary('0')], sessions)

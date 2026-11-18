@@ -52,7 +52,7 @@ export function App() {
   return (
     <div className="flex h-full flex-col">
       <header
-        className={`bg-chrome flex h-10 shrink-0 items-center border-b px-2 [-webkit-app-region:drag] max-sm:box-content max-sm:pt-[env(safe-area-inset-top)] ${isDesktop && isMac ? 'pl-20' : ''}`}
+        className={`bg-chrome flex h-10 shrink-0 items-center border-b px-2 [-webkit-app-region:drag] compact:box-content compact:pt-[env(safe-area-inset-top)] ${isDesktop && isMac ? 'pl-20' : ''}`}
         // Clear of the window controls drawn over the header on Windows and Linux.
         style={isDesktop ? { paddingRight: 'calc(100% - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100%) + 0.5rem)' } : undefined}
       >
@@ -67,7 +67,7 @@ export function App() {
         </button>
         <Inbox
           projects={state.projects}
-          activeProjectId={state.activeProjectId}
+          activeProjectId={compact ? null : state.activeProjectId}
           onSelect={(s) => goToSession({ projectId: s.projectId, pointer: { agent: s.agent, agentSessionId: s.agentSessionId }, title: s.title })}
         />
         {isDesktop && (

@@ -268,7 +268,7 @@ export function Composer({
                   type="button"
                   title="Remove"
                   onClick={() => setImages(images.filter((_, i) => i !== index))}
-                  className="bg-background absolute -top-1.5 -right-1.5 hidden rounded-full border p-0.5 group-hover:block max-sm:block"
+                  className="bg-background absolute -top-1.5 -right-1.5 hidden rounded-full border p-0.5 group-hover:block compact:block"
                 >
                   <XIcon className="size-3" />
                 </button>
@@ -295,7 +295,7 @@ export function Composer({
               type="button"
               title="Interrupt"
               onClick={() => void api.interrupt(pointer)}
-              className="bg-primary text-primary-foreground flex size-8 shrink-0 items-center justify-center rounded-lg max-sm:size-10"
+              className="bg-primary text-primary-foreground flex size-8 shrink-0 items-center justify-center rounded-lg compact:size-10"
             >
               <SquareIcon className="size-3.5 fill-current" />
             </button>
@@ -305,7 +305,7 @@ export function Composer({
               title={compact ? 'Send' : 'Send (Enter)'}
               disabled={!canSend}
               onClick={send}
-              className="bg-primary text-primary-foreground flex size-8 shrink-0 items-center justify-center rounded-lg disabled:opacity-40 max-sm:size-10"
+              className="bg-primary text-primary-foreground flex size-8 shrink-0 items-center justify-center rounded-lg disabled:opacity-40 compact:size-10"
             >
               <ArrowUpIcon className="size-4" />
             </button>

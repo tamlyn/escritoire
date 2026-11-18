@@ -1,6 +1,6 @@
 import { ChevronLeftIcon } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
-import type { PastSession, SessionPointer } from '../../../shared/agent'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { PastSession } from '../../../shared/agent'
 import type { Project } from '../../../shared/api'
 import { api } from '../api'
 import { ProjectContext } from '../project-context'
@@ -9,7 +9,8 @@ import { SessionIndicator } from '../session/SessionIndicator'
 import { SessionView } from '../session/SessionView'
 import { NewSessionButton, PastSessionRow, useStartSession } from '../session/StartSession'
 import { useSessionSummaries, useSessionSummary } from '../sessions'
-import { listSessions, openSessionIn, rememberOpenSession } from './session-list'
+import { TabErrorBoundary } from '../TabErrorBoundary'
+import { listSessions, type OpenedSession, openSessionIn, rememberOpenSession } from './session-list'
 
 type Props = {
   project: Project
@@ -24,28 +25,41 @@ type Props = {
 export function PhoneWorkspace({ project, pendingSession, onPendingSessionShown }: Props) {
   const [open, setOpen] = useState(() => openSessionIn(project.id))
 
-  const show = useCallback((pointer: SessionPointer | null) => {
-    rememberOpenSession(project.id, pointer)
-    setOpen(pointer)
+  const show = useCallback((opened: OpenedSession | null) => {
+    rememberOpenSession(project.id, opened)
+    setOpen(opened)
   }, [project.id])
 
   useEffect(() => {
     if (pendingSession?.projectId !== project.id) return
-    show(pendingSession.pointer)
+    show({ pointer: pendingSession.pointer, title: pendingSession.title })
     onPendingSessionShown()
   }, [pendingSession, project.id, show, onPendingSessionShown])
 
   return (
     <ProjectContext.Provider value={project}>
-      {open ? <OpenSession key={open.agentSessionId} pointer={open} onShow={show} /> : <SessionList projectId={project.id} onOpen={show} />}
+      {open
+        ? <OpenSession key={open.pointer.agentSessionId} opened={open} onShow={show} />
+        : <SessionList projectId={project.id} onOpen={show} />}
     </ProjectContext.Provider>
   )
 }
 
-function OpenSession({ pointer, onShow }: { pointer: SessionPointer; onShow: (pointer: SessionPointer | null) => void }) {
+function OpenSession({ opened: { pointer, title }, onShow }: { opened: OpenedSession; onShow: (opened: OpenedSession | null) => void }) {
   const summary = useSessionSummary(pointer.agentSessionId)
   const { agent } = pointer
-  const follow = useCallback((agentSessionId: string) => onShow({ agent, agentSessionId }), [agent, onShow])
+  const follow = useCallback(
+    (agentSessionId: string) => onShow({ pointer: { agent, agentSessionId }, title }),
+    [agent, title, onShow],
+  )
+
+  // Closed on another client, such as by closing its desktop tab.
+  const wasLoaded = useRef(false)
+  useEffect(() => {
+    if (summary) wasLoaded.current = true
+    else if (wasLoaded.current) onShow(null)
+  }, [summary, onShow])
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-11 shrink-0 items-center gap-1.5 border-b pr-3">
@@ -58,19 +72,21 @@ function OpenSession({ pointer, onShow }: { pointer: SessionPointer; onShow: (po
           <ChevronLeftIcon className="size-5" />
         </button>
         <SessionIndicator summary={summary} />
-        <span className="min-w-0 truncate font-medium">{summary?.title || 'New session'}</span>
+        <span className="min-w-0 truncate font-medium">{summary?.title || title || 'New session'}</span>
       </div>
       <div className="min-h-0 flex-1">
-        <SessionView pointer={pointer} shown onMoved={follow} />
+        <TabErrorBoundary>
+          <SessionView pointer={pointer} shown onMoved={follow} />
+        </TabErrorBoundary>
       </div>
     </div>
   )
 }
 
-function SessionList({ projectId, onOpen }: { projectId: string; onOpen: (pointer: SessionPointer) => void }) {
+function SessionList({ projectId, onOpen }: { projectId: string; onOpen: (opened: OpenedSession) => void }) {
   const summaries = useSessionSummaries()
   const [pastSessions, setPastSessions] = useState<PastSession[]>([])
-  const { starting, startError, start } = useStartSession(projectId, onOpen)
+  const { starting, startError, start } = useStartSession(projectId, (pointer) => onOpen({ pointer, title: '' }))
 
   useEffect(() => {
     let cancelled = false
@@ -92,7 +108,7 @@ function SessionList({ projectId, onOpen }: { projectId: string; onOpen: (pointe
             <button
               key={session.agentSessionId}
               type="button"
-              onClick={() => onOpen({ agent: session.agent, agentSessionId: session.agentSessionId })}
+              onClick={() => onOpen({ pointer: { agent: session.agent, agentSessionId: session.agentSessionId }, title: session.title })}
               className="hover:bg-accent flex items-center gap-2 rounded-md px-2 py-2.5 text-left"
             >
               <span className="min-w-0 flex-1 truncate">{session.title || 'New session'}</span>
@@ -113,7 +129,7 @@ function SessionList({ projectId, onOpen }: { projectId: string; onOpen: (pointe
             <PastSessionRow
               key={session.agentSessionId}
               session={session}
-              onOpen={() => onOpen({ agent: session.agent, agentSessionId: session.agentSessionId })}
+              onOpen={() => onOpen({ pointer: { agent: session.agent, agentSessionId: session.agentSessionId }, title: session.title })}
             />
           ))}
         </section>
