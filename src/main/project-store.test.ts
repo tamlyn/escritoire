@@ -101,4 +101,13 @@ describe('ProjectStore', () => {
     expect(reloaded.getState().activeProjectId).toBe(id)
     expect(await reloaded.loadLayout(id)).toEqual({ version: 1 })
   })
+  it('starts with only the active project open', async () => {
+    const store = await ProjectStore.load(dataDir)
+    const a = (await store.openProject(alpha)).activeProjectId!
+    const b = (await store.openProject(beta)).activeProjectId!
+
+    const reloaded = (await ProjectStore.load(dataDir)).getState()
+
+    expect(reloaded.projects.map((p) => [p.id, p.isOpen])).toEqual([[a, false], [b, true]])
+  })
 })

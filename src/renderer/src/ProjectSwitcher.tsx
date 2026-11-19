@@ -213,7 +213,7 @@ function ProjectItem({ project, positions, activity, isActive, onSelect }: Proje
       </span>
       <span className="text-muted-foreground ml-auto flex shrink-0 items-center gap-2 text-xs">
         {activity && <ActivityIndicators activity={activity} />}
-        {isActive ? 'current' : project.isOpen ? '' : 'closed'}
+        {isActive && 'current'}
       </span>
     </CommandItem>
   )

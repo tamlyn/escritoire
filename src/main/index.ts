@@ -57,21 +57,9 @@ type Services = {
   databases: Databases
 }
 
-async function restoreUnread(projects: ProjectStore, sessions: SessionManager, projectId: string): Promise<void> {
-  await sessions.restoreUnread(projectId, await projects.sessionTabs(projectId)).catch(console.error)
-}
-
 /** The API as one client sees it. */
 function createApi(client: Client, { clients, remote, push, projects, sessions, sessionStore, files, terminals, supervisor, connections, databases }: Services): Api {
-  /** Closing a project forgets its unread sessions, so reopening it finds them again. */
-  async function activate(change: () => Promise<AppState>): Promise<AppState> {
-    const wasOpen = new Set(projects.getState().projects.filter((p) => p.isOpen).map((p) => p.id))
-    const state = await change()
-    if (state.activeProjectId && !wasOpen.has(state.activeProjectId)) {
-      await restoreUnread(projects, sessions, state.activeProjectId)
-    }
-    return clients.activate(client, state)
-  }
+  const activate = async (change: () => Promise<AppState>) => clients.activate(client, await change())
   const terminalHost: ScreenHost = {
     attach: (projectId, terminalId, size) => terminals.attach(projectId, terminalId, size),
     detach: (terminalId) => terminals.detach(terminalId),
@@ -383,7 +371,9 @@ void app.whenReady().then(async () => {
       pushAttention.update(summaries)
     },
   })
-  await Promise.all(projects.getState().projects.filter((p) => p.isOpen).map((p) => restoreUnread(projects, sessions, p.id)))
+  await Promise.all(projects.getState().projects.map(async (p) => {
+    await sessions.restoreUnread(p.id, await projects.sessionTabs(p.id)).catch(console.error)
+  }))
   const files = new ProjectFiles({
     projectPath: (projectId) => projects.getProject(projectId).path,
     send: (payload) => send('filesChanged', payload),

@@ -80,6 +80,7 @@ Check current versions and APIs against documentation when adding each one.
 - One project is active at a time. Switching projects swaps the whole set of tabs and the file tree.
 - Each project remembers its own tabs and layout, across switches and across restarts.
 - **Explicit opening and closing.** Closing a project releases its agent sessions, terminals and supervised processes while keeping its layout available to reopen. Closing a session releases its runtime while keeping its conversation available to resume.
+- **Open means used since launch.** Nothing runs across a restart, so the app starts with only the current project open; the rest are dimmed in the switcher until switched to.
 - Switching away does not close a project or stop its work. Only the active project's UI is rendered; background projects retain the state needed for their sessions, terminals and drafts.
 - File watchers and git status polling run only for projects that are some client's active one, and refresh on switching in.
 - Supervised processes are never stopped merely by switching away or by inactivity. Closing the project or quitting the app stops them.
@@ -99,7 +100,7 @@ Check current versions and APIs against documentation when adding each one.
 - **Inbox in the top bar,** between the menu and the active project's name: a count of sessions in every project that need attention, the active one included, so it is one place to jump from. It is always shown, as a bell when nothing needs the user, so the project name doesn't shift. It lists them, waiting for input first, then unread, each with its project. Choosing one switches to that project if need be and focuses the session. It is derived in the renderer from the session summaries every client already has.
 - **While the window is unfocused,** a dock badge counts every session needing attention (in all projects, the active one included), and an OS notification appears each time a session starts waiting or finishes a turn. Clicking it brings the window forward and focuses the session. This is the only Electron-specific part (`main/desktop-attention.ts`); a session the user can see never becomes unread, since visibility already requires focus.
 - **Away means absent, not unfocused.** Presence at the desktop, which later decides Web Push, treats the user as away after one minute idle.
-- **Unread survives a restart.** Sessions load only when a client shows them, so when a project opens main lists the unread sessions in its tabs from the session store until they load. Closing a session's tab marks it seen, so it doesn't return to the inbox after every restart; closing its project doesn't.
+- **Unread survives a restart.** Sessions load only when a client shows them, so at startup main lists the unread sessions in every project's tabs from the session store until they load. Closing a project keeps its unread sessions listed the same way. Closing a session's tab marks it seen, so it doesn't return to the inbox after every restart; closing its project doesn't.
 - A crashed process is shown only in the switcher row, not the inbox or badge.
 - No jump-to-next-project shortcut.
 

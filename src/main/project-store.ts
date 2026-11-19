@@ -15,6 +15,8 @@ export class ProjectStore {
     const store = new ProjectStore(dataDir)
     const saved = (await readJson(store.statePath)) as AppState | undefined
     if (saved) store.state = saved
+    // Open means it has been used since launch, so only the one to resume in starts open.
+    for (const project of store.state.projects) project.isOpen = project.id === store.state.activeProjectId
     return store
   }
 

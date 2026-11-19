@@ -26,7 +26,7 @@ type ProjectWork = { work: Work; loading: Map<string, Promise<Session>> }
 
 type CommandList = { latest?: SlashCommand[]; loading?: Promise<SlashCommand[]> }
 
-/** A session left unread when the app last quit, which hasn't been loaded since. */
+/** An unread session that isn't loaded: left so when the app quit or its project closed. */
 type UnreadSession = { projectId: string; pointer: SessionPointer; title: string }
 
 type Session = {
@@ -113,8 +113,8 @@ export class SessionManager {
   }
 
   /**
-   * Sessions load only when a client shows them, so when a project opens this
-   * finds the unread sessions in its tabs for the summaries. Sessions without a
+   * Sessions load only when a client shows them, so at startup this finds the
+   * unread sessions in a project's tabs for the summaries. Sessions without a
    * tab were dismissed. Nothing can be waiting, since agents only resume when
    * sent a message.
    */
@@ -350,15 +350,20 @@ export class SessionManager {
     this.broadcastSummaries()
   }
 
-  /** Stops the project's agents, cancels its loads and waits for its saves. */
+  /**
+   * Stops the project's agents, cancels its loads and waits for its saves.
+   * Its unread sessions stay listed, as they would after a restart.
+   */
   async closeProject(projectId: string): Promise<void> {
     const project = this.projects.get(projectId)
     this.projects.delete(projectId)
     const closing = [...this.sessions.values()].filter((session) => session.projectId === projectId)
-    const forgotten = [...this.unread.values()].filter((unread) => unread.projectId === projectId)
-    for (const unread of forgotten) this.unread.delete(unread.pointer.agentSessionId)
+    for (const { pointer, record } of closing) {
+      if (record.lastTurnEndedAt > record.lastSeenAt) {
+        this.unread.set(pointer.agentSessionId, { projectId, pointer, title: record.title })
+      }
+    }
     for (const session of closing) this.stop(session)
-    if (forgotten.length > 0) this.broadcastSummaries()
     await project?.work.close()
     // Saved once more in case an earlier save failed.
     await Promise.all(closing.map((session) =>

@@ -229,6 +229,18 @@ describe('SessionManager', () => {
     expect(restarted.summaries()).toEqual([unread])
   })
 
+  it('keeps a closed project’s unread sessions listed', async () => {
+    const { manager, runs } = await setup()
+    const pointer = await manager.createSession('p1', 'claude')
+    await manager.openSession('p1', pointer)
+    manager.sendMessage(pointer, say('Hi'))
+    runs[0]!.emit({ type: 'statusChanged', status: 'idle' })
+
+    await manager.closeProject('p1')
+
+    expect(manager.summaries()).toEqual([{ ...pointer, projectId: 'p1', title: 'Hi', status: 'idle', attention: 'unread' }])
+  })
+
   it('marks a session seen when its tab closes, loaded or not', async () => {
     const { manager, runs, dataDir } = await setup()
     const first = await manager.createSession('p1', 'claude')
