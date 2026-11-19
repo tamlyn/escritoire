@@ -54,6 +54,8 @@ export type GitSummary = {
   untracked: GitChange[]
   /** Untracked files beyond those listed, which are capped. */
   untrackedOmitted: number
+  /** Ignored files, and ignored directories without their contents. */
+  ignored: string[]
 }
 
 /**

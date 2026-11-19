@@ -44,7 +44,16 @@ export async function gitSummary(root: string): Promise<GitSummary | null> {
   const scope = ['--', '.']
 
   const [status, unstagedLines, stagedLines] = await Promise.all([
-    git(root, ['status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all', ...scope]),
+    // `matching` names an ignored directory rather than everything in it.
+    git(root, [
+      'status',
+      '--porcelain=v2',
+      '-z',
+      '--branch',
+      '--untracked-files=all',
+      '--ignored=matching',
+      ...scope,
+    ]),
     git(root, ['diff', '--numstat', '-z', ...scope]),
     git(root, ['diff', '--cached', '--numstat', '-z', '-M', ...scope]),
   ])
@@ -66,6 +75,7 @@ export async function gitSummary(root: string): Promise<GitSummary | null> {
     unstaged: summary.unstaged,
     untracked,
     untrackedOmitted: summary.untracked.length - untracked.length,
+    ignored: summary.ignored,
   }
 }
 
@@ -253,11 +263,14 @@ export class GitWatcher {
   }
 }
 
-type ParsedStatus = Pick<GitSummary, 'branch' | 'upstream' | 'conflicted' | 'staged' | 'unstaged' | 'untracked'> & {
+type ParsedStatus = Pick<
+  GitSummary,
+  'branch' | 'upstream' | 'conflicted' | 'staged' | 'unstaged' | 'untracked' | 'ignored'
+> & {
   unborn: boolean
 }
 
-/** Parses `git status --porcelain=v2 -z --branch`. */
+/** Parses `git status --porcelain=v2 -z --branch --ignored`. */
 export function parseStatus(output: string, toProject: (path: string) => string): ParsedStatus {
   const parsed: ParsedStatus = {
     branch: null,
@@ -267,6 +280,7 @@ export function parseStatus(output: string, toProject: (path: string) => string)
     staged: [],
     unstaged: [],
     untracked: [],
+    ignored: [],
   }
   // An iterator, so a record that spans two can take the next.
   const records = output.split('\0').values()
@@ -283,6 +297,9 @@ export function parseStatus(output: string, toProject: (path: string) => string)
       }
     } else if (record.startsWith('? ')) {
       parsed.untracked.push({ path: toProject(record.slice(2)), status: '?', lines: null })
+    } else if (record.startsWith('! ')) {
+      // `toProject` drops a directory's trailing slash.
+      parsed.ignored.push(toProject(record.slice(2)))
     } else if (record.startsWith('u ')) {
       parsed.conflicted.push({ path: toProject(fields(record, 10)), status: 'U', lines: null })
     } else if (record.startsWith('1 ') || record.startsWith('2 ')) {

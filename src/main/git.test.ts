@@ -71,6 +71,14 @@ test('separates staged, unstaged and untracked changes, with line counts', async
   })
 })
 
+test('lists ignored files and directories, but not what is inside an ignored directory', async () => {
+  git('init', '-q', '-b', 'main')
+  await write('.gitignore', '*.log\nbuild/\n')
+  await write('src/debug.log', 'x')
+  await write('build/out/a.js', 'x')
+  expect((await gitSummary(repo))?.ignored.sort()).toEqual(['build', 'src/debug.log'])
+})
+
 test('lists tracked and untracked files, but not deleted ones', async () => {
   git('init', '-q', '-b', 'main')
   await write('.gitignore', 'ignored.txt\n')

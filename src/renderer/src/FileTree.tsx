@@ -89,6 +89,7 @@ function Entry({
   const menu = useMenuActions()
   const summary = useGitSummary(project.id)
   const status = summary ? pathStatus(fileStatuses(summary), entry.path, entry.isDirectory) : undefined
+  const hasChanges = entry.isDirectory && status !== undefined && status !== '!'
   const isExpanded = entry.isDirectory && expanded.has(entry.path)
   const diffs = onOpenDiff && summary && !entry.isDirectory ? fileDiffs(summary, entry.path) : []
 
@@ -100,7 +101,7 @@ function Entry({
       title={
         status === undefined
           ? entry.path
-          : `${entry.path} (${entry.isDirectory ? 'has changes' : (statusNames[status] ?? 'changed')})`
+          : `${entry.path} (${hasChanges ? 'has changes' : (statusNames[status] ?? 'changed')})`
       }
       onClick={() => (entry.isDirectory ? onToggle(entry.path) : onOpenFile(entry.path))}
       style={{ paddingLeft: 8 + depth * indentPx }}
@@ -116,7 +117,7 @@ function Entry({
         <span className="size-3.5 shrink-0" />
       )}
       <span className="truncate">{entry.name}</span>
-      {status !== undefined && entry.isDirectory && (
+      {hasChanges && (
         <span aria-hidden className="ml-auto size-1.5 shrink-0 rounded-full bg-current" />
       )}
     </button>

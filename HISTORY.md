@@ -169,7 +169,7 @@ Learnings from The Running Man carried over:
 
 ### Git
 
-- **A summary, not detailed review:** which files changed (staged, unstaged, untracked) and how much, per project. The file tree colours changed files and the directories containing them.
+- **A summary, not detailed review:** which files changed (staged, unstaged, untracked) and how much, per project. The file tree colours changed files and the directories containing them, and ignored files and directories, in JetBrains' Islands theme colours.
 - Commit history as a graph across local and remote branches and tags, with branch heads and tags labelled. A commit opens to show its message and files, each with its diff.
 - Drill into a file's diff, staged, unstaged or in a commit.
 - Switch branch, pull and push. These use the user's own git configuration and credentials; a prompt for credentials fails rather than waiting.
