@@ -3,7 +3,7 @@ import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { chromium, devices, expect, type Page, test, webkit } from '@playwright/test'
-import { fakeCodex, openProject } from './agent'
+import { fakeCodex, openProject, send, startCodexSession } from './agent'
 import { launchApp } from './app'
 
 async function freePort(): Promise<number> {
@@ -115,6 +115,9 @@ test('a phone drives a session from its own layout', async () => {
   const { page, close } = await launchApp(join(root, 'data'), agent.env)
   await openProject(page, join(root, 'alpha'))
   await openProject(page, join(root, 'beta'))
+  await startCodexSession(page)
+  await send(page, 'from the desk')
+  await expect(page.getByRole('tab', { name: 'from the desk' })).toBeVisible()
 
   const port = await turnOnRemoteAccess(page)
   const browser = await webkit.launch()
@@ -166,7 +169,15 @@ test('a phone drives a session from its own layout', async () => {
   await expect(phone.getByText('some notes')).toBeVisible()
   await phone.getByRole('button', { name: 'Back' }).click()
 
-  // A terminal the phone starts, with the keys a phone's keyboard lacks.
+  // And from the file tree, which going back from the file returns to.
+  await phone.getByRole('button', { name: 'Files' }).click()
+  await phone.getByRole('treeitem', { name: 'notes.txt' }).click()
+  await expect(phone.getByText('some notes')).toBeVisible()
+  await phone.getByRole('button', { name: 'Back' }).click()
+  await expect(phone.getByRole('treeitem', { name: 'notes.txt' })).toBeVisible()
+  await phone.getByRole('button', { name: 'Back' }).click()
+
+  // A terminal the phone starts, with the keys a phone's keyboard lacks, which keeps running until closed.
   await phone.getByRole('button', { name: 'New terminal' }).click()
   await expect(phone.getByRole('button', { name: 'Ctrl' })).toBeVisible()
   await phone.locator('.xterm').click()
@@ -174,7 +185,21 @@ test('a phone drives a session from its own layout', async () => {
   await phone.keyboard.press('Enter')
   await expect(phone.locator('.xterm-rows')).toContainText('from-the-phone')
   await phone.getByRole('button', { name: 'Back' }).click()
-  await expect(phone.getByRole('button', { name: 'New terminal' })).toBeVisible()
+  await phone.getByRole('button', { name: 'Terminal 1', exact: true }).click()
+  await expect(phone.locator('.xterm-rows')).toContainText('from-the-phone')
+  await phone.getByRole('button', { name: 'Back' }).click()
+  await phone.getByRole('button', { name: 'Close Terminal 1' }).click()
+  await expect(phone.getByRole('button', { name: 'Terminal 1', exact: true })).toHaveCount(0)
+
+  // Closing a session stops it, as closing its desktop tab would.
+  await phone.getByRole('button', { name: /^Close code/ }).click()
+  await expect(phone.getByRole('button', { name: /^Close code/ })).toHaveCount(0)
+
+  // A session with a desktop tab loses the tab too.
+  await phone.getByRole('banner').getByRole('button', { name: 'alpha' }).click()
+  await phone.getByRole('option', { name: /^beta/ }).click()
+  await phone.getByRole('button', { name: 'Close from the desk' }).click()
+  await expect(page.getByRole('tab', { name: 'from the desk' })).toHaveCount(0)
 
   await browser.close()
   await close()

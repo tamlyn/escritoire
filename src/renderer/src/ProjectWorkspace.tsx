@@ -106,9 +106,11 @@ export function ProjectWorkspace({ project, pendingSession, onPendingSessionShow
 
   if (!model) return null
 
+  const openFile = (path: string) => workspaceRef.current?.addTab(createFileTab(path))
+
   return (
     <ProjectContext.Provider value={project}>
-      <FileActionsProvider workspaceRef={workspaceRef}>
+      <FileActionsProvider workspaceRef={workspaceRef} openFile={openFile}>
         <NewFileShortcut />
         <Group
           orientation="horizontal"
@@ -128,7 +130,7 @@ export function ProjectWorkspace({ project, pendingSession, onPendingSessionShow
             <div className="flex h-full flex-col">
               <div className="min-h-0 flex-1">
                 <FileTree
-                  onOpenFile={(path) => workspaceRef.current?.addTab(createFileTab(path))}
+                  onOpenFile={openFile}
                   onOpenDiff={(request) => workspaceRef.current?.addTab(createDiffTab(request))}
                 />
               </div>

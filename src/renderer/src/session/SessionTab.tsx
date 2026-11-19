@@ -2,7 +2,7 @@ import { useCallback, useEffect } from 'react'
 import { useParentTabState, useParentWorkspace } from 'react-resizable-panels'
 import type { SessionPointer } from '../../../shared/agent'
 import { tabsetsIn } from '../layout-tree'
-import { useSessionSummary } from '../sessions'
+import { useSessionClosed, useSessionSummary } from '../sessions'
 import { createFileTab, createSessionTab, type Tab, type TabData } from '../tabs'
 import { SessionView } from './SessionView'
 
@@ -30,6 +30,9 @@ export function SessionTab({ tab, pointer }: { tab: Tab; pointer: SessionPointer
       workspace.closeTab(tab.id)
     }
   }, [workspace, tab.id, pointer.agent])
+
+  // Closed on another client, such as a phone.
+  useSessionClosed(summary, () => workspace?.closeTab(tab.id))
 
   const openFile = useCallback((path: string) => workspace?.addTab(createFileTab(path)), [workspace])
 

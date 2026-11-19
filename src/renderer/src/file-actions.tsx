@@ -12,7 +12,7 @@ import { reloadConnections } from './sql'
 import { createFileTab, type TabData } from './tabs'
 
 type FileActions = {
-  /** Asks for a new file's path, starting in `directory`, then opens it with `open` or in a new tab. */
+  /** Asks for a new file's path, starting in `directory`, then opens it with `open` or the provider's `openFile`. */
   newFile(directory: string, open?: (path: string) => void): void
   rename(entry: DirectoryEntry): void
   /** Moves the entry to the trash and closes its tabs. */
@@ -37,16 +37,19 @@ type Prompt =
 /** Creating, renaming and deleting files, for the file tree, the new tab page and shortcuts. */
 export function FileActionsProvider({
   workspaceRef,
+  openFile,
   children,
 }: {
-  workspaceRef: RefObject<Workspace | null>
+  /** The tabs to keep in step with renames and deletions; the phone has none. */
+  workspaceRef?: RefObject<Workspace | null>
+  openFile: (path: string) => void
   children: React.ReactNode
 }) {
   const project = useProject()
   const [prompt, setPrompt] = useState<Prompt | null>(null)
 
   const actions: FileActions = {
-    newFile: (directory, open = (path) => workspaceRef.current?.addTab(createFileTab(path))) =>
+    newFile: (directory, open = openFile) =>
       setPrompt({ kind: 'new', directory, open }),
     rename: (entry) => setPrompt({ kind: 'rename', entry }),
     remove: (entry) => {
@@ -55,7 +58,7 @@ export function FileActionsProvider({
           // An editor's pending save would otherwise fail against the trashed file.
           await flushEditors()
           await api.deleteFile(project.id, entry.path)
-          if (workspaceRef.current) moveFileTabs(workspaceRef.current, entry.path, null)
+          if (workspaceRef?.current) moveFileTabs(workspaceRef.current, entry.path, null)
         } catch (error) {
           setPrompt({ kind: 'error', message: errorMessage(error) })
         }
@@ -78,7 +81,7 @@ export function FileActionsProvider({
     if (!to || to === from) return
     await flushEditors()
     await api.renameFile(project.id, from, to)
-    if (workspaceRef.current) moveFileTabs(workspaceRef.current, from, to)
+    if (workspaceRef?.current) moveFileTabs(workspaceRef.current, from, to)
     await reloadConnections(project.id)
   }
 

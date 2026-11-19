@@ -6,10 +6,13 @@ import type { TabData } from '../tabs'
 /** A session on the phone's screen. The title is for sessions main knows no title for yet. */
 export type SessionPhoneView = { kind: 'session'; pointer: SessionPointer; title: string }
 
-/** What fills the phone's screen, other than the project's list. Going back from a file returns to `from`. */
+export type FilesPhoneView = { kind: 'files' }
+
+/** What fills the phone's screen, other than the project's home. Going back from a file returns to `from`. */
 export type PhoneView =
   | SessionPhoneView
-  | { kind: 'file'; path: string; from: SessionPhoneView | null }
+  | FilesPhoneView
+  | { kind: 'file'; path: string; from: SessionPhoneView | FilesPhoneView | null }
   | { kind: 'terminal'; terminalId: string; title: string }
 
 /** The terminals in the desktop's saved layout, which is only read. */
@@ -48,39 +51,46 @@ export function listSessions(
 const openViewsKey = 'escritoire.phoneOpenViews'
 const startedTerminalsKey = 'escritoire.phoneStartedTerminals'
 
-function readByProject<T>(key: string): Record<string, T> {
+type Storage = 'localStorage' | 'sessionStorage'
+
+function readByProject<T>(storage: Storage, key: string): Record<string, T> {
   try {
-    return JSON.parse(sessionStorage.getItem(key) ?? '{}') as Record<string, T>
+    return JSON.parse(window[storage].getItem(key) ?? '{}') as Record<string, T>
   } catch {
     return {}
   }
 }
 
-function saveForProject<T>(key: string, projectId: string, value: T | null): void {
-  const { [projectId]: _, ...others } = readByProject<T>(key)
+function saveForProject<T>(storage: Storage, key: string, projectId: string, value: T | null): void {
+  const { [projectId]: _, ...others } = readByProject<T>(storage, key)
   try {
-    sessionStorage.setItem(key, JSON.stringify(value === null ? others : { ...others, [projectId]: value }))
+    window[storage].setItem(key, JSON.stringify(value === null ? others : { ...others, [projectId]: value }))
   } catch { /* It only misses returning to where the phone was. */ }
 }
 
-/** The terminals the phone started in this project and hasn't closed, so it can return to them. */
+/**
+ * The terminals the phone started in this project and hasn't closed, so it can
+ * return to them. Kept as long as main keeps them, which outlives the iOS web
+ * app's session storage.
+ */
 export function startedTerminalsIn(projectId: string): string[] {
-  return readByProject<string[]>(startedTerminalsKey)[projectId] ?? []
+  return readByProject<string[]>('localStorage', startedTerminalsKey)[projectId] ?? []
 }
 
 export function rememberStartedTerminal(projectId: string, terminalId: string): void {
-  saveForProject(startedTerminalsKey, projectId, [...startedTerminalsIn(projectId), terminalId])
+  saveForProject('localStorage', startedTerminalsKey, projectId, [...startedTerminalsIn(projectId), terminalId])
 }
 
 export function forgetStartedTerminal(projectId: string, terminalId: string): void {
-  saveForProject(startedTerminalsKey, projectId, startedTerminalsIn(projectId).filter((id) => id !== terminalId))
+  const remaining = startedTerminalsIn(projectId).filter((id) => id !== terminalId)
+  saveForProject('localStorage', startedTerminalsKey, projectId, remaining.length > 0 ? remaining : null)
 }
 
 /** What the phone was showing in this project, which reconnecting or reloading returns to. */
 export function openViewIn(projectId: string): PhoneView | null {
-  return readByProject<PhoneView>(openViewsKey)[projectId] ?? null
+  return readByProject<PhoneView>('sessionStorage', openViewsKey)[projectId] ?? null
 }
 
 export function rememberOpenView(projectId: string, view: PhoneView | null): void {
-  saveForProject(openViewsKey, projectId, view)
+  saveForProject('sessionStorage', openViewsKey, projectId, view)
 }

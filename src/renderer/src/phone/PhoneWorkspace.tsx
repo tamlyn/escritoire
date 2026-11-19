@@ -1,16 +1,18 @@
-import { ChevronLeftIcon } from 'lucide-react'
-import { type Ref, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
-import type { PastSession, SessionPointer } from '../../../shared/agent'
+import { ChevronLeftIcon, FolderTreeIcon, SquareTerminalIcon, XIcon } from 'lucide-react'
+import { type Ref, useCallback, useEffect, useImperativeHandle, useState } from 'react'
+import type { PastSession, SessionPointer, SessionSummary } from '../../../shared/agent'
 import type { Project } from '../../../shared/api'
 import { baseName } from '../../../shared/files'
 import { api } from '../api'
+import { FileActionsProvider } from '../file-actions'
 import { FileView } from '../file/FileView'
+import { FileTree } from '../FileTree'
 import { ProjectContext } from '../project-context'
 import type { PendingSession, ProjectWorkspaceHandle } from '../ProjectWorkspace'
 import { SessionIndicator } from '../session/SessionIndicator'
 import { SessionView } from '../session/SessionView'
-import { NewSessionButton, NewTerminalButton, PastSessionRow, useStartSession } from '../session/StartSession'
-import { useSessionSummaries, useSessionSummary } from '../sessions'
+import { NewSessionButton, NewTerminalButton, PastSessionRow, startButton, useStartSession } from '../session/StartSession'
+import { useSessionClosed, useSessionSummaries, useSessionSummary } from '../sessions'
 import { TabErrorBoundary } from '../TabErrorBoundary'
 import { createTerminalTab } from '../tabs'
 import { PhoneTerminal } from './PhoneTerminal'
@@ -18,6 +20,7 @@ import {
   forgetStartedTerminal,
   listSessions,
   openViewIn,
+  type FilesPhoneView,
   type PhoneView,
   rememberOpenView,
   rememberStartedTerminal,
@@ -35,10 +38,12 @@ type Props = {
 
 type Show = (view: PhoneView | null) => void
 
+const files: FilesPhoneView = { kind: 'files' }
+
 /**
- * A project on a phone: its sessions, or one thing full screen. A project's
- * saved layout belongs to the desktop, so this only ever reads it, to offer the
- * desktop's terminals.
+ * A project on a phone: a home listing what's open, or one thing full screen.
+ * A project's saved layout belongs to the desktop, so this only ever reads it,
+ * to offer the desktop's terminals.
  */
 export function PhoneWorkspace({ project, pendingSession, onPendingSessionShown, ref }: Props) {
   const [view, setView] = useState(() => openViewIn(project.id))
@@ -49,17 +54,8 @@ export function PhoneWorkspace({ project, pendingSession, onPendingSessionShown,
   }, [project.id])
 
   useImperativeHandle(ref, () => ({
-    openFile: (path) => show({ kind: 'file', path, from: view?.kind === 'session' ? view : null }),
+    openFile: (path) => show({ kind: 'file', path, from: view?.kind === 'session' || view?.kind === 'files' ? view : null }),
   }), [show, view])
-
-  /** Nothing else would ever close a terminal the phone started. Other ways of leaving keep it running. */
-  function leaveTerminal(terminalId: string) {
-    if (startedTerminalsIn(project.id).includes(terminalId)) {
-      forgetStartedTerminal(project.id, terminalId)
-      void api.closeTerminal(project.id, terminalId)
-    }
-    show(null)
-  }
 
   useEffect(() => {
     if (pendingSession?.projectId !== project.id) return
@@ -69,19 +65,25 @@ export function PhoneWorkspace({ project, pendingSession, onPendingSessionShown,
 
   return (
     <ProjectContext.Provider value={project}>
-      {view?.kind === 'session' ? (
-        <OpenSession key={view.pointer.agentSessionId} view={view} onShow={show} />
-      ) : view?.kind === 'file' ? (
-        <OpenFile key={view.path} path={view.path} onBack={() => show(view.from)} />
-      ) : view?.kind === 'terminal' ? (
-        <Screen title={view.title} onBack={() => leaveTerminal(view.terminalId)}>
-          <PhoneTerminal key={view.terminalId} terminalId={view.terminalId} />
-        </Screen>
-      ) : (
-        <TabErrorBoundary>
-          <ProjectHome projectId={project.id} onOpen={show} />
-        </TabErrorBoundary>
-      )}
+      <FileActionsProvider openFile={(path) => show({ kind: 'file', path, from: files })}>
+        {view?.kind === 'session' ? (
+          <OpenSession key={view.pointer.agentSessionId} view={view} onShow={show} />
+        ) : view?.kind === 'files' ? (
+          <Screen title="Files" onBack={() => show(null)}>
+            <FileTree onOpenFile={(path) => show({ kind: 'file', path, from: files })} />
+          </Screen>
+        ) : view?.kind === 'file' ? (
+          <OpenFile key={view.path} path={view.path} onBack={() => show(view.from)} />
+        ) : view?.kind === 'terminal' ? (
+          <Screen title={view.title} onBack={() => show(null)}>
+            <PhoneTerminal key={view.terminalId} terminalId={view.terminalId} />
+          </Screen>
+        ) : (
+          <TabErrorBoundary>
+            <ProjectHome projectId={project.id} onOpen={show} />
+          </TabErrorBoundary>
+        )}
+      </FileActionsProvider>
     </ProjectContext.Provider>
   )
 }
@@ -118,11 +120,7 @@ function OpenSession({ view, onShow }: { view: SessionPhoneView; onShow: Show })
   const openFile = useCallback((path: string) => onShow({ kind: 'file', path, from: view }), [view, onShow])
 
   // Closed on another client, such as by closing its desktop tab.
-  const wasLoaded = useRef(false)
-  useEffect(() => {
-    if (summary) wasLoaded.current = true
-    else if (wasLoaded.current) onShow(null)
-  }, [summary, onShow])
+  useSessionClosed(summary, () => onShow(null))
 
   return (
     <Screen title={summary?.title || title || 'New session'} indicator={<SessionIndicator summary={summary} />} onBack={() => onShow(null)}>
@@ -169,8 +167,37 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   )
 }
 
+const rowButton = 'hover:bg-accent flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-2.5 text-left'
+
 function TerminalRow({ title, onOpen }: { title: string; onOpen: () => void }) {
-  return <button type="button" onClick={onOpen} className="hover:bg-accent rounded-md px-2 py-2.5 text-left">{title}</button>
+  return (
+    <button type="button" onClick={onOpen} className={rowButton}>
+      <SquareTerminalIcon className="text-muted-foreground size-4 shrink-0" />
+      <span className="min-w-0 flex-1 truncate">{title}</span>
+    </button>
+  )
+}
+
+/** Something open, which closing stops, as closing its desktop tab would. */
+function OpenRow({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center">
+      {children}
+      <button
+        type="button"
+        aria-label={`Close ${title}`}
+        onClick={onClose}
+        className="text-muted-foreground hover:bg-accent flex size-11 shrink-0 items-center justify-center rounded-md"
+      >
+        <XIcon className="size-4" />
+      </button>
+    </div>
+  )
+}
+
+function closeSession(session: SessionSummary) {
+  if (session.status === 'working' && !confirm(`${session.title || 'This session'} is still working. Stop it and close it?`)) return
+  void api.closeSession({ agent: session.agent, agentSessionId: session.agentSessionId })
 }
 
 function ProjectHome({ projectId, onOpen }: { projectId: string; onOpen: Show }) {
@@ -193,7 +220,7 @@ function ProjectHome({ projectId, onOpen }: { projectId: string; onOpen: Show })
   }, [projectId])
 
   const { loaded, past } = listSessions(projectId, summaries, pastSessions)
-  const started = startedTerminalsIn(projectId)
+  const [started, setStarted] = useState(() => startedTerminalsIn(projectId))
   const openSession = ({ agent, agentSessionId, title }: SessionPointer & { title: string }) =>
     onOpen({ kind: 'session', pointer: { agent, agentSessionId }, title })
   const openTerminal = (terminalId: string, title: string) => onOpen({ kind: 'terminal', terminalId, title })
@@ -204,36 +231,45 @@ function ProjectHome({ projectId, onOpen }: { projectId: string; onOpen: Show })
     openTerminal(terminalId, 'Terminal')
   }
 
+  // Nothing else would ever close a terminal the phone started.
+  function closeTerminal(terminalId: string) {
+    forgetStartedTerminal(projectId, terminalId)
+    setStarted(startedTerminalsIn(projectId))
+    void api.closeTerminal(projectId, terminalId)
+  }
+
   return (
     <div className="flex h-full flex-col gap-6 overflow-y-auto p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-      {loaded.length > 0 && (
-        <Section title="Sessions">
+      {(loaded.length > 0 || started.length > 0) && (
+        <Section title="Open">
           {loaded.map((session) => (
-            <button
-              key={session.agentSessionId}
-              type="button"
-              onClick={() => openSession(session)}
-              className="hover:bg-accent flex items-center gap-2 rounded-md px-2 py-2.5 text-left"
-            >
-              <span className="min-w-0 flex-1 truncate">{session.title || 'New session'}</span>
-              <SessionIndicator summary={session} />
-            </button>
+            <OpenRow key={session.agentSessionId} title={session.title || 'New session'} onClose={() => closeSession(session)}>
+              <button type="button" onClick={() => openSession(session)} className={rowButton}>
+                <SessionIndicator summary={session} />
+                <span className="min-w-0 flex-1 truncate">{session.title || 'New session'}</span>
+              </button>
+            </OpenRow>
           ))}
+          {started.map((terminalId, index) => {
+            const title = `Terminal ${index + 1}`
+            return (
+              <OpenRow key={terminalId} title={title} onClose={() => closeTerminal(terminalId)}>
+                <TerminalRow title={title} onOpen={() => openTerminal(terminalId, title)} />
+              </OpenRow>
+            )
+          })}
         </Section>
       )}
       <div className="flex flex-col gap-2">
         <NewSessionButton agent="claude" starting={starting} onStart={(agent) => void start(agent)} />
         <NewSessionButton agent="codex" starting={starting} onStart={(agent) => void start(agent)} />
         <NewTerminalButton onClick={startTerminal} />
+        <button type="button" onClick={() => onOpen(files)} className={startButton}>
+          <FolderTreeIcon className="text-muted-foreground size-5" />
+          <span className="font-medium">Files</span>
+        </button>
         {startError && <p role="alert" className="text-destructive px-1 text-sm">{startError}</p>}
       </div>
-      {started.length > 0 && (
-        <Section title="Terminals on this phone">
-          {started.map((terminalId, index) => (
-            <TerminalRow key={terminalId} title={`Terminal ${index + 1}`} onOpen={() => openTerminal(terminalId, 'Terminal')} />
-          ))}
-        </Section>
-      )}
       {terminals.length > 0 && (
         <Section title="Desktop terminals">
           {terminals.map(({ id, title }) => <TerminalRow key={id} title={title} onOpen={() => openTerminal(id, title)} />)}

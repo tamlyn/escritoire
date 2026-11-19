@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { expect, type Page } from '@playwright/test'
 
 const modifier = process.platform === 'darwin' ? 'Meta' : 'Control'
@@ -32,6 +32,8 @@ export async function openProject(page: Page, path: string): Promise<void> {
   await page.keyboard.press(`${modifier}+o`)
   await page.getByRole('combobox').fill(`${path}/`)
   await page.getByRole('option', { name: `Open ${path}/` }).click()
+  // The previous project's empty workspace says the same until this one replaces it.
+  await expect(page.getByRole('banner')).toContainText(basename(path))
   await expect(page.getByText('to open a tab')).toBeVisible()
 }
 

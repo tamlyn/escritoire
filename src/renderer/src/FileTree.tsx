@@ -23,7 +23,8 @@ export function FileTree({
   onOpenDiff,
 }: {
   onOpenFile: (path: string) => void
-  onOpenDiff: (request: GitDiffRequest) => void
+  /** Without it, as on the phone, which has no diff view, changes aren't offered. */
+  onOpenDiff?: (request: GitDiffRequest) => void
 }) {
   const project = useProject()
   const actions = useFileActions()
@@ -65,7 +66,7 @@ type DirectoryProps = {
   expanded: ReadonlySet<string>
   onToggle: (path: string) => void
   onOpenFile: (path: string) => void
-  onOpenDiff: (request: GitDiffRequest) => void
+  onOpenDiff?: (request: GitDiffRequest) => void
 }
 
 function Directory({ path, depth, ...rest }: DirectoryProps) {
@@ -89,7 +90,7 @@ function Entry({
   const summary = useGitSummary(project.id)
   const status = summary ? pathStatus(fileStatuses(summary), entry.path, entry.isDirectory) : undefined
   const isExpanded = entry.isDirectory && expanded.has(entry.path)
-  const diffs = summary && !entry.isDirectory ? fileDiffs(summary, entry.path) : []
+  const diffs = onOpenDiff && summary && !entry.isDirectory ? fileDiffs(summary, entry.path) : []
 
   const row = (
     <button
@@ -103,7 +104,7 @@ function Entry({
       }
       onClick={() => (entry.isDirectory ? onToggle(entry.path) : onOpenFile(entry.path))}
       style={{ paddingLeft: 8 + depth * indentPx }}
-      className={`hover:bg-accent focus-visible:bg-accent flex w-full items-center gap-1 py-0.5 pr-2 text-left outline-none ${
+      className={`hover:bg-accent focus-visible:bg-accent flex w-full items-center gap-1 py-0.5 pr-2 text-left outline-none compact:py-2.5 ${
         status === undefined ? '' : (statusColours[status] ?? '')
       }`}
     >
@@ -127,7 +128,7 @@ function Entry({
         <ContextMenuTrigger asChild>{row}</ContextMenuTrigger>
         <ContextMenuContent onCloseAutoFocus={menu.onCloseAutoFocus}>
           {diffs.map((request) => (
-            <ContextMenuItem key={String(request.staged)} onSelect={() => onOpenDiff(request)}>
+            <ContextMenuItem key={String(request.staged)} onSelect={() => onOpenDiff?.(request)}>
               {request.staged ? 'View staged changes' : 'View changes'}
             </ContextMenuItem>
           ))}

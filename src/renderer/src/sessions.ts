@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import {
   type AgentKind,
   applyEvent,
@@ -34,6 +34,18 @@ export function useSessionSummaries(): SessionSummary[] {
 
 export function useSessionSummary(agentSessionId: string): SessionSummary | undefined {
   return useSessionSummaries().find((s) => s.agentSessionId === agentSessionId)
+}
+
+/** Calls `onClosed` when a session that was loaded no longer is, as when another client closed it. */
+export function useSessionClosed(summary: SessionSummary | undefined, onClosed: () => void): void {
+  const loaded = summary !== undefined
+  const wasLoaded = useRef(false)
+  const latest = useRef(onClosed)
+  latest.current = onClosed
+  useEffect(() => {
+    if (loaded) wasLoaded.current = true
+    else if (wasLoaded.current) latest.current()
+  }, [loaded])
 }
 
 /** `movedTo` is the session the conversation continues in after the agent reset it. */
