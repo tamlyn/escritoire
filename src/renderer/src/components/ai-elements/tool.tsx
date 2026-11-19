@@ -8,7 +8,7 @@ import type { ToolStatus } from "../../../../shared/agent";
 import {
   CheckIcon,
   ChevronRightIcon,
-  LoaderCircleIcon,
+  CircleDashedIcon,
   XIcon,
 } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
@@ -28,8 +28,9 @@ export type ToolHeaderProps = {
   className?: string;
 };
 
+// Running is static: the transcript's activity row carries the one spinner.
 const statusIcons: Record<ToolStatus, ReactNode> = {
-  running: <LoaderCircleIcon className="size-3.5 shrink-0 animate-spin" />,
+  running: <CircleDashedIcon className="size-3.5 shrink-0" />,
   completed: <CheckIcon className="size-3.5 shrink-0 text-green-600" />,
   failed: <XIcon className="size-3.5 shrink-0 text-red-600" />,
 };

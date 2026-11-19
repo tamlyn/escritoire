@@ -15,7 +15,9 @@ import {
   toolCodeClassName,
 } from '@/components/ai-elements/tool'
 import { cn } from '@/lib/utils'
-import { BrainIcon } from 'lucide-react'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { BrainIcon, ChevronRightIcon, LoaderCircleIcon } from 'lucide-react'
+import type { ReactNode } from 'react'
 import type { ImageAttachment, Item, ToolView } from '../../../shared/agent'
 import { fileLinkProps } from './FileLinks'
 
@@ -27,22 +29,28 @@ export function Transcript({ items, working }: { items: Item[]; working: boolean
     if (parentId) children.set(parentId, [...(children.get(parentId) ?? []), item])
     else topLevel.push(item)
   }
+  const groups = groupActivity(topLevel)
+  const lastGroup = groups.at(-1)
   const last = items.at(-1)
-  const view = (item: Item) => (
-    <ItemView key={item.id} item={item} nested={children} streaming={working && item === last} />
-  )
 
   return (
     <Conversation className="min-h-0 select-text" initial="instant">
       <ConversationContent className="mx-auto max-w-3xl gap-4 px-4 py-6">
-        {groupActivity(topLevel).map((group) =>
+        {groups.map((group) =>
           Array.isArray(group) ? (
-            <div key={group[0]!.id} className="flex flex-col gap-0.5">
-              {group.map(view)}
-            </div>
+            <Activity
+              key={group[0]!.id}
+              items={group}
+              nested={children}
+              live={working && group === lastGroup}
+              streamingId={working ? last?.id : undefined}
+            />
           ) : (
-            view(group)
+            <ItemView key={group.id} item={group} nested={children} streaming={working && group === last} />
           ),
+        )}
+        {working && !Array.isArray(lastGroup) && (
+          <ActivityRow live>Working…</ActivityRow>
         )}
       </ConversationContent>
       <ConversationScrollButton />
@@ -52,7 +60,7 @@ export function Transcript({ items, working }: { items: Item[]; working: boolean
 
 const isActivity = (item: Item) => item.kind === 'toolCall' || item.kind === 'reasoning'
 
-/** Runs of tool calls and thinking sit close together, between the messages. */
+/** Runs of tool calls and thinking collapse into one row between the messages. */
 function groupActivity(items: Item[]): (Item | Item[])[] {
   const groups: (Item | Item[])[] = []
   for (const item of items) {
@@ -63,6 +71,95 @@ function groupActivity(items: Item[]): (Item | Item[])[] {
   }
   return groups
 }
+
+/**
+ * The turn's one working indicator lives on the latest run of activity, or on
+ * a row of its own while the agent is between items.
+ */
+function Activity({
+  items,
+  nested,
+  live,
+  streamingId,
+}: {
+  items: Item[]
+  nested: Map<string, Item[]>
+  live: boolean
+  streamingId: string | undefined
+}) {
+  return (
+    <Collapsible className="group/activity">
+      <CollapsibleTrigger className="w-full">
+        <ActivityRow live={live} expandable>
+          {live ? currentActivity(items) : summarise(items)}
+        </ActivityRow>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="mt-1 mb-2 ml-1.5 flex flex-col gap-0.5 border-l pl-4">
+        {items.map((item) => (
+          <ItemView key={item.id} item={item} nested={nested} streaming={item.id === streamingId} />
+        ))}
+      </CollapsibleContent>
+    </Collapsible>
+  )
+}
+
+function ActivityRow({ live, expandable = false, children }: { live: boolean; expandable?: boolean; children: ReactNode }) {
+  return (
+    <div
+      className={cn(
+        'text-muted-foreground -mx-1 flex items-center gap-2 rounded px-1 py-0.5 text-left text-sm',
+        expandable && 'hover:bg-muted/60 hover:text-foreground',
+      )}
+    >
+      {live ? (
+        <LoaderCircleIcon className="size-3.5 shrink-0 animate-spin" />
+      ) : (
+        <span className="flex size-3.5 shrink-0 items-center justify-center">
+          <span className="size-1.5 rounded-full bg-current" />
+        </span>
+      )}
+      <span className="min-w-0 truncate">{children}</span>
+      {expandable && (
+        <ChevronRightIcon className="ml-auto size-3.5 shrink-0 opacity-0 transition-transform group-hover/activity:opacity-100 group-data-[state=open]/activity:rotate-90 group-data-[state=open]/activity:opacity-100" />
+      )}
+    </div>
+  )
+}
+
+function currentActivity(items: Item[]): string {
+  const running = items.findLast((item) => item.kind === 'toolCall' && item.status === 'running')
+  if (running?.kind === 'toolCall') return running.title
+  return items.at(-1)?.kind === 'reasoning' ? 'Thinking…' : 'Working…'
+}
+
+function summarise(items: Item[]): string {
+  let thought = false
+  let commands = 0
+  const files = new Set<string>()
+  const tools = new Map<string, number>()
+  for (const item of items) {
+    if (item.kind === 'reasoning') thought = true
+    if (item.kind !== 'toolCall') continue
+    const { view } = item
+    if (view.type === 'command') commands++
+    else if (view.type === 'fileChange') view.changes.forEach((change) => files.add(change.path))
+    else {
+      // MCP tools arrive as mcp__server__tool.
+      const name = view.name.split('__').at(-1)!
+      tools.set(name, (tools.get(name) ?? 0) + 1)
+    }
+  }
+  const parts = [
+    thought && 'thought',
+    commands && `ran ${plural(commands, 'command')}`,
+    files.size && `edited ${plural(files.size, 'file')}`,
+    ...[...tools].map(([name, count]) => (count > 1 ? `${name} ×${count}` : name)),
+  ].filter(Boolean) as string[]
+  const text = parts.join(', ')
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`
 
 function ItemView({
   item,

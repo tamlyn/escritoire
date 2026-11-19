@@ -1,4 +1,3 @@
-import { LoaderCircleIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { SessionPointer, SessionStatus } from '../../../shared/agent'
 import { api } from '../api'
@@ -47,7 +46,8 @@ export function SessionView({ pointer, shown, autoFocus = false, onMoved, onOpen
   return (
     <div className="flex h-full flex-col">
       <FileLinksProvider onOpenFile={onOpenFile}>
-        <Transcript items={view.items} working={working} />
+        {/* Waiting on the user isn't working, so the spinner stops for a request. */}
+        <Transcript items={view.items} working={working && view.requests.length === 0} />
       </FileLinksProvider>
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-2 px-4 pb-4 compact:px-2 compact:pb-[max(0.5rem,env(safe-area-inset-bottom))]">
         <StatusLine status={view.status} error={view.error} />
@@ -78,17 +78,8 @@ export function SessionView({ pointer, shown, autoFocus = false, onMoved, onOpen
 }
 
 function StatusLine({ status, error }: { status: SessionStatus; error?: string }) {
-  if (status === 'working') {
-    return (
-      <div className="text-muted-foreground flex items-center gap-2 text-sm">
-        <LoaderCircleIcon className="size-3.5 animate-spin" /> Working…
-      </div>
-    )
-  }
-  if (status === 'errored') {
-    return <div className="text-destructive text-sm">The agent stopped: {error}</div>
-  }
-  return null
+  if (status !== 'errored') return null
+  return <div className="text-destructive text-sm">The agent stopped: {error}</div>
 }
 
 /** A backgrounded phone tab stops counting at once, before its socket drops. */
