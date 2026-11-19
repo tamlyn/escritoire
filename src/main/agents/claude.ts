@@ -3,6 +3,7 @@ import { relative } from 'node:path'
 import {
   type CanUseTool,
   type EffortLevel,
+  getSessionInfo,
   getSessionMessages,
   type HookCallbackMatcher,
   type McpServerConfig,
@@ -295,6 +296,7 @@ class ClaudeRun implements AgentRun {
           permissionMode: (permissionMode ?? undefined) as PermissionMode | undefined,
           // Without summaries, recent models return thinking blocks with no text.
           thinking: { type: 'adaptive', display: 'summarized' },
+          promptSuggestions: true,
           canUseTool: this.canUseTool,
           pathToClaudeCodeExecutable: claudeCodePath(),
           ...(this.options.ide ? ideOptions(this.options.ide) : {}),
@@ -362,6 +364,21 @@ class ClaudeRun implements AgentRun {
     this.setWorking(false)
     void this.refreshContext()
     void this.refreshLimits()
+    void this.refreshTitle(result.session_id)
+  }
+
+  /**
+   * Claude Code names the session from its first prompt, and renames it later,
+   * but only in the transcript, not the stream.
+   */
+  private async refreshTitle(sessionId: string): Promise<void> {
+    try {
+      // The user's `/rename` if there is one, else Claude Code's title.
+      const title = (await getSessionInfo(sessionId, { dir: this.options.cwd }))?.customTitle
+      if (title) this.emit({ type: 'titleChanged', title })
+    } catch {
+      // The session keeps the title it has.
+    }
   }
 
   private async refreshContext(): Promise<void> {
@@ -507,6 +524,8 @@ export class ClaudeTranscript {
       case 'conversation_reset':
         this.usage = undefined
         return [{ type: 'conversationReset', agentSessionId: (message as Message).new_conversation_id as string }]
+      case 'prompt_suggestion':
+        return [{ type: 'suggestionChanged', suggestion: (message as Message).suggestion as string }]
       default:
         return []
     }

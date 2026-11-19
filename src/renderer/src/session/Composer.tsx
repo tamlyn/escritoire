@@ -19,6 +19,7 @@ export function Composer({
   pointer,
   initialDraft,
   working,
+  suggestion,
   autoFocus,
   settings,
   choices,
@@ -28,6 +29,8 @@ export function Composer({
   pointer: SessionPointer
   initialDraft: string
   working: boolean
+  /** Shown in an empty composer; Tab takes it. */
+  suggestion?: string
   autoFocus: boolean
   settings: SessionSettings
   choices: SettingChoices | null
@@ -96,6 +99,8 @@ export function Composer({
     return []
   }, [findFiles, findCommands, mention?.kind, mention?.query])
   const canSend = text.trim() !== '' || images.length > 0
+  // A phone has no Tab key to take it.
+  const offered = !working && !compact && text === '' ? suggestion : undefined
 
   function changeText(next: string, caret: number) {
     setText(next)
@@ -185,6 +190,9 @@ export function Composer({
     if (event.key === 'Enter' && !event.shiftKey && !compact) {
       event.preventDefault()
       send()
+    } else if (event.key === 'Tab' && !event.shiftKey && offered) {
+      event.preventDefault()
+      changeText(offered, offered.length)
     } else if (event.key === 'Tab' && event.shiftKey) {
       const mode = nextPermissionMode(choices, settings.permissionMode)
       if (mode) {
@@ -287,7 +295,7 @@ export function Composer({
             onPaste={onPaste}
             autoFocus={autoFocus}
             rows={1}
-            placeholder={working ? (compact ? 'Queue a message' : 'Queue a message for when the agent finishes') : compact ? 'Message agent' : 'Message agent, @ to mention a file, / for commands'}
+            placeholder={offered ? `${offered} (Tab)` : working ? (compact ? 'Queue a message' : 'Queue a message for when the agent finishes') : compact ? 'Message agent' : 'Message agent, @ to mention a file, / for commands'}
             className="placeholder:text-muted-foreground field-sizing-content max-h-60 min-h-9 flex-1 resize-none bg-transparent px-2 py-1.5 outline-none"
           />
           {working && !canSend ? (

@@ -85,6 +85,18 @@ describe('SessionManager', () => {
     expect(manager.summaries()[0]!.title).toBe('')
   })
 
+  it('takes the title the agent gives the session', async () => {
+    const { manager, runs, dataDir } = await setup()
+    const pointer = await manager.createSession('p1', 'claude')
+    await manager.openSession('p1', pointer)
+    manager.sendMessage(pointer, say('Fix the login bug'))
+    runs[0]!.emit({ type: 'titleChanged', title: 'Safari login fix' })
+
+    expect(manager.summaries()[0]!.title).toBe('Safari login fix')
+    await manager.closeProject('p1')
+    expect((await new SessionStore(dataDir).get('p1', 'session-1'))?.title).toBe('Safari login fix')
+  })
+
   it('forwards events with increasing sequence numbers only while subscribed', async () => {
     const { manager, runs, sent } = await setup()
     const pointer = await manager.createSession('p1', 'claude')

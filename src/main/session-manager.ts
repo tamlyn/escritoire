@@ -245,7 +245,8 @@ export class SessionManager {
 
   private dispatch(session: Session, input: UserInput): void {
     const { pointer } = session
-    // Sessions resumed from elsewhere keep the title the agent gave them.
+    // A placeholder until the agent names the session. Sessions resumed from
+    // elsewhere keep the title the agent gave them.
     if (!session.record.title && !session.hadHistory) {
       session.record.title = titleFrom(input.text) || 'Image'
       this.save(session)
@@ -399,6 +400,11 @@ export class SessionManager {
       this.rememberSettings(session, { permissionMode })
     }
     if (event.type === 'conversationReset') this.moveTo(session, event.agentSessionId)
+    if (event.type === 'titleChanged') {
+      if (event.title === session.record.title) return
+      session.record.title = event.title
+      this.save(session)
+    }
     if (event.type !== 'itemUpserted' && event.type !== 'textAppended') this.broadcastSummaries()
     if (event.type === 'statusChanged' && event.status !== 'working') this.sendQueued(session)
   }

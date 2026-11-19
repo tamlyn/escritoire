@@ -310,4 +310,11 @@ describe('ClaudeTranscript', () => {
     ])
     expect(view.settings).toEqual({ model: 'claude-opus-5-5', permissionMode: 'plan' })
   })
+
+  it('offers the suggested next prompt until the next turn starts', () => {
+    const suggestion = { type: 'prompt_suggestion', suggestion: 'Run the tests', uuid: 's1', session_id: 'x' }
+    expect(foldView([suggestion]).suggestion).toBe('Run the tests')
+    const next = applyEvent(foldView([suggestion]), { type: 'statusChanged', status: 'working' })
+    expect(next.suggestion).toBeUndefined()
+  })
 })

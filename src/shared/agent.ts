@@ -145,6 +145,10 @@ export type AgentEvent =
    * on as a new session with an empty transcript. The old one stays resumable.
    */
   | { type: 'conversationReset'; agentSessionId: string }
+  /** The agent named the session. The session manager keeps the title, not the view. */
+  | { type: 'titleChanged'; title: string }
+  /** What the user might send next, offered until the next turn starts. */
+  | { type: 'suggestionChanged'; suggestion: string }
   /** The session's whole queue. From the session manager, not an adapter. */
   | { type: 'queueChanged'; queued: QueuedMessage[] }
 
@@ -158,6 +162,7 @@ export type SessionView = {
   limits?: PlanLimit[]
   tasks: BackgroundTask[]
   queued: QueuedMessage[]
+  suggestion?: string
 }
 
 export const emptySessionView: SessionView = {
@@ -190,7 +195,12 @@ export function applyEvent(view: SessionView, event: AgentEvent): SessionView {
     case 'requestResolved':
       return { ...view, requests: view.requests.filter((r) => r.id !== event.requestId) }
     case 'statusChanged':
-      return { ...view, status: event.status, error: event.error }
+      return {
+        ...view,
+        status: event.status,
+        error: event.error,
+        suggestion: event.status === 'working' ? undefined : view.suggestion,
+      }
     case 'settingsChanged':
       return { ...view, settings: { ...view.settings, ...event.settings } }
     case 'usageChanged':
@@ -203,6 +213,10 @@ export function applyEvent(view: SessionView, event: AgentEvent): SessionView {
       return { ...emptySessionView, status: view.status, settings: view.settings, limits: view.limits, tasks: view.tasks, queued: view.queued }
     case 'queueChanged':
       return { ...view, queued: event.queued }
+    case 'titleChanged':
+      return view
+    case 'suggestionChanged':
+      return { ...view, suggestion: event.suggestion }
   }
 }
 

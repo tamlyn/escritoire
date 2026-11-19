@@ -59,6 +59,7 @@ export function SessionView({ pointer, shown, autoFocus = false, onMoved, onOpen
           pointer={pointer}
           initialDraft={session.draft}
           working={working}
+          suggestion={view.suggestion}
           autoFocus={autoFocus}
           settings={view.settings}
           choices={choices}
