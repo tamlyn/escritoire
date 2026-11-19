@@ -307,6 +307,8 @@ const shellEnv = loadShellEnv()
 // Not top-level await: Electron doesn't emit `ready` until an ES module main
 // script has finished evaluating, so awaiting it here would deadlock.
 void app.whenReady().then(async () => {
+  // Release versions are dates, so several builds can share one.
+  app.setAboutPanelOptions({ applicationVersion: app.getVersion(), version: `built ${__BUILD_TIME__}` })
   const dataDir = app.getPath('userData')
   const projects = await ProjectStore.load(dataDir)
   const sessionStore = new SessionStore(dataDir)
