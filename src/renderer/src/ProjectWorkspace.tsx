@@ -98,6 +98,17 @@ export function ProjectWorkspace({ project, pendingSession, onPendingSessionShow
   }, [model, pendingSession, project.id, workspaceRef, onPendingSessionShown])
 
   useShortcut('t', () => workspaceRef.current?.addTab(createEmptyTab()))
+  useShortcut('w', () => {
+    const workspace = workspaceRef.current
+    if (!workspace) return
+    // Tab content isn't inside its tabset in the React tree, so focusing it
+    // doesn't make the tabset active; the DOM knows where focus is.
+    const focused = document.activeElement?.closest<HTMLElement>('[data-tabset-id]')?.dataset.tabsetId
+    const tabsets = [...tabsetsIn(workspace.getModel())]
+    const id = focused ?? workspace.getActiveTabsetId()
+    const tabset = tabsets.find((t) => t.id === id) ?? tabsets[0]
+    if (tabset?.selectedId) workspace.closeTab(tabset.selectedId)
+  })
   useShortcut('b', () => {
     const sidebar = sidebarRef.current
     if (sidebar?.isCollapsed()) sidebar.expand()

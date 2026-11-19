@@ -151,3 +151,30 @@ test('opens a project file from the switcher by fuzzy name', async () => {
   await close()
   await rm(root, { recursive: true, force: true })
 })
+
+test('closes the selected tab with the close shortcut', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'escritoire-e2e-')))
+  const dataDir = join(root, 'data')
+  const project = join(root, 'project')
+  await mkdir(project, { recursive: true })
+  await writeFile(join(project, 'a.md'), '# A\n')
+  await writeFile(join(project, 'b.md'), '# B\n')
+
+  const { page, close } = await launchApp(dataDir)
+  await page.keyboard.press(`${modifier}+o`)
+  await page.getByRole('combobox').fill(`${project}/`)
+  await page.getByRole('option', { name: `Open ${project}/` }).click()
+
+  const tree = page.getByRole('tree', { name: 'Files' })
+  await tree.getByRole('treeitem', { name: 'a.md' }).click()
+  await tree.getByRole('treeitem', { name: 'b.md' }).click()
+  await expect(page.getByRole('tab', { name: 'b.md' })).toBeVisible()
+
+  await page.locator('.cm-content:visible').click()
+  await page.keyboard.press(`${modifier}+w`)
+  await expect(page.getByRole('tab', { name: 'b.md' })).toBeHidden()
+  await expect(page.getByRole('tab', { name: 'a.md' })).toBeVisible()
+
+  await close()
+  await rm(root, { recursive: true, force: true })
+})

@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import { join } from 'node:path'
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell } from 'electron'
 import icon from '../../build/icon.png?asset'
 import { type Api, type AppState, apiMethods } from '../shared/api'
 import type { ApiConnection } from '../shared/api-client'
@@ -300,6 +300,20 @@ function createWindow(): BrowserWindow {
 
 app.on('window-all-closed', () => app.quit())
 
+/**
+ * Electron's default menu without its Close Window item, so ⌘W/Ctrl+W reaches
+ * the renderer and closes a tab. There's one window, so closing it would quit.
+ */
+function applicationMenu(): Menu {
+  const isMac = process.platform === 'darwin'
+  return Menu.buildFromTemplate([
+    isMac ? { role: 'appMenu' } : { label: 'File', submenu: [{ role: 'quit' }] },
+    { role: 'editMenu' },
+    { role: 'viewMenu' },
+    { label: 'Window', submenu: isMac ? [{ role: 'minimize' }, { role: 'zoom' }, { type: 'separator' }, { role: 'front' }] : [{ role: 'minimize' }] },
+  ])
+}
+
 // Started before `ready` so the shell runs while Electron starts up. Agents and
 // their settings lookups read the environment, so the API waits for it.
 const shellEnv = loadShellEnv()
@@ -309,6 +323,7 @@ const shellEnv = loadShellEnv()
 void app.whenReady().then(async () => {
   // Release versions are dates, so several builds can share one.
   app.setAboutPanelOptions({ applicationVersion: app.getVersion(), version: `built ${__BUILD_TIME__}` })
+  Menu.setApplicationMenu(applicationMenu())
   const dataDir = app.getPath('userData')
   const projects = await ProjectStore.load(dataDir)
   const sessionStore = new SessionStore(dataDir)

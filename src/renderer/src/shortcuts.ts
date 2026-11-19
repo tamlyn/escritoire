@@ -15,7 +15,7 @@ export function useShortcut(key: string, handler: () => void): void {
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
-      if (!hasModifier(event) || event.shiftKey || event.altKey || event.key.toLowerCase() !== key) return
+      if (event.defaultPrevented || !hasModifier(event) || event.shiftKey || event.altKey || event.key.toLowerCase() !== key) return
       event.preventDefault()
       handlerRef.current()
     }
