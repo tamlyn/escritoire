@@ -4,29 +4,21 @@ What is still to build. [HISTORY.md](HISTORY.md) holds what this is, the decisio
 
 This document captures direction, not an exhaustive specification. Build iteratively and resolve edge cases as they arise. Discuss substantial architecture choices before committing; routine implementation details can be worked out along the way. When a feature is built, move its requirements to HISTORY.md.
 
-## Next slices
-
-Starting priorities, not fixed release gates. Try each increment and let actual use determine the next improvement.
-
-1. The bugs under "From use", below.
-2. The Orca review pass (see below).
-3. Remote access from a phone over Tailscale, in the build order given in that section.
-
-The other items under "From use", and agent session features from the VS Code extension that aren't yet built, are added in the order they are missed, alongside these slices.
-
 ## From use
 
 Noticed using Escritoire day to day (November 2026).
 
-### Bugs
-
-- **A Codex permission mode chosen before the first message isn't kept.** The picker goes back to the thread's default when the run starts, while turns are still sent with the chosen mode, so it can show Read only during a Full access turn. After a restart the session really is in the default mode. Probably the run reporting the new thread's settings at startup, which then replace the choice. Seen with the scripted Codex in the e2e tests; check against real Codex, which may correct the picker with a later settings update. Choosing a mode after the first message works.
-
-### Workspace and editor
+### Missing features
 
 - **Several windows**, each showing one project. Per-client state already makes each window just another client. This amends decision 7 (one project in view per window rather than per app), which HISTORY.md should say when built.
 - Dropping a file from the tree onto the tabs opens it where it was dropped, including in a new split, as if it had been opened and its tab dragged there.
 - A rendered Markdown view, a simple image viewer, and wrapping long lines in the editor.
+- Show untracked files in a different colour.
+- Git graph view can get very wide - need a better layout algorithm.
+- Get session title from Claude/Gemini
+- Show suggested next prompt
+- Allow editing a past prompt in a session.
+- Improve session working indicator - only show one (currently when a tool is running it shows two) and show it in place of the thinking icon while thinking. Are there also times when it is neither running nor thinking?
 
 ## Agent integration hardening from Orca
 

@@ -14,9 +14,14 @@ async function freePort(): Promise<number> {
   return port
 }
 
+async function openRemoteAccess(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Menu' }).click()
+  await page.getByRole('menuitem', { name: 'Remote access' }).click()
+}
+
 async function turnOnRemoteAccess(page: Page): Promise<number> {
   const port = await freePort()
-  await page.getByRole('button', { name: 'Remote access' }).click()
+  await openRemoteAccess(page)
   await page.getByLabel('Port').fill(String(port))
   await page.getByRole('button', { name: 'Turn on' }).click()
   return port
@@ -43,16 +48,17 @@ for (const [name, browserType] of [['Chromium', chromium], ['WebKit', webkit]] a
     await pair(page, remote, port)
 
     await expect(remote.getByRole('banner')).toContainText('No project')
-    await expect(remote.getByRole('button', { name: 'Remote access' })).toHaveCount(0)
+    await remote.getByRole('button', { name: 'Menu' }).click()
+    await expect(remote.getByRole('menuitem', { name: 'About Escritoire' })).toBeVisible()
+    await expect(remote.getByRole('menuitem', { name: 'Remote access' })).toHaveCount(0)
     await expect(page.getByText('Connected')).toBeVisible()
     await page.keyboard.press('Escape')
-    await expect(page.getByRole('button', { name: 'Remote access' })).toHaveText('1')
 
     // Kept across reloads.
     await remote.reload()
     await expect(remote.getByRole('banner')).toContainText('No project')
 
-    await page.getByRole('button', { name: 'Remote access' }).click()
+    await openRemoteAccess(page)
     await page.getByRole('button', { name: 'Revoke' }).click()
     await expect(remote.getByRole('heading', { name: 'Pair with Escritoire' })).toBeVisible()
 
@@ -85,7 +91,7 @@ test('a paired browser recovers in its own project when the connection returns',
   await page.getByRole('option', { name: /^beta/ }).click()
   await expect(page.getByRole('banner')).toContainText('beta')
 
-  await page.getByRole('button', { name: 'Remote access' }).click()
+  await openRemoteAccess(page)
   await page.getByRole('button', { name: 'Turn off' }).click()
   await expect(remote.getByRole('status')).toHaveText('Reconnecting…')
   await expect(remote.getByRole('banner')).toContainText('alpha')
@@ -120,7 +126,7 @@ test('a phone drives a session from its own layout', async () => {
   const manifest = await context.request.get(`http://127.0.0.1:${port}/manifest.webmanifest`)
   expect(manifest.headers()['content-type']).toBe('application/manifest+json')
   expect((await context.request.get(`http://127.0.0.1:${port}/sw.js`)).ok()).toBe(true)
-  await phone.getByRole('button', { name: 'Notifications' }).click()
+  await phone.getByRole('button', { name: 'Inbox' }).click()
   await expect(phone.getByRole('menuitem', { name: 'Add to Home Screen to get notifications' })).toBeVisible()
   await phone.keyboard.press('Escape')
   await expect(phone.locator('[data-workspace]')).toHaveCount(0)

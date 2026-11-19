@@ -54,6 +54,7 @@ test('shows a session waiting for input, and clicking its notification goes to i
   await startCodexSession(page)
   await send(page, 'permission')
   await expect(page.getByText('Delete the build directory?')).toBeVisible()
+  await expect(inbox(page)).toHaveAccessibleName('1 session needs you')
   await openProject(page, beta)
 
   await expect(inbox(page)).toHaveAccessibleName('1 session needs you')

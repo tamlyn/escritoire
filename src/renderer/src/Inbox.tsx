@@ -11,21 +11,15 @@ import { useSessionSummaries } from './sessions'
 
 type Props = {
   projects: Project[]
-  /** The project whose tabs already show its sessions, if any. */
-  activeProjectId: string | null
   onSelect: (session: SessionSummary) => void
 }
 
-/** Sessions that need the user and aren't on show in tabs. Hidden while there are none. */
-export function Inbox({ projects, activeProjectId, onSelect }: Props) {
+/** Sessions in every project that need the user, to jump straight to one. */
+export function Inbox({ projects, onSelect }: Props) {
   const summaries = useSessionSummaries()
-  const sessions = useMemo(
-    () => needingAttention(summaries).filter((s) => s.projectId !== activeProjectId),
-    [summaries, activeProjectId],
-  )
+  const sessions = useMemo(() => needingAttention(summaries), [summaries])
   const [offer, setOffer] = useState(pushOffer)
   const [pushFailed, setPushFailed] = useState(false)
-  if (sessions.length === 0 && !offer) return null
 
   function turnOnNotifications() {
     enablePush().then(() => setOffer(pushOffer()), (error: unknown) => {
@@ -40,7 +34,7 @@ export function Inbox({ projects, activeProjectId, onSelect }: Props) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        aria-label={sessions.length === 0 ? 'Notifications' : `${sessions.length} ${sessions.length === 1 ? 'session needs' : 'sessions need'} you`}
+        aria-label={sessions.length === 0 ? 'Inbox' : `${sessions.length} ${sessions.length === 1 ? 'session needs' : 'sessions need'} you`}
         title="Sessions that need you"
         className="hover:bg-accent text-muted-foreground hover:text-foreground flex items-center gap-1.5 rounded-md px-2 py-1 text-xs [-webkit-app-region:no-drag]"
       >
@@ -54,6 +48,7 @@ export function Inbox({ projects, activeProjectId, onSelect }: Props) {
         )}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="max-w-96">
+        {sessions.length === 0 && <DropdownMenuItem disabled>No sessions need you</DropdownMenuItem>}
         {sessions.map((session) => (
           <DropdownMenuItem key={session.agentSessionId} onSelect={() => onSelect(session)}>
             <SessionIndicator summary={session} />

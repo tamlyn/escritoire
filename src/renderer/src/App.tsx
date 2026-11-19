@@ -3,13 +3,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { sessionTarget } from '../../shared/agent'
 import type { AppState } from '../../shared/api'
 import { api, isDesktop, rememberActiveProject, subscribe } from './api'
+import { AppMenu } from './AppMenu'
 import { Inbox } from './Inbox'
 import { useIsCompact } from './phone/compact'
 import { PhoneWorkspace } from './phone/PhoneWorkspace'
 import { ProjectSwitcher } from './ProjectSwitcher'
 import { type PendingSession, ProjectWorkspace, type ProjectWorkspaceHandle } from './ProjectWorkspace'
 import { followNotifications, notificationSessionShown } from './remote/push'
-import { RemoteAccessButton } from './remote/RemoteAccessButton'
 import { isMac, modifierLabel, useShortcut } from './shortcuts'
 
 export function App() {
@@ -62,6 +62,8 @@ export function App() {
         // Clear of the window controls drawn over the header on Windows and Linux.
         style={isDesktop ? { paddingRight: 'calc(100% - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100%) + 0.5rem)' } : undefined}
       >
+        <AppMenu />
+        <Inbox projects={state.projects} onSelect={(s) => goToSession(sessionTarget(s))} />
         <button
           type="button"
           onClick={() => setSwitcherOpen(true)}
@@ -71,16 +73,6 @@ export function App() {
           {activeProject?.name ?? 'No project'}
           <ChevronsUpDownIcon className="text-muted-foreground size-3.5" />
         </button>
-        <Inbox
-          projects={state.projects}
-          activeProjectId={compact ? null : state.activeProjectId}
-          onSelect={(s) => goToSession(sessionTarget(s))}
-        />
-        {isDesktop && (
-          <div className="ml-auto">
-            <RemoteAccessButton />
-          </div>
-        )}
       </header>
       <main className="min-h-0 flex-1">
         {activeProject && compact ? (

@@ -248,7 +248,7 @@ class CodexRun implements AgentRun {
     this.rpc = fresh?.rpc ?? new CodexRpc(options.cwd)
     this.rpc.onError = (e) => this.fail(e)
     this.rpc.onMessage = (m) => this.message(m)
-    this.ready = fresh ? Promise.resolve().then(() => this.adopt(fresh.resolved)) : this.rpc.initialize().then(() => this.resume())
+    this.ready = fresh ? Promise.resolve().then(() => this.adopt(fresh.resolved, this.settings)) : this.rpc.initialize().then(() => this.resume())
     void this.ready.catch((e: unknown) => this.fail(e))
     void this.ready.then(() => this.readRateLimits()).catch(() => {})
   }
@@ -263,12 +263,18 @@ class CodexRun implements AgentRun {
     this.rateLimits = mergeRateLimits(this.rateLimits, snapshot)
     if (!this.closed) this.emit({ type: 'limitsChanged', limits: planLimits(this.rateLimits) })
   }
-  private async resume(): Promise<void> {
+  private threadOverrides() {
     const mode = modeFor(this.settings.permissionMode)
+    return {
+      ...(this.settings.model ? { model: this.settings.model } : {}),
+      ...(mode ? { approvalPolicy: mode.approvalPolicy, sandbox: mode.sandbox } : {}),
+    }
+  }
+  private async resume(): Promise<void> {
     try {
       this.adopt(await this.rpc.call<ThreadStartResponse>('thread/resume', {
         threadId: this.threadId, cwd: this.options.cwd, excludeTurns: true,
-        ...(mode ? { approvalPolicy: mode.approvalPolicy, sandbox: mode.sandbox } : {}),
+        ...this.threadOverrides(),
         ...ideConfig(this.options.ide),
       }))
     } catch (e) {
@@ -299,10 +305,9 @@ class CodexRun implements AgentRun {
   }
   /** Moves the run to a new thread. */
   private async startThread(): Promise<void> {
-    const mode = modeFor(this.settings.permissionMode)
     const result = await this.rpc.call<ThreadStartResponse>('thread/start', {
       cwd: this.options.cwd,
-      ...(mode ? { approvalPolicy: mode.approvalPolicy, sandbox: mode.sandbox } : {}),
+      ...this.threadOverrides(),
       ...ideConfig(this.options.ide),
     })
     if (this.closed) return
@@ -359,9 +364,9 @@ class CodexRun implements AgentRun {
   async changeSettings(settings: SessionSettings): Promise<void> { this.settings = { ...this.settings, ...settings } }
   async stopTask(): Promise<void> { throw new Error('Codex does not expose task stopping here. Interrupt the turn instead.') }
   close(): void { this.closed = true; this.queue = []; this.rpc.close() }
-  private adopt(resolved: Resolved): void {
+  private adopt(resolved: Resolved, pending: SessionSettings = {}): void {
     this.sandbox = sandboxMode(resolved.sandbox)
-    if (!this.closed) this.emit({ type: 'settingsChanged', settings: resolvedSettings(resolved) })
+    if (!this.closed) this.emit({ type: 'settingsChanged', settings: { ...resolvedSettings(resolved), ...pending } })
   }
   private resolve(id: string): void { this.requests.delete(id); this.emit({ type: 'requestResolved', requestId: id }) }
   private fail(error: unknown): void {

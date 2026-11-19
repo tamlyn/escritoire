@@ -1,39 +1,17 @@
-import { SmartphoneIcon } from 'lucide-react'
 import { type FormEvent, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { cn } from '@/lib/utils'
 import type { PairedDevice, RemoteAccess } from '../../../shared/remote'
 import { api, errorMessage, subscribe } from '../api'
 
-/** In the desktop's header: whether remote access is on and how many devices are connected. */
-export function RemoteAccessButton() {
+/** Turns remote access on and off, pairs devices and lists them. Desktop only. */
+export function RemoteAccessDialog({ onClose }: { onClose: () => void }) {
   const remote = useRemoteAccess()
-  const [open, setOpen] = useState(false)
-  const connected = remote?.devices.filter((device) => device.connected).length ?? 0
-  const listening = remote?.enabled && !remote.error
-
-  return (
-    <>
-      <button
-        type="button"
-        aria-label="Remote access"
-        title={listening ? `Remote access is on: ${connected} ${connected === 1 ? 'device' : 'devices'} connected` : 'Remote access is off'}
-        onClick={() => setOpen(true)}
-        className={cn(
-          'hover:bg-accent flex items-center gap-1 rounded-md px-2 py-1 text-xs [-webkit-app-region:no-drag]',
-          listening ? 'text-foreground' : 'text-muted-foreground',
-        )}
-      >
-        <SmartphoneIcon className="size-4" />
-        {connected > 0 && connected}
-      </button>
-      {open && remote && <RemoteAccessDialog remote={remote} onClose={() => setOpen(false)} />}
-    </>
-  )
+  return remote && <RemoteAccessForm remote={remote} onClose={onClose} />
 }
 
+/** Fetched as the dialog opens, since Tailscale may have changed since it last did. */
 function useRemoteAccess(): RemoteAccess | null {
   const [remote, setRemote] = useState<RemoteAccess | null>(null)
   useEffect(() => {
@@ -45,14 +23,11 @@ function useRemoteAccess(): RemoteAccess | null {
   return remote
 }
 
-function RemoteAccessDialog({ remote, onClose }: { remote: RemoteAccess; onClose: () => void }) {
+function RemoteAccessForm({ remote, onClose }: { remote: RemoteAccess; onClose: () => void }) {
   const [port, setPort] = useState(String(remote.port))
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const listening = remote.enabled && !remote.error
-
-  // Tailscale may have changed since the dialog last opened; main pushes what it finds.
-  useEffect(() => { void api.getRemoteAccess() }, [])
 
   async function attempt(action: () => Promise<unknown>) {
     setBusy(true)

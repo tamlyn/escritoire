@@ -25,9 +25,9 @@ const notify = (method, threadId, params) => send({ method, params: { threadId, 
 
 const threadResponse = (id, params) => ({
   thread: { id },
-  model: 'fake-model',
+  model: params.model ?? 'fake-model',
   approvalPolicy: params.approvalPolicy ?? 'on-request',
-  sandbox: { type: 'readOnly', networkAccess: false },
+  sandbox: { type: ({ 'danger-full-access': 'dangerFullAccess', 'workspace-write': 'workspaceWrite' })[params.sandbox] ?? 'readOnly', networkAccess: false },
   reasoningEffort: null,
 })
 
@@ -137,7 +137,7 @@ function handle(method, params) {
     case 'thread/turns/list':
       return { data: loadThread(params.threadId).turns, nextCursor: null }
     case 'model/list':
-      return { data: [], nextCursor: null }
+      return { data: [{ model: 'other-model', displayName: 'Other model', supportedReasoningEfforts: [] }], nextCursor: null }
     case 'skills/list':
       return { data: [] }
     case 'account/rateLimits/read':

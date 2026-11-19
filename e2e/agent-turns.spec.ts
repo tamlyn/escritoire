@@ -145,12 +145,15 @@ test('restores a conversation after a restart, resuming the agent only when sent
   let { page, close } = await launchApp(dataDir, agent.env)
   await openProject(page, project)
   const composer = await startCodexSession(page)
+  await page.getByTitle('Permission mode (Shift+Tab)').click()
+  await page.getByRole('menuitemradio', { name: 'Full access' }).click()
+  await page.getByTitle('Model', { exact: true }).click()
+  await page.getByRole('menuitemradio', { name: 'Other model' }).click()
   await send(page, 'remember this')
   await expect(page.getByText('Reply to: remember this')).toBeVisible()
   await expect(working(page)).toBeHidden()
-  await page.getByTitle('Permission mode (Shift+Tab)').click()
-  await page.getByRole('menuitemradio', { name: 'Full access' }).click()
   await expect(page.getByTitle('Permission mode (Shift+Tab)')).toHaveText('Full access')
+  await expect(page.getByTitle('Model', { exact: true })).toHaveText('Other model')
   await composer.fill('an unsent draft')
 
   await close()
@@ -164,7 +167,11 @@ test('restores a conversation after a restart, resuming the agent only when sent
   await expect(page.getByText('Reply to: and now this')).toBeVisible()
   const [before, after] = agent.turnStarts()
   expect(after!.threadId).toBe(before!.threadId)
-  expect(after!.approvalPolicy).toBe('never')
+  for (const turn of [before, after]) {
+    expect(turn).toMatchObject({ approvalPolicy: 'never', model: 'other-model' })
+  }
+  await expect(page.getByTitle('Permission mode (Shift+Tab)')).toHaveText('Full access')
+  await expect(page.getByTitle('Model', { exact: true })).toHaveText('Other model')
 
   await close()
   await rm(root, { recursive: true, force: true })
