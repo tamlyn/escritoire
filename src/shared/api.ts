@@ -237,6 +237,8 @@ export const apiMethods = Object.keys(apiMethodSet) as (keyof Api)[]
 export type Events = {
   sessionsChanged: SessionSummary[]
   sessionEvent: SessionEvent
+  /** Another client closed the session, as by closing its tab, so its views close too. */
+  sessionClosed: SessionPointer
   /** Only for projects that are some client's active one, which are the only ones watched. */
   filesChanged: FilesChanged
   /** Terminals and processes, keyed by terminal or process id. */
@@ -255,6 +257,7 @@ export type Events = {
 const eventNameSet: Record<keyof Events, true> = {
   sessionsChanged: true,
   sessionEvent: true,
+  sessionClosed: true,
   filesChanged: true,
   screenOutput: true,
   processesChanged: true,

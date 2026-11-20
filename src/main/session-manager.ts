@@ -370,6 +370,16 @@ export class SessionManager {
       this.deps.store.put(session.projectId, session.pointer.agentSessionId, session.record)))
   }
 
+  /** Closes the project for good, so unlike closing it, its unread sessions go too. */
+  async removeProject(projectId: string): Promise<void> {
+    try {
+      await this.closeProject(projectId)
+    } finally {
+      for (const [id, unread] of this.unread) if (unread.projectId === projectId) this.unread.delete(id)
+      this.broadcastSummaries()
+    }
+  }
+
   async close(): Promise<void> {
     this.closed = true
     const results = await Promise.allSettled([...this.projects.keys()].map((projectId) => this.closeProject(projectId)))

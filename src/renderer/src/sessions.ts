@@ -36,16 +36,19 @@ export function useSessionSummary(agentSessionId: string): SessionSummary | unde
   return useSessionSummaries().find((s) => s.agentSessionId === agentSessionId)
 }
 
-/** Calls `onClosed` when a session that was loaded no longer is, as when another client closed it. */
-export function useSessionClosed(summary: SessionSummary | undefined, onClosed: () => void): void {
-  const loaded = summary !== undefined
-  const wasLoaded = useRef(false)
+/**
+ * Calls `onClosed` when another client closes the session. Not when it merely
+ * stops being loaded, as when its project closes.
+ */
+export function useSessionClosed(agentSessionId: string, onClosed: () => void): void {
   const latest = useRef(onClosed)
   latest.current = onClosed
-  useEffect(() => {
-    if (loaded) wasLoaded.current = true
-    else if (wasLoaded.current) latest.current()
-  }, [loaded])
+  useEffect(
+    () => subscribe('sessionClosed', (closed) => {
+      if (closed.agentSessionId === agentSessionId) latest.current()
+    }),
+    [agentSessionId],
+  )
 }
 
 /** `movedTo` is the session the conversation continues in after the agent reset it. */

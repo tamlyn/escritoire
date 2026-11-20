@@ -13,12 +13,11 @@ Noticed using Escritoire day to day (November 2026).
 - **Several windows**, each showing one project. Per-client state already makes each window just another client. This amends decision 7 (one project in view per window rather than per app), which HISTORY.md should say when built.
 - Dropping a file from the tree onto the tabs opens it where it was dropped, including in a new split, as if it had been opened and its tab dragged there.
 - A rendered Markdown view, a simple image viewer, and wrapping long lines in the editor.
-- Show untracked files in a different colour.
 - Git graph view can get very wide - need a better layout algorithm.
-- Get session title from Claude/Gemini
-- Show suggested next prompt
 - Allow editing a past prompt in a session.
-- Improve session working indicator - only show one (currently when a tool is running it shows two) and show it in place of the thinking icon while thinking. Are there also times when it is neither running nor thinking?
+- Project-level find, and make the find-in-file look better
+- Create new project
+- Auto-complete project names from any sibling of an existing project
 
 ## Agent integration hardening from Orca
 

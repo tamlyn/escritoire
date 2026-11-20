@@ -87,7 +87,7 @@ function createApi(client: Client, { clients, remote, push, projects, sessions, 
       return clients.projectsChanged(await projects.closeProject(id), client)
     },
     removeProject: async (id) => {
-      await sessions.closeProject(id).catch(console.error)
+      await sessions.removeProject(id).catch(console.error)
       await Promise.all([
         sessionStore.deleteProject(id),
         terminals.deleteProject(id),
@@ -122,6 +122,7 @@ function createApi(client: Client, { clients, remote, push, projects, sessions, 
     closeSession: async (session) => {
       sessions.closeSession(session)
       clients.sessionClosed(session)
+      clients.sendToOthers(client, 'sessionClosed', session)
     },
     listDirectory: (projectId, path) => files.listDirectory(projectId, path),
     readFile: (projectId, path) => files.readFile(projectId, path),

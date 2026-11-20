@@ -32,7 +32,7 @@ export function SessionTab({ tab, pointer }: { tab: Tab; pointer: SessionPointer
   }, [workspace, tab.id, pointer.agent])
 
   // Closed on another client, such as a phone.
-  useSessionClosed(summary, () => workspace?.closeTab(tab.id))
+  useSessionClosed(pointer.agentSessionId, () => workspace?.closeTab(tab.id))
 
   const openFile = useCallback((path: string) => workspace?.addTab(createFileTab(path)), [workspace])
 

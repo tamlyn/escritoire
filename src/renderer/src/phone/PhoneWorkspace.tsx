@@ -120,7 +120,7 @@ function OpenSession({ view, onShow }: { view: SessionPhoneView; onShow: Show })
   const openFile = useCallback((path: string) => onShow({ kind: 'file', path, from: view }), [view, onShow])
 
   // Closed on another client, such as by closing its desktop tab.
-  useSessionClosed(summary, () => onShow(null))
+  useSessionClosed(pointer.agentSessionId, () => onShow(null))
 
   return (
     <Screen title={summary?.title || title || 'New session'} indicator={<SessionIndicator summary={summary} />} onBack={() => onShow(null)}>
