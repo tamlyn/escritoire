@@ -100,17 +100,17 @@ describe('SessionManager', () => {
     expect((await new SessionStore(dataDir).get('p1', 'session-1'))?.title).toBe('Safari login fix')
   })
 
-  it('forwards events with increasing sequence numbers only while subscribed', async () => {
+  it('forwards events with increasing sequence numbers', async () => {
     const { manager, runs, sent } = await setup()
     const pointer = await manager.createSession('p1', 'claude')
     const opened = await manager.openSession('p1', pointer)
     manager.sendMessage(pointer, say('Hi'))
-    manager.closeSessionView(pointer)
     runs[0]!.emit({ type: 'statusChanged', status: 'idle' })
 
     const events = sent.filter((s) => s.name === 'sessionEvent').map((s) => s.payload)
     expect(events).toEqual([
       { agentSessionId: 'session-1', seq: opened.seq + 1, event: { type: 'statusChanged', status: 'working' } },
+      { agentSessionId: 'session-1', seq: opened.seq + 2, event: { type: 'statusChanged', status: 'idle' } },
     ])
   })
 

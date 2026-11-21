@@ -39,8 +39,7 @@ type Session = {
   /** Whether the agent had a transcript when the session was loaded. */
   hadHistory: boolean
   run?: AgentRun
-  /** The renderer has the session open and wants its events. */
-  subscribed: boolean
+  /** Whether a client whose user is present shows it. */
   visible: boolean
   /** Until the first queued message's time comes. */
   waiting?: ReturnType<typeof setTimeout>
@@ -151,7 +150,6 @@ export class SessionManager {
     const movedTo = this.moved.get(pointer.agentSessionId)
     if (movedTo) return { view: emptySessionView, seq: 0, title: '', draft: '', movedTo }
     const session = await this.load(projectId, pointer)
-    session.subscribed = true
     this.broadcastSummaries()
     return {
       view: session.view,
@@ -160,13 +158,6 @@ export class SessionManager {
       draft: session.record.draft,
       movedTo: null,
     }
-  }
-
-  closeSessionView(pointer: SessionPointer): void {
-    const session = this.sessions.get(pointer.agentSessionId)
-    if (!session) return
-    session.subscribed = false
-    session.visible = false
   }
 
   async settingChoices(projectId: string, agent: AgentKind): Promise<SettingChoices> {
@@ -239,9 +230,7 @@ export class SessionManager {
     this.dispatch(fork, { text, images: item.images ?? [] })
     // Sent rather than applied, which would move this session to the new id rather than leave it be.
     session.seq++
-    if (session.subscribed) {
-      this.deps.send('sessionEvent', { agentSessionId: pointer.agentSessionId, seq: session.seq, event: { type: 'conversationReset', agentSessionId } })
-    }
+    this.deps.send('sessionEvent', { agentSessionId: pointer.agentSessionId, seq: session.seq, event: { type: 'conversationReset', agentSessionId } })
     this.stop(session)
   }
 
@@ -439,13 +428,8 @@ export class SessionManager {
     const before = session.view
     session.view = applyEvent(before, event)
     session.seq++
-    if (session.subscribed) {
-      this.deps.send('sessionEvent', {
-        agentSessionId: session.pointer.agentSessionId,
-        seq: session.seq,
-        event,
-      })
-    }
+    // Sent to whichever clients show the session.
+    this.deps.send('sessionEvent', { agentSessionId: session.pointer.agentSessionId, seq: session.seq, event })
     if (event.type === 'statusChanged') {
       if (before.status === 'working' && event.status !== 'working') {
         session.record.lastTurnEndedAt = this.now()
@@ -482,7 +466,6 @@ export class SessionManager {
     session.pointer = { ...session.pointer, agentSessionId }
     session.record = { ...newRecord(session.pointer.agent), draft: session.record.draft, settings: session.record.settings }
     session.hadHistory = false
-    session.subscribed = false
     session.visible = false
     this.sessions.set(agentSessionId, session)
     this.save(session)
@@ -539,7 +522,6 @@ export class SessionManager {
       view,
       seq: 0,
       hadHistory: view.items.some((item) => item.kind !== 'notice'),
-      subscribed: false,
       visible: false,
     }
     signal.throwIfAborted()

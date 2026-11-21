@@ -1,4 +1,4 @@
-import type { SessionPointer } from '../shared/agent'
+import type { OpenedSession, SessionPointer } from '../shared/agent'
 import type { AppState, Events } from '../shared/api'
 import type { ScreenSize, ScreenSnapshot } from '../shared/screen'
 import type { SendEvent } from './api-server'
@@ -11,21 +11,28 @@ export type ScreenHost = {
   resize(projectId: string, screenId: string, size: ScreenSize): void
 }
 
+/** The sessions clients view, which hear only what all the clients add up to. */
+export type SessionHost = {
+  openSession(projectId: string, pointer: SessionPointer): Promise<OpenedSession>
+  /** Whether a client whose user is present can see the session, which marks its turns read. */
+  setVisible(pointer: SessionPointer, visible: boolean): void
+  /** Whether any client is editing the queued message, which keeps it from being sent. */
+  setQueuedMessageHeld(pointer: SessionPointer, id: string, held: boolean): void
+  /** The user closed the session, for every client. */
+  closeSession(pointer: SessionPointer): void
+}
+
 export type ClientsDeps = {
   /** The project a new client starts in. */
   lastActiveProject: () => string | null
   isProjectOpen: (projectId: string) => boolean
-  /** Whether a client whose user is present can see the session, which marks its turns read. */
-  setSessionVisible: (session: SessionPointer, visible: boolean) => void
-  /** No client has the session open any more. */
-  closeSessionView: (session: SessionPointer) => void
-  /** Whether a client is editing the queued message, which keeps it from being sent. */
-  setQueuedMessageHeld: (session: SessionPointer, id: string, held: boolean) => void
+  sessions: SessionHost
   /** The projects that are some client's active one, which are the ones watched. */
   watch: (projectIds: string[]) => void
 }
 
-type SessionView = { pointer: SessionPointer; visible: boolean }
+/** With the queued messages this client is editing, by message id. */
+type SessionView = { pointer: SessionPointer; visible: boolean; held: Set<string> }
 type Attachment = { host: ScreenHost; projectId: string; size: ScreenSize }
 
 /** One connection: the desktop window, or later a phone or another computer. */
@@ -39,17 +46,16 @@ export type Client = {
   present: boolean
   /** By agent session id. */
   readonly sessions: Map<string, SessionView>
-  /** The queued messages this client is editing, by message id. */
-  readonly heldMessages: Map<string, SessionPointer>
   /** By screen id, with the size this client wants it. */
   readonly screens: Map<string, Attachment>
 }
 
 /**
  * What each connected client has open, and what main's services see of them
- * all together: a session is visible if any present client shows it, and a
- * screen stays attached while any client is. Events go only to clients that
- * want them. A client's state is released when it disconnects.
+ * all together: a session is visible if any present client shows it, a queued
+ * message held while any client edits it, and a screen stays attached while
+ * any client is. Events go only to clients that want them. A client's state is
+ * released when it disconnects.
  */
 export class Clients {
   private readonly clients = new Set<Client>()
@@ -72,7 +78,6 @@ export class Clients {
       activeProjectId: activeProjectId !== null && this.deps.isProjectOpen(activeProjectId) ? activeProjectId : this.deps.lastActiveProject(),
       present: desktop ? this.present : true,
       sessions: new Map(),
-      heldMessages: new Map(),
       screens: new Map(),
     }
     this.clients.add(client)
@@ -82,8 +87,7 @@ export class Clients {
 
   disconnect(client: Client): void {
     if (!this.clients.delete(client)) return
-    for (const { pointer } of client.sessions.values()) this.release(pointer)
-    for (const [id, pointer] of client.heldMessages) this.deps.setQueuedMessageHeld(pointer, id, false)
+    for (const view of client.sessions.values()) this.release(view)
     for (const screenId of client.screens.keys()) this.detachScreen(client, screenId)
     this.updateWatches()
   }
@@ -124,13 +128,18 @@ export class Clients {
     return this.state(caller, app)
   }
 
-  /** Call before opening the session, so events sent while it loads reach the client. */
-  openSessionView(client: Client, pointer: SessionPointer): void {
-    if (!client.sessions.has(pointer.agentSessionId)) client.sessions.set(pointer.agentSessionId, { pointer, visible: false })
+  openSession(client: Client, projectId: string, pointer: SessionPointer): Promise<OpenedSession> {
+    // Before opening, so events sent while it loads reach the client.
+    if (!client.sessions.has(pointer.agentSessionId)) client.sessions.set(pointer.agentSessionId, { pointer, visible: false, held: new Set() })
+    return this.deps.sessions.openSession(projectId, pointer)
   }
 
+  /** This client stops showing the session, which keeps running. */
   closeSessionView(client: Client, pointer: SessionPointer): void {
-    if (client.sessions.delete(pointer.agentSessionId)) this.release(pointer)
+    const view = client.sessions.get(pointer.agentSessionId)
+    if (!view) return
+    client.sessions.delete(pointer.agentSessionId)
+    this.release(view)
   }
 
   setSessionVisible(client: Client, pointer: SessionPointer, visible: boolean): void {
@@ -141,14 +150,18 @@ export class Clients {
   }
 
   setQueuedMessageHeld(client: Client, pointer: SessionPointer, id: string, held: boolean): void {
-    if (held) client.heldMessages.set(id, pointer)
-    else client.heldMessages.delete(id)
-    this.deps.setQueuedMessageHeld(pointer, id, held)
+    const view = client.sessions.get(pointer.agentSessionId)
+    if (!view) return
+    if (held) view.held.add(id)
+    else view.held.delete(id)
+    this.updateHeld(pointer, id)
   }
 
-  /** The session has closed, so no client has it open. */
-  sessionClosed(pointer: SessionPointer): void {
-    for (const client of this.clients) client.sessions.delete(pointer.agentSessionId)
+  /** The user closed the session, so it closes for every client. */
+  closeSession(client: Client, pointer: SessionPointer): void {
+    this.deps.sessions.closeSession(pointer)
+    for (const other of this.clients) this.closeSessionView(other, pointer)
+    this.sendToOthers(client, 'sessionClosed', pointer)
   }
 
   get desktopPresent(): boolean {
@@ -218,18 +231,20 @@ export class Clients {
     this.screenSizes.delete(screenId)
   }
 
-  private release(pointer: SessionPointer): void {
-    if (this.viewers(pointer).length === 0) this.deps.closeSessionView(pointer)
-    else this.updateVisibility(pointer)
-  }
-
   private updateVisibility(pointer: SessionPointer): void {
-    const visible = this.viewers(pointer).some((client) => client.present && client.sessions.get(pointer.agentSessionId)!.visible)
-    this.deps.setSessionVisible(pointer, visible)
+    const visible = [...this.clients].some((client) => client.present && client.sessions.get(pointer.agentSessionId)?.visible)
+    this.deps.sessions.setVisible(pointer, visible)
   }
 
-  private viewers(pointer: SessionPointer): Client[] {
-    return [...this.clients].filter((client) => client.sessions.has(pointer.agentSessionId))
+  /** After the view has gone from its client. */
+  private release(view: SessionView): void {
+    this.updateVisibility(view.pointer)
+    for (const id of view.held) this.updateHeld(view.pointer, id)
+  }
+
+  private updateHeld(pointer: SessionPointer, id: string): void {
+    const held = [...this.clients].some((client) => client.sessions.get(pointer.agentSessionId)?.held.has(id))
+    this.deps.sessions.setQueuedMessageHeld(pointer, id, held)
   }
 
   private attachedClients(screenId: string): Client[] {

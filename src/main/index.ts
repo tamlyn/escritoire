@@ -102,10 +102,7 @@ function createApi(client: Client, { clients, remote, push, projects, sessions, 
     completeDirectory,
     listPastSessions: (projectId) => sessions.listPastSessions(projectId),
     createSession: (projectId, agent) => sessions.createSession(projectId, agent),
-    openSession: (projectId, session) => {
-      clients.openSessionView(client, session)
-      return sessions.openSession(projectId, session)
-    },
+    openSession: (projectId, session) => clients.openSession(client, projectId, session),
     closeSessionView: async (session) => clients.closeSessionView(client, session),
     sendMessage: async (session, input) => sessions.sendMessage(session, input),
     scheduleMessage: async (session, input, sendAt) => sessions.scheduleMessage(session, input, sendAt),
@@ -121,11 +118,7 @@ function createApi(client: Client, { clients, remote, push, projects, sessions, 
     respond: async (session, requestId, response) => sessions.respond(session, requestId, response),
     saveDraft: async (session, draft) => sessions.saveDraft(session, draft),
     setSessionVisible: async (session, visible) => clients.setSessionVisible(client, session, visible),
-    closeSession: async (session) => {
-      sessions.closeSession(session)
-      clients.sessionClosed(session)
-      clients.sendToOthers(client, 'sessionClosed', session)
-    },
+    closeSession: async (session) => clients.closeSession(client, session),
     listDirectory: (projectId, path) => files.listDirectory(projectId, path),
     readFile: (projectId, path) => files.readFile(projectId, path),
     writeFile: async (projectId, path, text, expected) => {
@@ -323,9 +316,12 @@ void app.whenReady().then(async () => {
   const clients = new Clients({
     lastActiveProject: () => projects.getState().activeProjectId,
     isProjectOpen: (projectId) => projects.getState().projects.some((p) => p.id === projectId && p.isOpen),
-    setSessionVisible: (session, visible) => sessions.setVisible(session, visible),
-    closeSessionView: (session) => sessions.closeSessionView(session),
-    setQueuedMessageHeld: (session, id, held) => sessions.setQueuedMessageHeld(session, id, held),
+    sessions: {
+      openSession: (projectId, session) => sessions.openSession(projectId, session),
+      setVisible: (session, visible) => sessions.setVisible(session, visible),
+      setQueuedMessageHeld: (session, id, held) => sessions.setQueuedMessageHeld(session, id, held),
+      closeSession: (session) => sessions.closeSession(session),
+    },
     watch: (projectIds) => {
       files.watch(projectIds)
       gitWatcher.watch(projectIds)

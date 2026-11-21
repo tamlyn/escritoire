@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import type { SessionPointer } from '../shared/agent'
+import { emptySessionView, type SessionPointer } from '../shared/agent'
 import type { AppState, Events, Project } from '../shared/api'
 import type { ScreenSize } from '../shared/screen'
 import type { SendEvent } from './api-server'
@@ -9,7 +9,7 @@ type Received = { name: keyof Events; payload: unknown }[]
 
 let lastActive: string | null
 let visible: Map<string, boolean>
-let closedViews: string[]
+let closed: string[]
 let watched: string[]
 let held: Set<string>
 let clients: Clients
@@ -17,15 +17,18 @@ let clients: Clients
 beforeEach(() => {
   lastActive = 'a'
   visible = new Map()
-  closedViews = []
+  closed = []
   watched = []
   held = new Set()
   clients = new Clients({
     lastActiveProject: () => lastActive,
     isProjectOpen: (projectId) => projectId === 'a' || projectId === 'b',
-    setSessionVisible: (session, isVisible) => visible.set(session.agentSessionId, isVisible),
-    closeSessionView: (session) => closedViews.push(session.agentSessionId),
-    setQueuedMessageHeld: (_session, id, isHeld) => { if (isHeld) held.add(id); else held.delete(id) },
+    sessions: {
+      openSession: async () => ({ view: emptySessionView, seq: 0, title: '', draft: '', movedTo: null }),
+      setVisible: (session, isVisible) => visible.set(session.agentSessionId, isVisible),
+      setQueuedMessageHeld: (_session, id, isHeld) => { if (isHeld) held.add(id); else held.delete(id) },
+      closeSession: (session) => closed.push(session.agentSessionId),
+    },
     watch: (projectIds) => { watched = projectIds },
   })
 })
@@ -39,23 +42,40 @@ function connect(desktop = true): { client: Client; received: Received } {
 const project = (id: string, isOpen = true): Project => ({ id, path: `/${id}`, name: id, isOpen, lastActiveAt: 0 })
 const app = (activeProjectId: string | null, ...projects: Project[]): AppState => ({ projects, activeProjectId })
 
-it('releases the queued messages a client was editing when it disconnects', () => {
-  const { client } = connect()
+describe('queued messages', () => {
   const session: SessionPointer = { agent: 'claude', agentSessionId: 's1' }
-  clients.setQueuedMessageHeld(client, session, 'm1', true)
-  clients.setQueuedMessageHeld(client, session, 'm2', true)
-  clients.setQueuedMessageHeld(client, session, 'm2', false)
-  expect([...held]).toEqual(['m1'])
 
-  clients.disconnect(client)
-  expect([...held]).toEqual([])
+  it('holds a queued message until every client editing it has finished, including by disconnecting', async () => {
+    const desktop = connect()
+    const phone = connect(false)
+    await clients.openSession(desktop.client, 'a', session)
+    await clients.openSession(phone.client, 'a', session)
+    clients.setQueuedMessageHeld(desktop.client, session, 'm1', true)
+    clients.setQueuedMessageHeld(phone.client, session, 'm1', true)
+
+    clients.setQueuedMessageHeld(desktop.client, session, 'm1', false)
+    expect([...held]).toEqual(['m1'])
+
+    clients.disconnect(phone.client)
+    expect([...held]).toEqual([])
+  })
+
+  it('releases the messages a client was editing when it stops showing the session', async () => {
+    const { client } = connect()
+    await clients.openSession(client, 'a', session)
+    clients.setQueuedMessageHeld(client, session, 'm1', true)
+
+    clients.closeSessionView(client, session)
+
+    expect([...held]).toEqual([])
+  })
 })
 
 it('says which device has a session on its screen', () => {
   const pointer: SessionPointer = { agent: 'claude', agentSessionId: 's1' }
   const phone = clients.connect(() => {}, { deviceId: 'phone' })
 
-  clients.openSessionView(phone, pointer)
+  void clients.openSession(phone, 'a', pointer)
   expect(clients.deviceShows('phone', 's1')).toBe(false)
 
   clients.setSessionVisible(phone, pointer, true)
@@ -141,10 +161,10 @@ describe('sessions', () => {
   const pointer: SessionPointer = { agent: 'claude', agentSessionId: 's1' }
   const event: Events['sessionEvent'] = { agentSessionId: 's1', seq: 1, event: { type: 'tasksChanged', tasks: [] } }
 
-  it('sends session events only to clients with the session open', () => {
+  it('sends session events only to clients with the session open', async () => {
     const desktop = connect()
     const phone = connect(false)
-    clients.openSessionView(phone.client, pointer)
+    await clients.openSession(phone.client, 'a', pointer)
 
     clients.send('sessionEvent', event)
     clients.send('sessionsChanged', [])
@@ -153,11 +173,11 @@ describe('sessions', () => {
     expect(desktop.received.map((r) => r.name)).toEqual(['sessionsChanged'])
   })
 
-  it('counts a session visible while any present client shows it', () => {
+  it('counts a session visible while any present client shows it', async () => {
     const desktop = connect()
     const phone = connect(false)
-    clients.openSessionView(desktop.client, pointer)
-    clients.openSessionView(phone.client, pointer)
+    await clients.openSession(desktop.client, 'a', pointer)
+    await clients.openSession(phone.client, 'a', pointer)
 
     clients.setSessionVisible(desktop.client, pointer, true)
     expect(visible.get('s1')).toBe(true)
@@ -170,29 +190,40 @@ describe('sessions', () => {
 
     clients.closeSessionView(phone.client, pointer)
     expect(visible.get('s1')).toBe(false)
-    expect(closedViews).toEqual([])
 
     clients.setDesktopPresent(true)
     expect(visible.get('s1')).toBe(true)
   })
 
-  it('closes the view once no client has it open, including by disconnecting', () => {
-    const desktop = connect()
+  it('stops counting a session visible when the client showing it disconnects', async () => {
     const phone = connect(false)
-    clients.openSessionView(desktop.client, pointer)
-    clients.openSessionView(phone.client, pointer)
-
-    clients.closeSessionView(desktop.client, pointer)
-    expect(closedViews).toEqual([])
+    await clients.openSession(phone.client, 'a', pointer)
+    clients.setSessionVisible(phone.client, pointer, true)
 
     clients.disconnect(phone.client)
-    expect(closedViews).toEqual(['s1'])
+
+    expect(visible.get('s1')).toBe(false)
+    expect(closed).toEqual([])
   })
 
-  it('starts a desktop client absent while the user is away', () => {
+  it('closes a session for every client, telling the others', async () => {
+    const desktop = connect()
+    const phone = connect(false)
+    await clients.openSession(desktop.client, 'a', pointer)
+    await clients.openSession(phone.client, 'a', pointer)
+
+    clients.closeSession(desktop.client, pointer)
+    clients.send('sessionEvent', event)
+
+    expect(closed).toEqual(['s1'])
+    expect(desktop.received).toEqual([])
+    expect(phone.received).toEqual([{ name: 'sessionClosed', payload: pointer }])
+  })
+
+  it('starts a desktop client absent while the user is away', async () => {
     clients.setDesktopPresent(false)
     const desktop = connect()
-    clients.openSessionView(desktop.client, pointer)
+    await clients.openSession(desktop.client, 'a', pointer)
 
     clients.setSessionVisible(desktop.client, pointer, true)
 
