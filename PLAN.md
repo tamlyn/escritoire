@@ -14,7 +14,6 @@ Noticed using Escritoire day to day (November 2026).
 - Dropping a file from the tree onto the tabs opens it where it was dropped, including in a new split, as if it had been opened and its tab dragged there.
 - A rendered Markdown view, a simple image viewer, and wrapping long lines in the editor.
 - Git graph view can get very wide - need a better layout algorithm.
-- Allow editing a past prompt in a session.
 - Project-level find, and make the find-in-file look better
 - Create new project
 - Auto-complete project names from any sibling of an existing project

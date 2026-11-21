@@ -17,6 +17,11 @@ export interface AgentAdapter {
   dispose?(): void
   /** Returns the agent's id for a session that has not started yet. */
   createSession(cwd: string, ide?: IdeServerConnection): Promise<string>
+  /**
+   * Returns a new session whose transcript is this one's up to, but not
+   * including, the user message `itemId`. The original is left as it was.
+   */
+  forkSession(cwd: string, agentSessionId: string, itemId: string, ide?: IdeServerConnection): Promise<string>
   listSessions(cwd: string): Promise<PastSession[]>
   /** Empty if the session has no transcript yet. */
   loadHistory(agentSessionId: string, cwd: string): Promise<History>

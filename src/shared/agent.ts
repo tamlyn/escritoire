@@ -13,8 +13,11 @@ export type ImageAttachment = { mediaType: string; data: string }
 
 export type UserInput = { text: string; images: ImageAttachment[] }
 
-/** A message the user sent during a turn, held by the IDE until the turn ends. */
-export type QueuedMessage = UserInput & { id: string }
+/**
+ * A message the user sent during a turn, held by the IDE until the turn ends,
+ * or one they asked to go later, held until `sendAt` (epoch milliseconds).
+ */
+export type QueuedMessage = UserInput & { id: string; sendAt?: number }
 
 export type Item =
   | { kind: 'userMessage'; id: string; text: string; images?: ImageAttachment[] }

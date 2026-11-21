@@ -7,6 +7,7 @@ import type { ThreadItem } from './codex-protocol/v2/ThreadItem'
 import type { ThreadListResponse } from './codex-protocol/v2/ThreadListResponse'
 import type { ThreadTurnsListResponse } from './codex-protocol/v2/ThreadTurnsListResponse'
 import type { ThreadStartResponse } from './codex-protocol/v2/ThreadStartResponse'
+import type { ThreadForkResponse } from './codex-protocol/v2/ThreadForkResponse'
 import type { TurnStartResponse } from './codex-protocol/v2/TurnStartResponse'
 import type { ModelListResponse } from './codex-protocol/v2/ModelListResponse'
 import type { ThreadTokenUsage } from './codex-protocol/v2/ThreadTokenUsage'
@@ -55,6 +56,20 @@ export const codexAdapter: AgentAdapter = {
       return result.thread.id
     } catch (e) { rpc.close(); throw e }
   },
+  async forkSession(cwd, threadId, itemId, ide) {
+    const forked = await using(cwd, async (rpc) => {
+      await rpc.call('thread/resume', { threadId, excludeTurns: true })
+      const turns = await listTurns(rpc, threadId)
+      const index = turns.findIndex((turn) => turn.items.some((item) => item.id === itemId))
+      if (index === -1) throw new Error("Couldn't find that message in Codex's history.")
+      if (index === 0) return null
+      // The fork is saved at once, unlike a new thread.
+      const result = await rpc.call<ThreadForkResponse>('thread/fork', { threadId, lastTurnId: turns[index - 1]!.id, excludeTurns: true })
+      return result.thread.id
+    })
+    // Editing the first message leaves nothing to keep.
+    return forked ?? codexAdapter.createSession(cwd, ide)
+  },
   closeSession(id) { freshThreads.get(id)?.rpc.close(); freshThreads.delete(id) },
   dispose() { for (const { rpc } of freshThreads.values()) rpc.close(); freshThreads.clear() },
   listSessions: (cwd) => using(cwd, async (rpc) => {
@@ -81,13 +96,7 @@ export const codexAdapter: AgentAdapter = {
       if (isUnsaved(e)) return { items: [] }
       throw e
     }
-    const items: Item[] = []
-    let cursor: string | null = null
-    do {
-      const page: ThreadTurnsListResponse = await rpc.call('thread/turns/list', { threadId, cursor, itemsView: 'full', sortDirection: 'asc' })
-      for (const turn of page.data) items.push(...turn.items.map(codexItem))
-      cursor = page.nextCursor
-    } while (cursor)
+    const items = (await listTurns(rpc, threadId)).flatMap((turn) => turn.items.map(codexItem))
     return { items, settings: resolvedSettings(result), ...(usage ? { usage } : {}) }
   }),
   settingChoices: (cwd) => using(cwd, async (rpc) => {
@@ -122,6 +131,17 @@ const builtInCommands: SlashCommand[] = [
 // Codex only writes a thread's rollout after its first turn, so a thread the
 // app quit before using can't be resumed.
 const isUnsaved = (error: unknown) => error instanceof Error && error.message.startsWith('no rollout found')
+
+async function listTurns(rpc: CodexRpc, threadId: string): Promise<ThreadTurnsListResponse['data']> {
+  const turns: ThreadTurnsListResponse['data'] = []
+  let cursor: string | null = null
+  do {
+    const page: ThreadTurnsListResponse = await rpc.call('thread/turns/list', { threadId, cursor, itemsView: 'full', sortDirection: 'asc' })
+    turns.push(...page.data)
+    cursor = page.nextCursor
+  } while (cursor)
+  return turns
+}
 
 // A long-lived app-server caches skills, and would miss one added since.
 async function listSkills(rpc: CodexRpc, cwd: string): Promise<SkillMetadata[]> {

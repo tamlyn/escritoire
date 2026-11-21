@@ -10,6 +10,7 @@ import { QueuedMessages } from './QueuedMessages'
 import { Requests } from './Requests'
 import { SessionControls } from './SessionControls'
 import { Transcript } from './Transcript'
+import { UsageLimitReached } from './UsageLimitReached'
 
 /**
  * A session's transcript and composer, wherever it is shown. `shown` says
@@ -47,12 +48,17 @@ export function SessionView({ pointer, shown, autoFocus = false, onMoved, onOpen
     <div className="flex h-full flex-col">
       <FileLinksProvider onOpenFile={onOpenFile}>
         {/* Waiting on the user isn't working, so the spinner stops for a request. */}
-        <Transcript items={view.items} working={working && view.requests.length === 0} />
+        <Transcript
+          items={view.items}
+          working={working && view.requests.length === 0}
+          onEdit={working || view.requests.length > 0 ? undefined : (itemId, text) => api.editMessage(pointer, itemId, text)}
+        />
       </FileLinksProvider>
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-2 px-4 pb-4 compact:px-2 compact:pb-[max(0.5rem,env(safe-area-inset-bottom))]">
         <StatusLine status={view.status} error={view.error} />
         <BackgroundTasks tasks={view.tasks} pointer={pointer} />
         <Requests requests={view.requests} pointer={pointer} />
+        <UsageLimitReached limits={view.limits} queued={view.queued} working={working} pointer={pointer} />
         <QueuedMessages queued={view.queued} pointer={pointer} />
         <Composer
           projectId={project.id}
@@ -60,6 +66,7 @@ export function SessionView({ pointer, shown, autoFocus = false, onMoved, onOpen
           initialDraft={session.draft}
           working={working}
           suggestion={view.suggestion}
+          sent={view.items.flatMap((item) => (item.kind === 'userMessage' ? [item.text] : []))}
           autoFocus={autoFocus}
           settings={view.settings}
           choices={choices}

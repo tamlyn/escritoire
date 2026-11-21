@@ -123,6 +123,59 @@ test('stops a turn, then sends what was queued straight away', () =>
     expect(agent.messages()).toEqual(['hold', 'hold on', 'a correction'])
   }))
 
+test('stops a turn with Esc', () =>
+  withSession(async ({ page }) => {
+    await send(page, 'hold')
+    await expect(working(page)).toBeVisible()
+    await page.getByPlaceholder(/Queue a message/).press('Escape')
+    await expect(working(page)).toBeHidden()
+  }))
+
+test('brings back sent prompts with the up arrow, without replacing a draft', () =>
+  withSession(async ({ page }) => {
+    await send(page, 'first prompt')
+    await expect(page.getByText('Reply to: first prompt')).toBeVisible()
+    await send(page, 'second prompt')
+    await expect(page.getByText('Reply to: second prompt')).toBeVisible()
+    const composer = page.getByPlaceholder(/Message agent/)
+
+    await composer.press('ArrowUp')
+    await expect(composer).toHaveValue('second prompt')
+    await composer.press('ArrowUp')
+    await expect(composer).toHaveValue('first prompt')
+    await composer.press('ArrowDown')
+    await composer.press('ArrowDown')
+    await expect(composer).toHaveValue('')
+
+    await composer.fill('a draft')
+    await composer.press('ArrowUp')
+    await expect(composer).toHaveValue('a draft')
+  }))
+
+test('edits a past message in a branch of the session, keeping the original', () =>
+  withSession(async ({ page, agent }) => {
+    await send(page, 'first')
+    await expect(page.getByText('Reply to: first')).toBeVisible()
+    await send(page, 'secnod')
+    await expect(page.getByText('Reply to: secnod')).toBeVisible()
+    await send(page, 'third')
+    await expect(page.getByText('Reply to: third')).toBeVisible()
+
+    const message = page.locator('.is-user').filter({ hasText: 'secnod' })
+    await message.hover()
+    await message.locator('..').getByTitle('Edit').click()
+    await page.locator('.is-user textarea').fill('second')
+    await page.locator('.is-user textarea').press('Enter')
+
+    await expect(page.getByText('Reply to: second')).toBeVisible()
+    await expect(page.getByText('Reply to: first')).toBeVisible()
+    await expect(page.getByText('secnod')).toBeHidden()
+    await expect(page.getByText('third')).toBeHidden()
+    const [original, , , edited] = agent.turnStarts()
+    expect(edited!.threadId).not.toBe(original!.threadId)
+    expect(agent.messages()).toEqual(['first', 'secnod', 'third', 'second'])
+  }))
+
 test('says why a turn failed, and carries on in the same conversation', () =>
   withSession(async ({ page, agent }) => {
     await send(page, 'fail')

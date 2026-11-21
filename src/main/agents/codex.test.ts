@@ -163,6 +163,21 @@ describe('Codex adapter', () => {
     expect(mocks.clients[0].close).toHaveBeenCalled()
   })
 
+  it('forks through the turn before an edited message, or starts afresh for the first', async () => {
+    const turn = (id: string, userId: string) => ({ id, items: [{ type: 'userMessage', id: userId, content: [] }, { type: 'agentMessage', id: `${userId}-reply`, text: '' }] })
+    mocks.call.mockImplementation(async (method: string) => {
+      if (method === 'thread/turns/list') return { data: [turn('t1', 'u1'), turn('t2', 'u2')], nextCursor: null }
+      if (method === 'thread/fork') return { thread: { id: 'fork' } }
+      if (method === 'thread/start') return { thread: { id: 'fresh' } }
+      return {}
+    })
+    expect(await codexAdapter.forkSession('/project', 'thread', 'u2')).toBe('fork')
+    expect(mocks.call.mock.calls.find(([m]) => m === 'thread/fork')![1]).toMatchObject({ threadId: 'thread', lastTurnId: 't1' })
+    expect(await codexAdapter.forkSession('/project', 'thread', 'u1')).toBe('fresh')
+    await expect(codexAdapter.forkSession('/project', 'thread', 'gone')).rejects.toThrow("Couldn't find that message")
+    codexAdapter.dispose!()
+  })
+
   it('streams, queues, approves, and clears requests on failure', async () => {
     mocks.call.mockImplementation(async (method: string) => method === 'turn/start' ? { turn: { id: 'turn' } } : {})
     let view: SessionView = { ...emptySessionView }

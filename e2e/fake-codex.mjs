@@ -126,6 +126,13 @@ function handle(method, params) {
     case 'thread/resume':
       if (!existsSync(threadPath(params.threadId))) throw new Error(`no rollout found for ${params.threadId}`)
       return threadResponse(params.threadId, params)
+    case 'thread/fork': {
+      const source = loadThread(params.threadId)
+      const id = randomUUID()
+      const turns = source.turns.slice(0, source.turns.findIndex((turn) => turn.id === params.lastTurnId) + 1)
+      saveThread({ id, preview: source.preview, updatedAt: Math.floor(Date.now() / 1000), turns })
+      return threadResponse(id, params)
+    }
     case 'thread/list':
       return {
         data: readdirSync(threadsDir).map((file) => {

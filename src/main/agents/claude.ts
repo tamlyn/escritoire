@@ -3,6 +3,7 @@ import { relative } from 'node:path'
 import {
   type CanUseTool,
   type EffortLevel,
+  forkSession,
   getSessionInfo,
   getSessionMessages,
   type HookCallbackMatcher,
@@ -103,6 +104,15 @@ export const claudeAdapter: AgentAdapter = {
   kind: 'claude',
 
   createSession: async () => randomUUID(),
+
+  async forkSession(cwd, agentSessionId, itemId) {
+    const messages = await getSessionMessages(agentSessionId, { dir: cwd })
+    const index = messages.findIndex((message) => message.uuid === itemId)
+    if (index === -1) throw new Error("Couldn't find that message in Claude Code's transcript.")
+    // Editing the first message leaves nothing to keep.
+    if (index === 0) return randomUUID()
+    return (await forkSession(agentSessionId, { dir: cwd, upToMessageId: messages[index - 1]!.uuid })).sessionId
+  },
 
   async listSessions(cwd) {
     const sessions = await listSessions({ dir: cwd })
@@ -232,13 +242,16 @@ class ClaudeRun implements AgentRun {
   }
 
   send({ text, images }: UserInput): void {
+    // Claude Code keeps the id in its transcript, so the message can be found there to edit.
+    const id = randomUUID()
     this.emit({
       type: 'itemUpserted',
-      item: { kind: 'userMessage', id: randomUUID(), text, ...(images.length ? { images } : {}) },
+      item: { kind: 'userMessage', id, text, ...(images.length ? { images } : {}) },
     })
     this.setWorking(true)
     this.input.push({
       type: 'user',
+      uuid: id,
       message: {
         role: 'user',
         content: images.length

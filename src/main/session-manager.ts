@@ -42,6 +42,8 @@ type Session = {
   /** The renderer has the session open and wants its events. */
   subscribed: boolean
   visible: boolean
+  /** Until the first queued message's time comes. */
+  waiting?: ReturnType<typeof setTimeout>
 }
 
 export type SessionManagerDeps = {
@@ -210,6 +212,39 @@ export class SessionManager {
     }
   }
 
+  /** Queues the message to go no sooner than `sendAt`, as when continuing once a usage limit resets. */
+  scheduleMessage(pointer: SessionPointer, input: UserInput, sendAt: number): void {
+    const session = this.get(pointer)
+    this.setQueue(session, [...session.view.queued, { ...input, id: randomUUID(), sendAt }])
+    if (session.view.status !== 'working') this.sendQueued(session)
+  }
+
+  /**
+   * Continues the conversation from just before one of the user's messages,
+   * with that message changed, as a new session that clients showing this one
+   * follow. The original stays as it was, to resume from past sessions.
+   */
+  async editMessage(pointer: SessionPointer, itemId: string, text: string): Promise<void> {
+    const session = this.get(pointer)
+    if (session.view.status === 'working') throw new Error('Stop the agent before editing a message.')
+    const item = session.view.items.find((candidate) => candidate.id === itemId)
+    if (item?.kind !== 'userMessage') throw new Error('Only your own messages can be edited.')
+    const { projectId, record } = session
+    const agentSessionId = await this.project(projectId).work.run(async () => {
+      const id = await this.adapter(pointer.agent).forkSession(session.cwd, pointer.agentSessionId, itemId, this.deps.ideConnection?.(projectId))
+      await this.deps.store.put(projectId, id, { ...newRecord(pointer.agent), title: record.title, draft: record.draft, settings: record.settings })
+      return id
+    })
+    const fork = await this.load(projectId, { agent: pointer.agent, agentSessionId })
+    this.dispatch(fork, { text, images: item.images ?? [] })
+    // Sent rather than applied, which would move this session to the new id rather than leave it be.
+    session.seq++
+    if (session.subscribed) {
+      this.deps.send('sessionEvent', { agentSessionId: pointer.agentSessionId, seq: session.seq, event: { type: 'conversationReset', agentSessionId } })
+    }
+    this.stop(session)
+  }
+
   editQueuedMessage(pointer: SessionPointer, id: string, text: string): void {
     const session = this.get(pointer)
     this.setQueue(session, session.view.queued.map((message) => (message.id === id ? { ...message, text } : message)))
@@ -218,6 +253,8 @@ export class SessionManager {
   cancelQueuedMessage(pointer: SessionPointer, id: string): void {
     const session = this.get(pointer)
     this.setQueue(session, session.view.queued.filter((message) => message.id !== id))
+    // Messages sent while it waited for its time were queued behind it.
+    if (session.view.status !== 'working') this.sendQueued(session)
   }
 
   /** Keeps a message from being sent while a client edits it, so the edit can't arrive too late. */
@@ -239,6 +276,15 @@ export class SessionManager {
   private sendQueued(session: Session): void {
     const [next, ...rest] = session.view.queued
     if (!next || this.heldMessages.has(next.id)) return
+    const wait = (next.sendAt ?? 0) - this.now()
+    if (wait > 0) {
+      // Checked at least each minute, since a timer stands still while the computer sleeps.
+      clearTimeout(session.waiting)
+      session.waiting = setTimeout(() => {
+        if (this.sessions.get(session.pointer.agentSessionId) === session && session.view.status !== 'working') this.sendQueued(session)
+      }, Math.min(wait, 60_000))
+      return
+    }
     this.setQueue(session, rest)
     this.dispatch(session, { text: next.text, images: next.images })
   }
@@ -344,6 +390,7 @@ export class SessionManager {
 
   private stop(session: Session): void {
     const { pointer } = session
+    clearTimeout(session.waiting)
     session.run?.close()
     this.adapter(pointer.agent).closeSession?.(pointer.agentSessionId)
     this.sessions.delete(pointer.agentSessionId)

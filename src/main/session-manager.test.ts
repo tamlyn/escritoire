@@ -1,7 +1,7 @@
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent, Item, SessionSettings, UserInput } from '../shared/agent'
 import type { AgentAdapter, StartOptions } from './agents/types'
 import { SessionManager } from './session-manager'
@@ -18,6 +18,7 @@ function fakeAdapter(history: Item[] = []) {
   const adapter: AgentAdapter = {
     kind: 'claude',
     createSession: async () => 'session-1',
+    forkSession: async () => 'fork-1',
     listSessions: async () => [],
     loadHistory: async () => ({ items: history }),
     settingChoices: async () => ({ models: [], permissionModes: [] }),
@@ -46,7 +47,7 @@ function fakeAdapter(history: Item[] = []) {
 
 const say = (text: string): UserInput => ({ text, images: [] })
 
-async function setup(history: Item[] = []) {
+async function setup(history: Item[] = [], now?: () => number) {
   const dataDir = await mkdtemp(join(tmpdir(), 'escritoire-sessions-'))
   const { adapter, runs } = fakeAdapter(history)
   const sent: { name: string; payload: unknown }[] = []
@@ -56,10 +57,12 @@ async function setup(history: Item[] = []) {
     store: new SessionStore(dataDir),
     projectPath: () => '/work/project',
     send: (name, payload) => sent.push({ name, payload }),
-    now: () => time++,
+    now: now ?? (() => time++),
   })
   return { manager, runs, sent, dataDir }
 }
+
+afterEach(() => { vi.useRealTimers() })
 
 describe('SessionManager', () => {
   it('starts a new session fresh, titled from its first message', async () => {
@@ -337,6 +340,73 @@ describe('SessionManager', () => {
     expect(runs[0]!.sent).toEqual(['First', 'Second'])
     runs[0]!.emit({ type: 'statusChanged', status: 'idle' })
     expect(runs[0]!.sent).toEqual(['First', 'Second', 'Third'])
+  })
+
+  it('sends an edited message in a fork of the session, which clients follow', async () => {
+    const image = { mediaType: 'image/png', data: 'AA==' }
+    const { manager, runs, sent, dataDir } = await setup([
+      { kind: 'userMessage', id: 'u1', text: 'Fix the bug' },
+      { kind: 'agentMessage', id: 'a1', text: 'Fixed' },
+      { kind: 'userMessage', id: 'u2', text: 'Add a tset', images: [image] },
+    ])
+    const pointer = { agent: 'claude' as const, agentSessionId: 'original' }
+    const opened = await manager.openSession('p1', pointer)
+    manager.sendMessage(pointer, say('Hello'))
+    runs[0]!.emit({ type: 'titleChanged', title: 'Bug fix' })
+    runs[0]!.emit({ type: 'statusChanged', status: 'idle' })
+
+    await manager.editMessage(pointer, 'u2', 'Add a test')
+
+    expect(runs[1]!.options.agentSessionId).toBe('fork-1')
+    expect(manager.summaries()).toEqual([
+      { agent: 'claude', agentSessionId: 'fork-1', projectId: 'p1', title: 'Bug fix', status: 'working', attention: null },
+    ])
+    const follow = sent.filter((s) => s.name === 'sessionEvent').at(-1)!.payload
+    expect(follow).toEqual({ agentSessionId: 'original', seq: opened.seq + 4, event: { type: 'conversationReset', agentSessionId: 'fork-1' } })
+    const fork = await manager.openSession('p1', { agent: 'claude', agentSessionId: 'fork-1' })
+    expect(fork.movedTo).toBeNull()
+    expect(runs[1]!.sent).toEqual(['Add a test'])
+    await manager.closeProject('p1')
+    expect((await new SessionStore(dataDir).get('p1', 'original'))?.title).toBe('Bug fix')
+  })
+
+  it("won't edit a message during a turn", async () => {
+    const { manager } = await setup([{ kind: 'userMessage', id: 'u1', text: 'Fix the bug' }])
+    const pointer = { agent: 'claude' as const, agentSessionId: 'original' }
+    await manager.openSession('p1', pointer)
+    manager.sendMessage(pointer, say('Hello'))
+
+    await expect(manager.editMessage(pointer, 'u1', 'Fix it')).rejects.toThrow('Stop the agent')
+  })
+
+  it('holds a scheduled message until its time, and what is sent meanwhile behind it', async () => {
+    vi.useFakeTimers({ now: 0 })
+    const { manager, runs } = await setup([], Date.now)
+    const pointer = await manager.createSession('p1', 'claude')
+    await manager.openSession('p1', pointer)
+    manager.scheduleMessage(pointer, say('continue'), 150_000)
+    manager.sendMessage(pointer, say('And then'))
+    expect(runs).toHaveLength(0)
+
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(runs).toHaveLength(0)
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(runs[0]!.sent).toEqual(['continue'])
+    runs[0]!.emit({ type: 'statusChanged', status: 'idle' })
+    expect(runs[0]!.sent).toEqual(['continue', 'And then'])
+  })
+
+  it('sends what waited behind a scheduled message once that is cancelled', async () => {
+    vi.useFakeTimers({ now: 0 })
+    const { manager, runs } = await setup([], Date.now)
+    const pointer = await manager.createSession('p1', 'claude')
+    await manager.openSession('p1', pointer)
+    manager.scheduleMessage(pointer, say('continue'), 150_000)
+    manager.sendMessage(pointer, say('Now'))
+    const { view } = await manager.openSession('p1', pointer)
+
+    manager.cancelQueuedMessage(pointer, view.queued[0]!.id)
+    expect(runs[0]!.sent).toEqual(['Now'])
   })
 
   it('starts runs with the chosen settings and changes the running one', async () => {

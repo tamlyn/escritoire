@@ -1,9 +1,10 @@
-import { ImageIcon, PencilIcon, XIcon } from 'lucide-react'
+import { ClockIcon, ImageIcon, PencilIcon, XIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { QueuedMessage, SessionPointer } from '../../../shared/agent'
 import { api } from '../api'
+import { resetTime } from './UsageIndicator'
 
-/** Messages waiting for the turn to end, each of which can still be edited or cancelled. */
+/** Messages waiting for the turn to end or their time to come, each of which can still be edited or cancelled. */
 export function QueuedMessages({ queued, pointer }: { queued: QueuedMessage[]; pointer: SessionPointer }) {
   if (queued.length === 0) return null
   return (
@@ -39,7 +40,15 @@ function Queued({ message, pointer }: { message: QueuedMessage; pointer: Session
   return (
     <div className="bg-muted/50 group flex items-start gap-2 rounded-lg border border-dashed px-3 py-1.5 text-sm">
       {editing === null ? (
-        <p className="text-muted-foreground line-clamp-3 min-w-0 flex-1 whitespace-pre-wrap" title="Queued until the turn ends">
+        <p
+          className="text-muted-foreground line-clamp-3 min-w-0 flex-1 whitespace-pre-wrap"
+          title={message.sendAt ? `Sends ${resetTime(message.sendAt)}` : 'Queued until the turn ends'}
+        >
+          {message.sendAt && (
+            <span className="mr-1.5 inline-flex items-center gap-1 align-text-bottom text-xs">
+              <ClockIcon className="size-3.5" /> {resetTime(message.sendAt).replace(/^at /, '')}
+            </span>
+          )}
           {message.images.length > 0 && (
             <ImageIcon className="mr-1 inline size-3.5 align-text-bottom" aria-label={`${message.images.length} images`} />
           )}

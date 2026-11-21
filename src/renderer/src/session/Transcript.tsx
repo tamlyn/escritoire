@@ -16,12 +16,17 @@ import {
 } from '@/components/ai-elements/tool'
 import { cn } from '@/lib/utils'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { BrainIcon, ChevronRightIcon, LoaderCircleIcon } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { BrainIcon, ChevronRightIcon, LoaderCircleIcon, PencilIcon } from 'lucide-react'
+import { type ReactNode, useState } from 'react'
 import type { ImageAttachment, Item, ToolView } from '../../../shared/agent'
 import { fileLinkProps } from './FileLinks'
 
-export function Transcript({ items, working }: { items: Item[]; working: boolean }) {
+/** `onEdit` sends new text in place of a past message of the user's; leave it out while that can't be done. */
+export function Transcript({ items, working, onEdit }: {
+  items: Item[]
+  working: boolean
+  onEdit?: (itemId: string, text: string) => Promise<void>
+}) {
   const children = new Map<string, Item[]>()
   const topLevel: Item[] = []
   for (const item of items) {
@@ -46,7 +51,7 @@ export function Transcript({ items, working }: { items: Item[]; working: boolean
               streamingId={working ? last?.id : undefined}
             />
           ) : (
-            <ItemView key={group.id} item={group} nested={children} streaming={working && group === last} />
+            <ItemView key={group.id} item={group} nested={children} streaming={working && group === last} onEdit={onEdit} />
           ),
         )}
         {working && !Array.isArray(lastGroup) && (
@@ -159,27 +164,91 @@ function summarise(items: Item[]): string {
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
+/** Editing sends the new text in a new session branched from just before the message, which the tab moves to. */
+function UserMessage({ item, onEdit }: {
+  item: Extract<Item, { kind: 'userMessage' }>
+  onEdit?: (itemId: string, text: string) => Promise<void>
+}) {
+  const [editing, setEditing] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  function submit(text: string) {
+    if (!onEdit || text.trim() === '' || text.trim() === item.text) {
+      setEditing(null)
+      return
+    }
+    setError(null)
+    onEdit(item.id, text.trim()).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)))
+  }
+
+  if (editing !== null) {
+    return (
+      <Message from="user">
+        <MessageContent className="ring-ring/50 w-full ring-2">
+          {item.images && <Thumbnails images={item.images} />}
+          <textarea
+            value={editing}
+            autoFocus
+            onFocus={(event) => event.currentTarget.setSelectionRange(editing.length, editing.length)}
+            onChange={(event) => setEditing(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing) return
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault()
+                submit(editing)
+              } else if (event.key === 'Escape') {
+                event.preventDefault()
+                setEditing(null)
+                setError(null)
+              }
+            }}
+            className="field-sizing-content max-h-60 w-full resize-none bg-transparent outline-none"
+          />
+        </MessageContent>
+        <p className={cn('text-right text-xs', error ? 'text-destructive' : 'text-muted-foreground')}>
+          {error ?? 'Enter sends this in a new branch of the session, keeping the original. Esc cancels.'}
+        </p>
+      </Message>
+    )
+  }
+  return (
+    <div className="group/user ml-auto flex max-w-[95%] items-start justify-end gap-2">
+      {onEdit && (
+        <button
+          type="button"
+          title="Edit"
+          onClick={() => setEditing(item.text)}
+          className="text-muted-foreground hover:text-foreground mt-3 opacity-0 group-hover/user:opacity-100 compact:p-1.5 compact:opacity-100"
+        >
+          <PencilIcon className="size-3.5" />
+        </button>
+      )}
+      <Message from="user" className="w-auto max-w-full">
+        <MessageContent className="wrap-anywhere whitespace-pre-wrap">
+          {item.images && <Thumbnails images={item.images} />}
+          {item.text}
+        </MessageContent>
+      </Message>
+    </div>
+  )
+}
+
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`
 
 function ItemView({
   item,
   nested,
   streaming,
+  onEdit,
 }: {
   item: Item
   nested: Map<string, Item[]>
   streaming: boolean
+  onEdit?: (itemId: string, text: string) => Promise<void>
 }) {
   switch (item.kind) {
     case 'userMessage':
-      return (
-        <Message from="user">
-          <MessageContent className="wrap-anywhere whitespace-pre-wrap">
-            {item.images && <Thumbnails images={item.images} />}
-            {item.text}
-          </MessageContent>
-        </Message>
-      )
+      return <UserMessage item={item} onEdit={onEdit} />
     case 'agentMessage':
       return (
         <Message from="assistant">

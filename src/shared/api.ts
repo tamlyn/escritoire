@@ -65,6 +65,13 @@ export type Api = {
   closeSessionView(session: SessionPointer): Promise<void>
   /** Starts or resumes the agent if it isn't running. During a turn the message is queued. */
   sendMessage(session: SessionPointer, input: UserInput): Promise<void>
+  /** Queues the message until `sendAt`, in epoch milliseconds. */
+  scheduleMessage(session: SessionPointer, input: UserInput, sendAt: number): Promise<void>
+  /**
+   * Sends `text` in place of a past message of the user's, in a new session
+   * branched from just before it. Clients showing this one follow the move.
+   */
+  editMessage(session: SessionPointer, itemId: string, text: string): Promise<void>
   editQueuedMessage(session: SessionPointer, id: string, text: string): Promise<void>
   cancelQueuedMessage(session: SessionPointer, id: string): Promise<void>
   /** While held, as when the user is editing it, the message isn't sent even if the turn ends. */
@@ -173,6 +180,8 @@ const apiMethodSet: Record<keyof Api, true> = {
   openSession: true,
   closeSessionView: true,
   sendMessage: true,
+  scheduleMessage: true,
+  editMessage: true,
   editQueuedMessage: true,
   cancelQueuedMessage: true,
   setQueuedMessageHeld: true,

@@ -20,6 +20,7 @@ export function Composer({
   initialDraft,
   working,
   suggestion,
+  sent,
   autoFocus,
   settings,
   choices,
@@ -31,6 +32,8 @@ export function Composer({
   working: boolean
   /** Shown in an empty composer; Tab takes it. */
   suggestion?: string
+  /** The prompts sent so far, oldest first, which the up arrow brings back. */
+  sent: string[]
   autoFocus: boolean
   settings: SessionSettings
   choices: SettingChoices | null
@@ -49,6 +52,8 @@ export function Composer({
   const textarea = useRef<HTMLTextAreaElement>(null)
   const compact = useIsCompact()
   const saveTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  /** Which of `sent` the composer shows, while it shows one unchanged. */
+  const recalled = useRef<number | null>(null)
 
   const draft = useRef(text)
   draft.current = text
@@ -151,6 +156,7 @@ export function Composer({
 
   function send() {
     if (!canSend) return
+    recalled.current = null
     clearTimeout(saveTimer.current)
     draftEdited.current = false
     api.sendMessage(pointer, { text: text.trim(), images }).catch((error: unknown) => {
@@ -186,10 +192,17 @@ export function Composer({
         return
       }
     }
+    if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && recall(event.key === 'ArrowUp' ? -1 : 1)) {
+      event.preventDefault()
+      return
+    }
     // A phone's keyboard has no Shift+Enter, so there the button sends.
     if (event.key === 'Enter' && !event.shiftKey && !compact) {
       event.preventDefault()
       send()
+    } else if (event.key === 'Escape' && working) {
+      event.preventDefault()
+      void api.interrupt(pointer)
     } else if (event.key === 'Tab' && !event.shiftKey && offered) {
       event.preventDefault()
       changeText(offered, offered.length)
@@ -200,6 +213,27 @@ export function Composer({
         void api.changeSessionSettings(pointer, { permissionMode: mode })
       }
     }
+  }
+
+  /**
+   * Steps through the sent prompts, as in a terminal, from an empty composer or
+   * one showing a prompt it brought back, so a draft is never replaced. Within
+   * several lines the arrows move the caret until it reaches the first or last.
+   */
+  function recall(step: -1 | 1): boolean {
+    const element = textarea.current
+    const index = text === '' ? null : recalled.current
+    if (!element || (text !== '' && (index === null || sent[index] !== text))) return false
+    const caret = element.selectionStart
+    if (step === -1 ? text.slice(0, caret).includes('\n') : text.slice(caret).includes('\n')) return false
+    if (index === null && step === 1) return false
+    const next = (index ?? sent.length) + step
+    if (next < 0) return true
+    const recall = next < sent.length ? sent[next]! : ''
+    recalled.current = next < sent.length ? next : null
+    changeText(recall, recall.length)
+    requestAnimationFrame(() => element.setSelectionRange(recall.length, recall.length))
+    return true
   }
 
   // A complete command is sent, and a fuzzy match (`/tmp` finding `/template`) only replaces what was typed if chosen.
@@ -301,7 +335,7 @@ export function Composer({
           {working && !canSend ? (
             <button
               type="button"
-              title="Interrupt"
+              title={compact ? 'Interrupt' : 'Interrupt (Esc)'}
               onClick={() => void api.interrupt(pointer)}
               className="bg-primary text-primary-foreground flex size-8 shrink-0 items-center justify-center rounded-lg compact:size-10"
             >

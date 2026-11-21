@@ -143,7 +143,7 @@ function Bar({ segments }: { segments: { color: string; fraction: number }[] }) 
   )
 }
 
-function resetTime(at: number): string {
+export function resetTime(at: number): string {
   const date = new Date(at)
   const time = date.toLocaleTimeString([], { timeStyle: 'short' })
   return at - Date.now() < 24 * 60 * 60_000
