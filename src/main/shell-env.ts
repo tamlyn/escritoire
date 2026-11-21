@@ -11,12 +11,51 @@ const timeoutMs = 10_000
 // shell starts from the app's own environment, so variables set at launch survive
 // unless the profile overrides them.
 export async function loadShellEnv(): Promise<void> {
+  // Before the shell starts, which would otherwise pass them on.
+  removeAgentSessionEnv(process.env)
   if (process.platform === 'win32') return
   try {
     Object.assign(process.env, await resolveShellEnv(defaultShell(), process.execPath, process.env))
   } catch (error) {
     console.error('Could not read the login shell environment:', error)
   }
+}
+
+// Set for a Claude Code or Codex session and the processes it runs, so they're
+// inherited when the app is launched from one (`pnpm dev` run by an agent, or a
+// terminal in an IDE that integrates Claude Code). Passed on, they would make the
+// app's agents think they're nested in that session, report to its IDE, or take
+// its effort level. Adapted from Orca's list: MIT License, Copyright (c) 2026 Lovecast Inc.
+const agentSessionVars = [
+  'CLAUDECODE',
+  'CLAUDE_CODE_ENTRYPOINT',
+  'CLAUDE_CODE_CHILD_SESSION',
+  'CLAUDE_CODE_SESSION_ID',
+  'CLAUDE_CODE_BRIDGE_SESSION_ID',
+  'CLAUDE_CODE_HOST_SESSION_ID',
+  'CLAUDE_CODE_SESSION_ATTENDED',
+  'CLAUDE_CODE_MESSAGING_SOCKET',
+  'CLAUDE_CODE_MESSAGING_TOKEN',
+  'CLAUDE_CODE_EXECPATH',
+  'CLAUDE_CODE_DESKTOP_APP_VERSION',
+  'CLAUDE_CODE_SSE_PORT',
+  'CLAUDE_CODE_AUTO_CONNECT_IDE',
+  'CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL',
+  'CLAUDE_EFFORT',
+  'CLAUDE_PID',
+  'CLAUDE_AGENT_SDK_VERSION',
+  'CODEX_THREAD_ID',
+  'CODEX_SESSION_ID',
+  'CODEX_TOOL_CALL_ID',
+  'CODEX_VERSION',
+  'CODEX_CI',
+  'CODEX_PERMISSION_PROFILE',
+  'CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS',
+  'CODEX_PLUGIN_METRICS_OUTPUT',
+]
+
+export function removeAgentSessionEnv(env: NodeJS.ProcessEnv): void {
+  for (const name of agentSessionVars) delete env[name]
 }
 
 function defaultShell(): string {

@@ -7,7 +7,7 @@ export type RpcMessage = { id?: number | string; method?: string; params?: Recor
 export class CodexRpc {
   private child
   private nextId = 0
-  private pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>()
+  private pending = new Map<number, { method: string; resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>()
   private closed = false
   private stderr = ''
   onMessage: (message: RpcMessage) => void = () => {}
@@ -32,7 +32,7 @@ export class CodexRpc {
           if (!call) return
           this.pending.delete(message.id)
           clearTimeout(call.timer)
-          if (message.error) call.reject(new Error(message.error.message))
+          if (message.error) call.reject(new Error(errorText(call.method, message.error.message)))
           else call.resolve(message.result)
         } else this.onMessage(message)
       } catch (error) { this.fail(error instanceof Error ? error : new Error(String(error))) }
@@ -49,7 +49,7 @@ export class CodexRpc {
     const id = ++this.nextId
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => { this.fail(new Error(`Codex timed out: ${method}`)) }, 120_000)
-      this.pending.set(id, { resolve: (v) => resolve(v as T), reject, timer })
+      this.pending.set(id, { method, resolve: (v) => resolve(v as T), reject, timer })
       this.write({ id, method, params })
     })
   }
@@ -72,4 +72,11 @@ export class CodexRpc {
     this.pending.clear()
     this.child.kill()
   }
+}
+
+// An older Codex refuses a method it lacks by listing every method it has.
+function errorText(method: string, message: string): string {
+  return message.startsWith(`Invalid request: unknown variant \`${method}\``)
+    ? `This version of Codex doesn't support ${method}. Update the Codex CLI.`
+    : message
 }

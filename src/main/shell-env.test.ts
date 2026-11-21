@@ -2,7 +2,22 @@ import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
-import { resolveShellEnv } from './shell-env'
+import { removeAgentSessionEnv, resolveShellEnv } from './shell-env'
+
+test("drops the variables of an agent session the app was launched from, but not the user's", () => {
+  const env = {
+    CLAUDECODE: '1',
+    CLAUDE_CODE_SESSION_ID: 'abc',
+    CLAUDE_CODE_SSE_PORT: '12345',
+    CLAUDE_EFFORT: 'low',
+    CODEX_THREAD_ID: 'thread',
+    CLAUDE_CONFIG_DIR: '/home/me/.claude-work',
+    CLAUDE_CODE_USE_BEDROCK: '1',
+    PATH: '/usr/bin',
+  }
+  removeAgentSessionEnv(env)
+  expect(env).toEqual({ CLAUDE_CONFIG_DIR: '/home/me/.claude-work', CLAUDE_CODE_USE_BEDROCK: '1', PATH: '/usr/bin' })
+})
 
 test('reads variables set by the login profile, past anything it prints', async () => {
   const home = await mkdtemp(join(tmpdir(), 'escritoire-shell-'))

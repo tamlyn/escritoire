@@ -18,22 +18,7 @@ Noticed using Escritoire day to day (November 2026).
 - Project-level find, and make the find-in-file look better
 - Create new project
 - Auto-complete project names from any sibling of an existing project
-
-## Agent integration hardening from Orca
-
-[Orca](https://github.com/stablyai/orca) uses the same Claude Agent SDK and Codex app-server integrations as Escritoire, with far more users finding the edge cases. Its handling of them is a free list of failure modes we will hit too.
-
-- **One review pass** over Orca's `src/main/claude/` (especially `child-process/`, `sdk-transport/` and `configuration/`) and `src/main/codex/app-server/`. List each failure mode it handles and check whether our adapters do. The areas include:
-  - child processes that don't exit, and killing the whole process tree;
-  - startup failures and exits before or during the handshake, reported readably;
-  - the environment given to the agent (inherited config directories, rejected API keys);
-  - folder trust;
-  - the user message queue and control requests;
-  - oversized app-server frames, and app-server capabilities that vary by Codex version.
-
-  Fix the gaps that matter, with a test that reproduces each one.
-- **When an integration bug appears later**, check how Orca handles it before designing a fix.
-- **Reimplement in our structure rather than transplanting files.** Orca's adapters are tightly coupled to the rest of its runtime (its Claude adapter imports its chat layer over a hundred times), so copied files would drag that design in. Copying a self-contained function is fine under its MIT licence; keep Orca's copyright notice with it (see decision 9 in HISTORY.md).
+- Don't ask for confirmation to open links
 
 ## Features
 
@@ -74,6 +59,7 @@ Rarely needed: the user @-mentions files instead.
 - **Automatic session reaping.** Only reap finished sessions, never working sessions or sessions waiting for input. Preserve history, read state and unsent drafts. Choose a timeout through use rather than promising token-cost equivalence.
 - **Automatic terminal reaping.** Requires reliable idle detection on both platforms; leave a terminal running when uncertain. A foreground process name alone is insufficient.
 - **Docker Compose services** in the supervisor. Not needed now; don't design them out.
+- **Headless mode** for a server without a display, used only through remote access. A `--headless` flag that creates no window and doesn't quit for lack of one, turns remote access on, prints a pairing code at startup (enabling and pairing are otherwise desktop-only), and treats the desktop as never present so attention goes to push. Electron still needs a display on Linux: try `--ozone-platform=headless`, else Xvfb. Running main as plain Node is the further step; the Electron-specific parts are the window, `presence.ts`, `desktop-attention.ts`, `shell.trashItem` and `app.getPath`. Until then, run under `xvfb-run` and pair once through the hidden window.
 
 ## Non-functional requirements
 

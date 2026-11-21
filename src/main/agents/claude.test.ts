@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it } from 'vitest'
 import { type AgentEvent, applyEvent, emptySessionView } from '../../shared/agent'
-import { ClaudeTranscript, planLimits } from './claude'
+import { ClaudeTranscript, planLimits, probe } from './claude'
 
 const cwd = '/work/project'
 
@@ -318,3 +321,31 @@ describe('ClaudeTranscript', () => {
     expect(next.suggestion).toBeUndefined()
   })
 })
+
+describe('probe', () => {
+  afterEach(() => { delete process.env.ESCRITOIRE_CLAUDE_CODE_PATH })
+
+  it('gives up on a Claude Code that never answers, and stops it', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'escritoire-claude-'))
+    const pidFile = join(dir, 'pid')
+    const path = join(dir, 'claude.mjs')
+    await writeFile(path, `import { writeFileSync } from 'node:fs'
+writeFileSync(${JSON.stringify(pidFile)}, String(process.pid))
+process.stdin.resume()
+`)
+    process.env.ESCRITOIRE_CLAUDE_CODE_PATH = path
+
+    await expect(probe(dir, (query) => query.supportedModels(), 500)).rejects.toThrow("Claude Code didn't answer")
+    const pid = Number(await readFile(pidFile, 'utf8'))
+    await expect.poll(() => isRunning(pid)).toBe(false)
+  })
+})
+
+function isRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}

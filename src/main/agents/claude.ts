@@ -138,16 +138,25 @@ export const claudeAdapter: AgentAdapter = {
 // The models are the account's and the user's settings', not the project's, so one list does.
 let choices: Promise<SettingChoices> | undefined
 
-/** Asks a Claude Code process that never gets a message, which takes a fraction of a second. */
-async function probe<T>(cwd: string, ask: (probe: Query) => Promise<T>): Promise<T> {
+/**
+ * Asks a Claude Code process that never gets a message, which takes a fraction
+ * of a second. The SDK waits indefinitely for an answer, and the setting choices
+ * are kept for good, so a Claude Code that hangs would leave them loading forever.
+ */
+export async function probe<T>(cwd: string, ask: (probe: Query) => Promise<T>, timeoutMs = 30_000): Promise<T> {
   const input = new AsyncQueue<SDKUserMessage>()
   const probe = query({
     prompt: input,
     options: { cwd, settingSources, pathToClaudeCodeExecutable: claudeCodePath() },
   })
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Claude Code didn't answer within ${timeoutMs / 1000}s.`)), timeoutMs)
+  })
   try {
-    return await ask(probe)
+    return await Promise.race([ask(probe), deadline])
   } finally {
+    clearTimeout(timer)
     input.end()
     probe.close()
   }
