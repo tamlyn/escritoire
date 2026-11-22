@@ -171,14 +171,20 @@ function UserMessage({ item, onEdit }: {
 }) {
   const [editing, setEditing] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Each send makes a branch, so a second Enter while the first is under way would make two.
+  const [sending, setSending] = useState(false)
 
   function submit(text: string) {
+    if (sending) return
     if (!onEdit || text.trim() === '' || text.trim() === item.text) {
       setEditing(null)
       return
     }
     setError(null)
-    onEdit(item.id, text.trim()).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)))
+    setSending(true)
+    onEdit(item.id, text.trim())
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)))
+      .finally(() => setSending(false))
   }
 
   if (editing !== null) {
