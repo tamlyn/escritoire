@@ -85,6 +85,8 @@ export type Api = {
   stopTask(session: SessionPointer, taskId: string): Promise<void>
   /** Starts the session's agent if it isn't running, to ask how full the context is and how much of the plan is used. */
   refreshUsage(session: SessionPointer): Promise<void>
+  /** Sends a minimal turn to refresh the prompt cache, preserving the draft. */
+  rewarmSession(session: SessionPointer): Promise<void>
   respond(session: SessionPointer, requestId: string, response: RequestResponse): Promise<void>
   saveDraft(session: SessionPointer, draft: string): Promise<void>
   /** Whether the user can currently see the session, which marks its turns as read. */
@@ -194,6 +196,7 @@ const apiMethodSet: Record<keyof Api, true> = {
   changeSessionSettings: true,
   stopTask: true,
   refreshUsage: true,
+  rewarmSession: true,
   respond: true,
   saveDraft: true,
   setSessionVisible: true,

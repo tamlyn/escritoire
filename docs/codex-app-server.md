@@ -69,7 +69,15 @@ different sandbox. Supervisor tools are supplied on creation or resume along
 with guidance to use them for background processes.
 
 Context usage uses the latest request’s total tokens and reported context window,
-with cache-read token counts displayed separately. Effective model, effort and
+with exact cache-read and cache-write token counts in the cache popover. The cache
+indicator assumes a 30-minute lifetime after the latest request and marks its
+countdown and cold state with `?`; while working it simply says "Warm".
+The indicator omits the word "Cache". Hovering or tapping opens a popover showing
+the last request and estimated expiry times and explaining the assumption:
+app-server provides no cache retention or expiry field. "Keep warm" sends a minimal
+turn on demand, preserving the draft; new usage refreshes the countdown. The button
+is hidden when cold and disabled during a turn.
+Effective model, effort and
 approval policy come from thread creation/resume and settings notifications.
 Codex background-task controls are not yet exposed.
 The macOS checks cover the adapter with a simulated server and the installed CLI's

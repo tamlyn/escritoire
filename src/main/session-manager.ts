@@ -208,6 +208,18 @@ export class SessionManager {
     }
   }
 
+  /** A real turn warms the existing prompt prefix without clearing the user's draft. */
+  rewarm(pointer: SessionPointer): void {
+    const session = this.get(pointer)
+    if (session.view.status === 'working' || session.view.requests.length || session.view.queued.length) {
+      throw new Error('Finish the current turn and queued messages before rewarming.')
+    }
+    this.dispatch(session, {
+      text: 'Rewarm the prompt cache. Reply only with "Ready". Do not use tools or take any other action.',
+      images: [],
+    })
+  }
+
   /** Queues the message to go no sooner than `sendAt`, as when continuing once a usage limit resets. */
   scheduleMessage(pointer: SessionPointer, input: UserInput, sendAt: number): void {
     const session = this.get(pointer)

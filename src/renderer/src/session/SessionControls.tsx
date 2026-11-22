@@ -1,5 +1,5 @@
 import { ChevronDownIcon } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,7 +20,8 @@ import type {
   SettingChoices,
 } from '../../../shared/agent'
 import { api } from '../api'
-import { compact, UsageIndicator } from './UsageIndicator'
+import { CacheIndicator } from './CacheIndicator'
+import { UsageIndicator } from './UsageIndicator'
 
 const defaultValue = ''
 
@@ -72,13 +73,9 @@ export function SessionControls({
         onModelChange={(id, asDefault) => change({ model: id === 'default' ? null : id }, asDefault)}
         onEffortChange={(next, asDefault) => change({ effort: next }, asDefault)}
       />
-      <div className="ml-auto flex items-center gap-3.5">
+      <div className="ml-auto flex items-center gap-0.5">
         <UsageIndicator pointer={pointer} usage={usage} limits={limits} />
-        {usage && (pointer.agent === 'claude' ? <CacheIndicator usage={usage} working={working} /> : (
-          <span title={`The latest request read ${usage.cacheReadTokens.toLocaleString()} tokens from the prompt cache.`}>
-            {compact(usage.cacheReadTokens)} cached
-          </span>
-        ))}
+        {usage && <CacheIndicator pointer={pointer} usage={usage} working={working} />}
       </div>
     </div>
   )
@@ -268,38 +265,6 @@ function EffortSlider({
       </span>
     </DropdownMenuItem>
   )
-}
-
-// The API's default when a session hasn't yet written to the cache.
-const defaultCacheTtlMs = 5 * 60_000
-
-function CacheIndicator({ usage, working }: { usage: ContextUsage; working: boolean }) {
-  // The clock only ticks occasionally, so it can lag behind a request that just finished.
-  const now = Math.max(useNow(15_000), usage.at)
-  const ttl = usage.cacheTtlMs ?? defaultCacheTtlMs
-  const expiresAt = usage.at + ttl
-  // Every request during a turn reads the cache and so keeps it warm.
-  const warm = working || now < expiresAt
-  const title = [
-    `The latest request read ${usage.cacheReadTokens.toLocaleString()} tokens from the prompt cache and wrote ${usage.cacheWriteTokens.toLocaleString()}.`,
-    `Cached prompts live for ${ttl / 60_000} minutes after each request${usage.cacheTtlMs ? '' : ' (assumed)'}.`,
-    warm && !working ? `Expires at ${new Date(expiresAt).toLocaleTimeString([], { timeStyle: 'short' })}.` : '',
-  ].join(' ')
-  return (
-    <span title={title} className="flex items-center gap-1.5">
-      <span className={cn('size-1.5 rounded-full', warm ? 'bg-primary' : 'bg-muted-foreground/40')} />
-      {working ? 'Cache warm' : warm ? `Cache ${Math.ceil((expiresAt - now) / 60_000)}m` : 'Cache cold'}
-    </span>
-  )
-}
-
-function useNow(intervalMs: number): number {
-  const [now, setNow] = useState(Date.now)
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), intervalMs)
-    return () => clearInterval(timer)
-  }, [intervalMs])
-  return now
 }
 
 function capitalize(text: string): string {

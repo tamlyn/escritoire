@@ -80,6 +80,22 @@ describe('SessionManager', () => {
     ])
   })
 
+  it('rewarms with a minimal turn, keeping the draft and rejecting a second request while busy', async () => {
+    const { manager, runs } = await setup()
+    const pointer = await manager.createSession('p1', 'claude')
+    await manager.openSession('p1', pointer)
+    manager.sendMessage(pointer, say('Hi'))
+    runs[0]!.emit({ type: 'statusChanged', status: 'idle' })
+    manager.saveDraft(pointer, 'My next question')
+
+    manager.rewarm(pointer)
+    expect(runs[0]!.sent.at(-1)).toBe('Rewarm the prompt cache. Reply only with "Ready". Do not use tools or take any other action.')
+    expect((await manager.openSession('p1', pointer)).draft).toBe('My next question')
+    expect(() => manager.rewarm(pointer)).toThrow('Finish the current turn')
+    expect(runs[0]!.sent).toHaveLength(2)
+    manager.closeSession(pointer)
+  })
+
   it('keeps the title of a session started elsewhere', async () => {
     const { manager, runs } = await setup([{ kind: 'userMessage', id: 'u1', text: 'Earlier' }])
     const pointer = { agent: 'claude' as const, agentSessionId: 'external' }

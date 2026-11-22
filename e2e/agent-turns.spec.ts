@@ -31,6 +31,70 @@ test('shows a turn from the message to the reply', () =>
     await expect(page.getByRole('tab', { name: 'hello there' })).toBeVisible()
   }))
 
+test('shows a compact cache countdown with request and expiry times in a popover', () =>
+  withSession(async ({ page }) => {
+    await page.clock.install()
+    await send(page, 'cache-hit')
+    const cache = page.getByRole('button', { name: 'Prompt cache', exact: true })
+    await expect(cache).toHaveText('30m?')
+    await expect(cache).not.toHaveAttribute('title')
+    await cache.hover()
+    const popover = page.getByRole('dialog', { name: 'Prompt cache details' })
+    await expect(popover).toBeVisible()
+    await expect(popover).toContainText('20,000')
+    await expect(popover).toContainText('1,000')
+    await expect(popover).toContainText('Assumes a 30-minute lifetime')
+    await expect(popover).toContainText('Last request')
+    await expect(popover).toContainText('Estimated expiry')
+    const requestAt = await popover.locator('time').nth(0).getAttribute('datetime')
+    const expiresAt = await popover.locator('time').nth(1).getAttribute('datetime')
+    expect(Date.parse(expiresAt!) - Date.parse(requestAt!)).toBe(30 * 60_000)
+    // Moving into the popover keeps its button reachable.
+    await popover.getByRole('button', { name: 'Keep warm' }).hover()
+    await page.clock.runFor(300)
+    await expect(popover).toBeVisible()
+
+    await send(page, 'cache-miss')
+    await expect(cache).toHaveText('30m?')
+
+    await page.clock.fastForward(2 * 60_000)
+    await expect(cache).toHaveText('28m?')
+    await page.clock.fastForward(29 * 60_000)
+    await expect(cache).toHaveText('Cold?')
+    await cache.hover()
+    await expect(popover).toBeVisible()
+    await expect(popover.getByRole('button', { name: 'Keep warm' })).toBeHidden()
+
+    await send(page, 'hold')
+    await expect(cache).toHaveText('Warm')
+    await cache.hover()
+    await expect(popover.getByRole('button', { name: 'Keep warm' })).toBeDisabled()
+    await cache.press('Escape')
+    await expect(popover).toBeHidden()
+    await page.getByTitle('Interrupt').click()
+  }))
+
+test('keeps the cache warm on request without clearing the composer draft', () =>
+  withSession(async ({ page, agent }) => {
+    await send(page, 'cache-hit')
+    await expect(working(page)).toBeHidden()
+    const composer = page.getByPlaceholder(/Message agent/)
+    await composer.fill('My next question')
+    const cache = page.getByRole('button', { name: 'Prompt cache', exact: true })
+    await cache.hover()
+    const popover = page.getByRole('dialog', { name: 'Prompt cache details' })
+    const requestAt = await popover.locator('time').first().getAttribute('datetime')
+    await popover.getByRole('button', { name: 'Keep warm' }).click()
+
+    await expect.poll(() => agent.messages().length).toBe(2)
+    expect(agent.messages()[1]).toBe('Rewarm the prompt cache. Reply only with "Ready". Do not use tools or take any other action.')
+    await expect(working(page)).toBeHidden()
+    await expect(cache).toHaveText('30m?')
+    await expect(composer).toHaveValue('My next question')
+    await cache.hover()
+    await expect(popover.locator('time').first()).not.toHaveAttribute('datetime', requestAt!)
+  }))
+
 test('keeps a chunk that fails to load to its own tab', () =>
   withSession(async ({ app, page }) => {
     await app.evaluate(({ session }) => {

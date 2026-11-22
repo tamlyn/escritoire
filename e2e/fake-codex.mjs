@@ -5,6 +5,7 @@
 //   question    asks a question, then reports the answer
 //   hold        keeps working until the test releases it or the user interrupts
 //   fail        ends the turn with an error
+//   cache-hit / cache-miss  reports prompt cache usage
 // Anything else is answered straight away. Threads are kept in FAKE_CODEX_DIR, as
 // Codex keeps its rollouts, and every request is logged there for tests to read.
 import { randomUUID } from 'node:crypto'
@@ -75,6 +76,10 @@ async function untilReleased(turn) {
 
 async function play(turn, text) {
   const script = text.split(/\s+/)[0]
+  if (script === 'cache-hit' || script === 'cache-miss' || script === 'Rewarm') {
+    const usage = { totalTokens: 25000, inputTokens: 24000, cachedInputTokens: script === 'cache-miss' ? 0 : 20000, cacheWriteInputTokens: 1000, outputTokens: 1000, reasoningOutputTokens: 0 }
+    notify('thread/tokenUsage/updated', turn.threadId, { tokenUsage: { last: usage, total: usage, modelContextWindow: 100000 } })
+  }
   if (script === 'fail') return finish(turn, 'failed', 'The model is unavailable')
   if (script === 'hold') await untilReleased(turn)
   if (script === 'permission') {
