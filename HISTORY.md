@@ -81,6 +81,7 @@ Check current versions and APIs against documentation when adding each one.
 - Each project remembers its own tabs and layout, across switches and across restarts.
 - **Explicit opening and closing.** Closing a project releases its agent sessions, terminals and supervised processes while keeping its layout available to reopen. Closing a session releases its runtime while keeping its conversation available to resume.
 - **Open means used since launch.** Nothing runs across a restart, so the app starts with only the current project open; the rest are dimmed in the switcher until switched to.
+- **A tab shown again gets its focus back,** to the element last focused in it, however it was switched to. It is remembered while the project stays active; otherwise a tab focuses what it would anyway, such as a terminal.
 - Switching away does not close a project or stop its work. Only the active project's UI is rendered; background projects retain the state needed for their sessions, terminals and drafts.
 - File watchers and git status polling run only for projects that are some client's active one, and refresh on switching in.
 - Supervised processes are never stopped merely by switching away or by inactivity. Closing the project or quitting the app stops them.
@@ -188,7 +189,7 @@ Learnings from The Running Man carried over:
 - File tree for each project.
 - View files, and edit config files (JSON, YAML, TOML, env and similar) with syntax highlighting. A full code-editing experience is not required.
 - Make it obvious which files have changed: the file tree shows their git status. Open editors follow changes made on disk.
-- File tabs persist as path and scroll position.
+- File tabs persist as path, scroll position and cursor.
 - **Autosave promptly**, including when an editor tab loses focus. There is no manual-save workflow; do not design around long-lived unsaved editor buffers.
 - **New files are always real files in the project**, never unsaved buffers, so autosave, the tree, git, SQL connections and agents all work on them unchanged. One input, from ⌘N, the new tab page or the tree's context menu (which starts it in the clicked directory), takes either a path, creating any missing directories, or just an extension (`.sql`), which makes a scratch file named for the time in `.scratch/`. A scratch file is notes or a quick query; keeping it, committing it, or moving it to a proper path is up to the user, and whether `.scratch/` is ignored by git is up to each project. `./.env` names a dotfile.
 - Rename (which can also move) and Move to Trash from the tree's context menu. Open tabs and SQL connections follow a rename. Deleting moves to the OS trash rather than asking for confirmation.

@@ -6,18 +6,18 @@ import { useFileContent } from '../files'
 import { useProcesses } from '../processes'
 import { useProject } from '../project-context'
 import { Centred } from '../tabs'
-import { Editor, type EditorProps } from './FileEditor'
+import { Editor, type EditorPosition, type EditorProps } from './FileEditor'
 import { SqlFile } from './sql/SqlFile'
 
-type Props = Pick<EditorProps, 'onScrolled' | 'blame' | 'onBlameChange' | 'onOpenCommit'> & {
+type Props = Pick<EditorProps, 'onPositionChanged' | 'blame' | 'onBlameChange' | 'onOpenCommit'> & {
   path: string
-  scrollPos: number | undefined
+  position: Partial<EditorPosition>
   /** Without it, a task file can't start its tasks from here, as there'd be nowhere to show them. */
   onProcessStarted?: (process: ProcessInfo) => void
 }
 
 /** A project file in its editor, wherever it is shown. */
-export function FileView({ path, scrollPos, onProcessStarted, ...editorProps }: Props) {
+export function FileView({ path, position, onProcessStarted, ...editorProps }: Props) {
   const project = useProject()
   const content = useFileContent(project.id, path)
   const processes = useProcesses(project.id)
@@ -48,7 +48,7 @@ export function FileView({ path, scrollPos, onProcessStarted, ...editorProps }: 
           projectId={project.id}
           path={path}
           content={content}
-          initialScrollPos={scrollPos}
+          initialPosition={position}
           onRunTask={onProcessStarted && ((name) => void runTask(name))}
           runningTasks={runningTasks}
         />

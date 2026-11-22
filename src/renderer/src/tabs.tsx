@@ -4,6 +4,7 @@ import { baseName } from '../../shared/files'
 import type { GitDiffRequest } from '../../shared/git'
 import type { ProcessInfo, TaskRef } from '../../shared/process'
 import { ProcessTab } from './process/ProcessTab'
+import type { EditorPosition } from './file/FileEditor'
 import { FileTab } from './file/FileTab'
 import { CommitTab } from './git/CommitTab'
 import { DiffTab } from './git/DiffTab'
@@ -19,8 +20,7 @@ import { TerminalTab } from './screen/TerminalTab'
 export type TabData =
   | { kind: 'empty' }
   | ({ kind: 'session' } & SessionPointer)
-  /** `scrollPos` is the document position of the top line. */
-  | { kind: 'file'; path: string; scrollPos?: number; blame?: boolean }
+  | ({ kind: 'file'; path: string; blame?: boolean } & Partial<EditorPosition>)
   /** The tab's id identifies its shell in main. */
   | { kind: 'terminal' }
   /** Enough to start the process again after a restart. */

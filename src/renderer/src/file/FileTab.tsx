@@ -5,14 +5,14 @@ import { FileView } from './FileView'
 type FileTabData = Extract<TabData, { kind: 'file' }>
 
 export function FileTab({ tab, data }: { tab: Tab; data: FileTabData }) {
-  const { path, scrollPos, blame = false } = data
+  const { path, scrollPos, cursor, blame = false } = data
   const workspace = useParentWorkspace<TabData>()
   return (
     <FileView
       path={path}
-      scrollPos={scrollPos}
+      position={{ scrollPos, cursor }}
       blame={blame}
-      onScrolled={(pos) => workspace?.updateTab(tab.id, { data: { ...data, scrollPos: pos } })}
+      onPositionChanged={(position) => workspace?.updateTab(tab.id, { data: { ...data, ...position } })}
       onBlameChange={(on) => workspace?.updateTab(tab.id, { data: { ...data, blame: on } })}
       onOpenCommit={(commit) => workspace?.addTab(createCommitTab(commit))}
       onProcessStarted={(process) => workspace?.addTab(createProcessTab(process))}

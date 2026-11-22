@@ -22,19 +22,26 @@ import { followReveals } from './reveal'
 import { runGutter, setRunningTasks } from './run-gutter'
 
 const saveDelayMs = 500
-// The scroll position lives in the project layout, which is rewritten on every save.
-const scrollSaveDelayMs = 1500
+// The position lives in the project layout, which is rewritten on every save.
+const positionSaveDelayMs = 1500
 
 // Marks transactions that apply a change made on disk, which mustn't be saved back.
 const fromDisk = Annotation.define<boolean>()
+
+/** Where the user is in a file, as document positions. */
+export type EditorPosition = {
+  /** The start of the top line. */
+  scrollPos: number
+  cursor: number
+}
 
 export type EditorProps = {
   projectId: string
   path: string
   /** A new object whenever the file is read, even if its text is unchanged. */
   content: { text: string }
-  initialScrollPos: number | undefined
-  onScrolled: (pos: number) => void
+  initialPosition: Partial<EditorPosition>
+  onPositionChanged: (position: EditorPosition) => void
   /** Without it, a task file offers no way to run its tasks. */
   onRunTask?: (name: string) => void
   runningTasks: string[]
@@ -56,8 +63,8 @@ export function Editor({
   projectId,
   path,
   content,
-  initialScrollPos,
-  onScrolled,
+  initialPosition,
+  onPositionChanged,
   onRunTask,
   runningTasks,
   blame,
@@ -74,8 +81,8 @@ export function Editor({
   const baseline = useRef(content.text)
   const [diskContent, setDiskContent] = useState(content)
   const [saveError, setSaveError] = useState<string | null>(null)
-  const onScrolledRef = useRef(onScrolled)
-  onScrolledRef.current = onScrolled
+  const onPositionChangedRef = useRef(onPositionChanged)
+  onPositionChangedRef.current = onPositionChanged
   const onRunTaskRef = useRef(onRunTask)
   onRunTaskRef.current = onRunTask
   const onOpenCommitRef = useRef(onOpenCommit)
@@ -84,7 +91,16 @@ export function Editor({
 
   useEffect(() => {
     let saveTimer: ReturnType<typeof setTimeout> | undefined
-    let scrollTimer: ReturnType<typeof setTimeout> | undefined
+    let positionTimer: ReturnType<typeof setTimeout> | undefined
+    const positionChanged = (view: EditorView) => {
+      clearTimeout(positionTimer)
+      positionTimer = setTimeout(() => {
+        onPositionChangedRef.current({
+          scrollPos: view.lineBlockAtHeight(view.scrollDOM.scrollTop).from,
+          cursor: view.state.selection.main.head,
+        })
+      }, positionSaveDelayMs)
+    }
 
     let pending: Promise<void> = Promise.resolve()
     const save = (): Promise<void> => {
@@ -116,54 +132,51 @@ export function Editor({
     flushers.add(flush)
 
     const language = new Compartment()
+    const state = EditorState.create({
+      doc: content.text,
+      extensions: [
+        // CodeMirror splits on any line ending and joins with \n unless told
+        // otherwise, which would rewrite every line of a CRLF file on save.
+        content.text.includes('\r\n') ? EditorState.lineSeparator.of('\r\n') : [],
+        // Configured by the effect below.
+        blameCompartment.of([]),
+        onRunTask && isTaskFile(baseName(path)) ? runGutter(baseName(path), (name) => onRunTaskRef.current?.(name)) : [],
+        basicSetup,
+        findPanel(),
+        // The app's shortcuts before the editor's keymap, which on Linux folds code on Ctrl+Shift+[.
+        Prec.highest(EditorView.domEventHandlers({ keydown: runCommandKey })),
+        // After basicSetup, so its gutter sits between the line numbers and the text.
+        changeMarkers({
+          load: () => api.getGitHeadText(projectId, path),
+          onGitChanged: (listener) =>
+            subscribe('gitChanged', (event) => {
+              if (event.projectId === projectId) listener()
+            }),
+        }),
+        language.of([]),
+        editorTheme(),
+        extensions,
+        EditorView.updateListener.of((update) => {
+          if (update.selectionSet) positionChanged(update.view)
+          if (!update.docChanged || update.transactions.every((tr) => tr.annotation(fromDisk))) return
+          // sliceDoc rather than doc.toString, which always joins lines with \n.
+          unsaved.current = update.state.sliceDoc()
+          clearTimeout(saveTimer)
+          saveTimer = setTimeout(save, saveDelayMs)
+        }),
+        EditorView.domEventHandlers({
+          blur: () => { void save() },
+          scroll: (_event, view) => positionChanged(view),
+        }),
+      ],
+    })
+    // The file may have shrunk since the position was saved.
+    const clamp = (pos: number) => Math.min(pos, state.doc.length)
+    const { scrollPos, cursor } = initialPosition
     const view = new EditorView({
       parent: parentRef.current!,
-      state: EditorState.create({
-        doc: content.text,
-        extensions: [
-          // CodeMirror splits on any line ending and joins with \n unless told
-          // otherwise, which would rewrite every line of a CRLF file on save.
-          content.text.includes('\r\n') ? EditorState.lineSeparator.of('\r\n') : [],
-          // Configured by the effect below.
-          blameCompartment.of([]),
-          onRunTask && isTaskFile(baseName(path)) ? runGutter(baseName(path), (name) => onRunTaskRef.current?.(name)) : [],
-          basicSetup,
-          findPanel(),
-          // The app's shortcuts before the editor's keymap, which on Linux folds code on Ctrl+Shift+[.
-          Prec.highest(EditorView.domEventHandlers({ keydown: runCommandKey })),
-          // After basicSetup, so its gutter sits between the line numbers and the text.
-          changeMarkers({
-            load: () => api.getGitHeadText(projectId, path),
-            onGitChanged: (listener) =>
-              subscribe('gitChanged', (event) => {
-                if (event.projectId === projectId) listener()
-              }),
-          }),
-          language.of([]),
-          editorTheme(),
-          extensions,
-          EditorView.updateListener.of((update) => {
-            if (!update.docChanged || update.transactions.every((tr) => tr.annotation(fromDisk))) return
-            // sliceDoc rather than doc.toString, which always joins lines with \n.
-            unsaved.current = update.state.sliceDoc()
-            clearTimeout(saveTimer)
-            saveTimer = setTimeout(save, saveDelayMs)
-          }),
-          EditorView.domEventHandlers({
-            blur: () => { void save() },
-            scroll: (_event, view) => {
-              clearTimeout(scrollTimer)
-              scrollTimer = setTimeout(() => {
-                onScrolledRef.current(view.lineBlockAtHeight(view.scrollDOM.scrollTop).from)
-              }, scrollSaveDelayMs)
-            },
-          }),
-        ],
-      }),
-      scrollTo:
-        initialScrollPos === undefined
-          ? undefined
-          : EditorView.scrollIntoView(Math.min(initialScrollPos, content.text.length), { y: 'start' }),
+      state: cursor === undefined ? state : state.update({ selection: { anchor: clamp(cursor) } }).state,
+      scrollTo: scrollPos === undefined ? undefined : EditorView.scrollIntoView(clamp(scrollPos), { y: 'start' }),
     })
     viewRef.current = view
     loadLanguage(view, language, baseName(path))
@@ -172,7 +185,7 @@ export function Editor({
     return () => {
       stopFollowing()
       flushers.delete(flush)
-      clearTimeout(scrollTimer)
+      clearTimeout(positionTimer)
       save()
       view.destroy()
       viewRef.current = null

@@ -135,10 +135,10 @@ function OpenFile({ path, onBack }: { path: string; onBack: () => void }) {
     <Screen title={baseName(path)} onBack={onBack}>
       <FileView
         path={path}
-        scrollPos={undefined}
+        position={{}}
         blame={blame}
         onBlameChange={setBlame}
-        onScrolled={() => {}}
+        onPositionChanged={() => {}}
         onOpenCommit={() => {}}
       />
     </Screen>

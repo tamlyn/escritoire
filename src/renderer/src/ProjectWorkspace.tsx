@@ -33,6 +33,7 @@ import { shortcutLabel } from './shortcuts'
 import { ProcessList } from './process/ProcessList'
 import { ProcessStatusDot } from './process/ProcessStatusDot'
 import { useProcess } from './processes'
+import { RememberFocus } from './RememberFocus'
 import { TabErrorBoundary } from './TabErrorBoundary'
 import {
   createDiffTab,
@@ -251,7 +252,9 @@ const classNames: WorkspaceClassNames = {
 function renderTabContent(tab: Tab) {
   return (
     <TabErrorBoundary>
-      <TabContent tab={tab} />
+      <RememberFocus>
+        <TabContent tab={tab} />
+      </RememberFocus>
     </TabErrorBoundary>
   )
 }

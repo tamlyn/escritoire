@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
@@ -29,12 +29,22 @@ test('opens files, moves between tabs and runs actions from the keyboard', async
   }
 
   await page.locator('.cm-content:visible').click()
+  await page.keyboard.press(`${modifier}+Home`)
+  await page.keyboard.press('End')
   await page.keyboard.press(`${modifier}+Shift+BracketLeft`)
   await expect(page.getByRole('tab', { name: 'a.md', selected: true })).toBeVisible()
   await page.keyboard.press(`${modifier}+Shift+BracketLeft`)
   await expect(page.getByRole('tab', { name: 'b.md', selected: true })).toBeVisible()
+  // Focus and the cursor come back with the tab.
+  await expect(page.locator('.cm-content:visible')).toBeFocused()
+  await page.keyboard.type('!')
+  await expect.poll(() => readFile(join(project, 'b.md'), 'utf8')).toBe('# B!\n')
   await page.keyboard.press(`${modifier}+Shift+BracketRight`)
   await expect(page.getByRole('tab', { name: 'a.md', selected: true })).toBeVisible()
+  // Also when the tab is chosen with the mouse.
+  await page.getByRole('tab', { name: 'b.md' }).click()
+  await expect(page.locator('.cm-content:visible')).toBeFocused()
+  await page.getByRole('tab', { name: 'a.md' }).click()
 
   // A palette's shortcut swaps to it from another; other shortcuts wait until the dialog closes.
   await page.keyboard.press(`${modifier}+Shift+o`)

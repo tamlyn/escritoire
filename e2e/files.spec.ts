@@ -61,11 +61,15 @@ test('browses, edits and autosaves files, and shows changes made on disk', async
   await expect(page.getByRole('alert')).toBeHidden()
   await expect.poll(() => readFile(join(project, 'windows.ini'), 'utf8')).toBe('a=1\r\nb=2\r\nc=3\r\nd=4\r\ne=5')
   await page.getByRole('tab', { name: 'app.json' }).click()
+  await page.locator('.cm-content:visible').getByText('"port": 4000').click()
+  // The cursor is saved in the layout once it has settled.
+  await page.waitForTimeout(2000)
 
-  // The file tab and expanded directories come back after a restart.
+  // The file tab, its cursor and expanded directories come back after a restart.
   await close()
   ;({ page, close } = await launchApp(dataDir))
   await expect(page.locator('.cm-content:visible')).toContainText('"port": 4000')
+  await expect(page.locator('.cm-activeLine:visible')).toHaveText('  "port": 4000')
   await expect(page.getByRole('tree').getByRole('treeitem', { name: 'app.json' })).toBeVisible()
 
   await close()
