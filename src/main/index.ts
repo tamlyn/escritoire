@@ -259,7 +259,6 @@ function createWindow(): BrowserWindow {
     return { action: 'deny' }
   })
 
-  const devServerUrl = process.env.ELECTRON_RENDERER_URL
   if (devServerUrl) {
     void window.loadURL(devServerUrl)
   } else {
@@ -284,6 +283,8 @@ function applicationMenu(): Menu {
   ])
 }
 
+// Read before loading the shell environment removes it.
+const devServerUrl = process.env.ELECTRON_RENDERER_URL
 // Started before `ready` so the shell runs while Electron starts up. Agents and
 // their settings lookups read the environment, so the API waits for it.
 const shellEnv = loadShellEnv()
@@ -402,8 +403,7 @@ void app.whenReady().then(async () => {
   // or off, or changing its port, never disconnects it.
   // Its token is never written down, so only the windows of this launch can know it.
   const desktopToken = randomBytes(32).toString('base64url')
-  const rendererUrl = process.env.ELECTRON_RENDERER_URL
-  const desktopOrigin = rendererUrl ? new URL(rendererUrl).origin : 'file://'
+  const desktopOrigin = devServerUrl ? new URL(devServerUrl).origin : 'file://'
   const server = await ApiServer.start({
     port: 0,
     admits: (request) => request.headers.origin === undefined || request.headers.origin === desktopOrigin,

@@ -12,7 +12,7 @@ const timeoutMs = 10_000
 // unless the profile overrides them.
 export async function loadShellEnv(): Promise<void> {
   // Before the shell starts, which would otherwise pass them on.
-  removeAgentSessionEnv(process.env)
+  removeLauncherEnv(process.env)
   if (process.platform === 'win32') return
   try {
     Object.assign(process.env, await resolveShellEnv(defaultShell(), process.execPath, process.env))
@@ -54,8 +54,26 @@ const agentSessionVars = [
   'CODEX_PLUGIN_METRICS_OUTPUT',
 ]
 
-export function removeAgentSessionEnv(env: NodeJS.ProcessEnv): void {
+// Set by electron-vite for `pnpm dev`. Passed on, they would point an Electron app
+// developed in the IDE at the IDE's own dev server, and give agents' builds
+// NODE_ENV=development.
+const devLauncherVars = [
+  'ELECTRON_RENDERER_URL',
+  'ELECTRON_CLI_ARGS',
+  'ELECTRON_ENTRY',
+  'ELECTRON_EXEC_PATH',
+  'ELECTRON_MAJOR_VER',
+  'NO_SANDBOX',
+  'REMOTE_DEBUGGING_PORT',
+  'NODE_ENV',
+  'NODE_ENV_ELECTRON_VITE',
+]
+
+/** Drops what the app inherited from whatever launched it, so agents, terminals and processes don't. */
+export function removeLauncherEnv(env: NodeJS.ProcessEnv): void {
   for (const name of agentSessionVars) delete env[name]
+  // Otherwise NODE_ENV is the user's own.
+  if (env.NODE_ENV_ELECTRON_VITE) for (const name of devLauncherVars) delete env[name]
 }
 
 function defaultShell(): string {

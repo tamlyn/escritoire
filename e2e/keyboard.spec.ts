@@ -38,7 +38,7 @@ test('opens files, moves between tabs and runs actions from the keyboard', async
 
   // A palette's shortcut swaps to it from another; other shortcuts wait until the dialog closes.
   await page.keyboard.press(`${modifier}+Shift+o`)
-  await expect(page.getByPlaceholder('Open a file…')).toBeFocused()
+  await expect(page.getByPlaceholder('Open a file, or type a full path…')).toBeFocused()
   await page.keyboard.press(`${modifier}+t`)
   await page.keyboard.press(`${modifier}+Shift+a`)
   await expect(page.getByRole('dialog')).toHaveCount(1)

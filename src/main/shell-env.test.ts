@@ -2,7 +2,7 @@ import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
-import { removeAgentSessionEnv, resolveShellEnv } from './shell-env'
+import { removeLauncherEnv, resolveShellEnv } from './shell-env'
 
 test("drops the variables of an agent session the app was launched from, but not the user's", () => {
   const env = {
@@ -15,8 +15,26 @@ test("drops the variables of an agent session the app was launched from, but not
     CLAUDE_CODE_USE_BEDROCK: '1',
     PATH: '/usr/bin',
   }
-  removeAgentSessionEnv(env)
+  removeLauncherEnv(env)
   expect(env).toEqual({ CLAUDE_CONFIG_DIR: '/home/me/.claude-work', CLAUDE_CODE_USE_BEDROCK: '1', PATH: '/usr/bin' })
+})
+
+test('drops what electron-vite set when it launched the app', () => {
+  const env = {
+    ELECTRON_RENDERER_URL: 'http://localhost:5173',
+    ELECTRON_MAJOR_VER: '45',
+    NODE_ENV: 'development',
+    NODE_ENV_ELECTRON_VITE: 'development',
+    PATH: '/usr/bin',
+  }
+  removeLauncherEnv(env)
+  expect(env).toEqual({ PATH: '/usr/bin' })
+})
+
+test("keeps the user's NODE_ENV when electron-vite didn't launch the app", () => {
+  const env = { NODE_ENV: 'production', PATH: '/usr/bin' }
+  removeLauncherEnv(env)
+  expect(env).toEqual({ NODE_ENV: 'production', PATH: '/usr/bin' })
 })
 
 test('reads variables set by the login profile, past anything it prints', async () => {
