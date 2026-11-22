@@ -9,6 +9,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from './components/ui/context-menu'
+import { CopyPathItems } from './CopyPathItems'
 import { useFileActions } from './file-actions'
 import { useDirectory } from './files'
 import { useGitSummary } from './git/git'
@@ -141,6 +142,8 @@ function Entry({
           </ContextMenuItem>
           <ContextMenuItem onSelect={menu.after(() => actions.rename(entry))}>Rename…</ContextMenuItem>
           <ContextMenuItem onSelect={menu.after(() => actions.remove(entry))}>Move to Trash</ContextMenuItem>
+          <ContextMenuSeparator />
+          <CopyPathItems path={entry.path} />
         </ContextMenuContent>
       </ContextMenu>
       {isExpanded && (

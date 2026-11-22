@@ -2,6 +2,22 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { type DirectoryEntry, type FileContent, parentPath } from '../../shared/files'
 import { api, subscribe } from './api'
 
+/** A path inside the project relative to it, so it opens the same tab as from the tree; any other path unchanged. */
+export function projectRelativePath(projectPath: string, path: string): string {
+  const root = projectPath.replace(/\/$/, '')
+  return path.startsWith(`${root}/`) ? path.slice(root.length + 1) : path
+}
+
+/** A file opened from outside the project keeps the full path it was opened with, which may start with `~`. */
+export function isOutsideProject(path: string): boolean {
+  return path.startsWith('/') || path.startsWith('~')
+}
+
+export function absolutePath(projectPath: string, path: string): string {
+  if (isOutsideProject(path)) return path
+  return `${projectPath.replace(/\/$/, '')}/${path}`
+}
+
 /** Lists a directory, and lists it again whenever something in it changes. */
 export function useDirectory(projectId: string, path: string): DirectoryEntry[] | null {
   return useLiveLoad(

@@ -1,7 +1,7 @@
 import { type ComponentProps, createContext, useContext, useMemo } from 'react'
 import { defaultComponents, defaultRemarkPlugins, type ExtraProps } from 'streamdown'
 import { revealLine } from '../file/reveal'
-import { useProjectFileList } from '../files'
+import { projectRelativePath, useProjectFileList } from '../files'
 import { useProject } from '../project-context'
 import { type FileRef, parseFileHref, remarkFileLinks } from './file-refs'
 
@@ -19,11 +19,9 @@ export function FileLinksProvider({ onOpenFile, children }: { onOpenFile: (path:
   const files = useProjectFileList(project.id)
 
   const links = useMemo((): FileLinks => {
-    const root = project.path.replace(/\/$/, '')
     return {
       resolve(ref, detected) {
-        let path = ref.path.replace(/^\.\//, '')
-        if (path.startsWith(`${root}/`)) path = path.slice(root.length + 1)
+        const path = projectRelativePath(project.path, ref.path.replace(/^\.\//, ''))
         // Absolute paths are unambiguous; relative ones in prose often aren't paths at all.
         if (detected && !path.startsWith('/') && !files?.has(path)) return null
         return path

@@ -4,7 +4,14 @@ import { basicSetup } from 'codemirror'
 import { type RefObject, useEffect, useRef, useState } from 'react'
 import { baseName } from '../../../shared/files'
 import { isTaskFile } from '../../../shared/process'
-import { ContextMenu, ContextMenuCheckboxItem, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/context-menu'
+import {
+  ContextMenu,
+  ContextMenuCheckboxItem,
+  ContextMenuContent,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu'
+import { CopyPathItems } from '../CopyPathItems'
 import { api, flushers, subscribe } from '../api'
 import { runCommandKey } from '../commands'
 import { blameGutter } from './blame'
@@ -218,6 +225,8 @@ export function Editor({
           <ContextMenuCheckboxItem checked={blame} onCheckedChange={onBlameChange}>
             Git blame
           </ContextMenuCheckboxItem>
+          <ContextMenuSeparator />
+          <CopyPathItems path={path} />
         </ContextMenuContent>
       </ContextMenu>
     </div>

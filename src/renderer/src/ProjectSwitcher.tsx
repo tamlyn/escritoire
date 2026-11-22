@@ -11,6 +11,7 @@ import {
   CommandList,
 } from './components/ui/command'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
+import { projectRelativePath } from './files'
 import { fuzzyFinder } from './fuzzy'
 import { type ProjectActivity, projectActivity } from './project-activity'
 import { useAllProcesses } from './processes'
@@ -49,8 +50,11 @@ export function ProjectSwitcher(props: Props) {
   const [query, setQuery] = useState('')
   const [highlighted, setHighlighted] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const isPath = !filesOnly && (query.startsWith('/') || query.startsWith('~'))
-  const completions = useDirectoryCompletions(isPath ? query : null)
+  const isPath = query.startsWith('/') || query.startsWith('~')
+  const isProjectPath = isPath && !filesOnly
+  const isFilePath = isPath && filesOnly
+  const filePathValue = filePrefix + query
+  const completions = useDirectoryCompletions(isProjectPath ? query : null)
   const files = useProjectFiles(open ? state.activeProjectId : null)
 
   useEffect(() => {
@@ -72,7 +76,17 @@ export function ProjectSwitcher(props: Props) {
   const openValue = query.endsWith('/') ? query.slice(0, -1) : null
   const pathValues = [...(openValue === null ? [] : [openValue]), ...completions]
   // cmdk keeps a removed item's value when several items disappear in one render.
-  const selected = isPath && !pathValues.includes(highlighted) ? (pathValues[0] ?? '') : highlighted
+  const selected = isFilePath
+    ? filePathValue
+    : isProjectPath && !pathValues.includes(highlighted)
+      ? (pathValues[0] ?? '')
+      : highlighted
+
+  function openFile(path: string) {
+    const project = state.projects.find((p) => p.id === state.activeProjectId)
+    props.onOpenFile(project ? projectRelativePath(project.path, path) : path)
+    onOpenChange(false)
+  }
 
   async function openPath(path: string) {
     try {
@@ -84,12 +98,12 @@ export function ProjectSwitcher(props: Props) {
   }
 
   function onKeyDown(event: React.KeyboardEvent) {
-    if (isPath && event.key === 'Tab' && selected) {
+    if (isProjectPath && event.key === 'Tab' && selected) {
       event.preventDefault()
       setQuery(`${selected}/`)
       return
     }
-    if (isPath || !hasModifier(event)) return
+    if (isProjectPath || !hasModifier(event)) return
     const project = state.projects.find((p) => p.path === highlighted)
     if (!project) return
     if (event.key === 'w') {
@@ -106,7 +120,9 @@ export function ProjectSwitcher(props: Props) {
       <DialogContent className="top-[15%] translate-y-0 overflow-hidden p-0 sm:max-w-[620px]" showCloseButton={false}>
         <DialogTitle className="sr-only">{filesOnly ? 'Open a file' : 'Switch project or open a file'}</DialogTitle>
         <DialogDescription className="sr-only">
-          {filesOnly ? 'Choose a file in this project' : 'Choose a project or a file in this one, or type a path to open a new project'}
+          {filesOnly
+            ? 'Choose a file in this project, or type the full path of any file'
+            : 'Choose a project or a file in this one, or type a path to open a new project'}
         </DialogDescription>
         <Command
           shouldFilter={false}
@@ -121,11 +137,11 @@ export function ProjectSwitcher(props: Props) {
               setQuery(value)
               setError(null)
             }}
-            placeholder={filesOnly ? 'Open a file…' : 'Switch project, open a file, or type a path…'}
+            placeholder={filesOnly ? 'Open a file, or type a full path…' : 'Switch project, open a file, or type a path…'}
           />
           {error && <div className="text-destructive border-b px-3 py-2">{error}</div>}
           <CommandList className="max-h-[400px]">
-            {isPath ? (
+            {isProjectPath ? (
               <CommandGroup>
                 {openValue !== null && (
                   <CommandItem value={openValue} onSelect={() => void openPath(query)}>
@@ -139,6 +155,13 @@ export function ProjectSwitcher(props: Props) {
                     {path}
                   </CommandItem>
                 ))}
+              </CommandGroup>
+            ) : isFilePath ? (
+              <CommandGroup>
+                <CommandItem value={filePathValue} onSelect={() => openFile(query)}>
+                  <FileIcon />
+                  <span className="truncate">Open {query}</span>
+                </CommandItem>
               </CommandGroup>
             ) : (
               <>
@@ -168,10 +191,7 @@ export function ProjectSwitcher(props: Props) {
                       <CommandItem
                         key={path}
                         value={filePrefix + path}
-                        onSelect={() => {
-                          props.onOpenFile(path)
-                          onOpenChange(false)
-                        }}
+                        onSelect={() => openFile(path)}
                       >
                         <FileIcon />
                         <span className="truncate">
@@ -185,12 +205,12 @@ export function ProjectSwitcher(props: Props) {
             )}
           </CommandList>
           <div className="bg-chrome text-muted-foreground compact:hidden flex flex-wrap gap-x-5 gap-y-1.5 border-t px-4 py-2.5 text-xs">
-            {isPath ? (
+            {isProjectPath ? (
               <>
                 <Hint keys={['Tab']}>Complete</Hint>
                 <Hint keys={['↵']}>Open</Hint>
               </>
-            ) : isFileHighlighted ? (
+            ) : isFilePath || isFileHighlighted ? (
               <Hint keys={['↵']}>Open</Hint>
             ) : (
               <>

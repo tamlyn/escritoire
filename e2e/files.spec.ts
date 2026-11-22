@@ -124,7 +124,7 @@ test('creates scratch and named files, and renames them', async () => {
   await rm(root, { recursive: true, force: true })
 })
 
-test('opens a project file from the switcher by fuzzy name', async () => {
+test('opens files from the switcher and copies their paths', async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'escritoire-e2e-')))
   const dataDir = join(root, 'data')
   const project = join(root, 'project')
@@ -132,7 +132,8 @@ test('opens a project file from the switcher by fuzzy name', async () => {
   await writeFile(join(project, 'src', 'server', 'routes.ts'), 'export const routes = []\n')
   await writeFile(join(project, 'README.md'), '# Hello\n')
 
-  const { page, close } = await launchApp(dataDir)
+  const { app, page, close } = await launchApp(dataDir)
+  const readClipboard = () => app.evaluate(({ clipboard }) => clipboard.readText())
   await page.keyboard.press(`${modifier}+Shift+p`)
   await page.getByRole('combobox').fill(`${project}/`)
   await page.getByRole('option', { name: `Open ${project}/` }).click()
@@ -147,6 +148,34 @@ test('opens a project file from the switcher by fuzzy name', async () => {
 
   await expect(page.getByRole('tab', { name: 'routes.ts' })).toBeVisible()
   await expect(page.locator('.cm-content:visible')).toContainText('export const routes')
+
+  // A full path opens a file outside the project.
+  await writeFile(join(root, 'notes.txt'), 'outside the project\n')
+  await page.keyboard.press(`${modifier}+Shift+o`)
+  await page.getByRole('combobox').fill(join(root, 'notes.txt'))
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('tab', { name: 'notes.txt' })).toBeVisible()
+  await expect(page.locator('.cm-content:visible')).toContainText('outside the project')
+  // It has no path relative to the project.
+  await page.locator('.cm-content:visible').click({ button: 'right' })
+  await expect(page.getByRole('menuitem', { name: 'Copy relative path' })).toBeHidden()
+  await page.getByRole('menuitem', { name: 'Copy absolute path' }).click()
+  await expect.poll(readClipboard).toBe(join(root, 'notes.txt'))
+
+  // A full path inside the project finds the tab already open for it.
+  await page.keyboard.press(`${modifier}+Shift+o`)
+  await page.getByRole('combobox').fill(join(project, 'src', 'server', 'routes.ts'))
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('tab', { name: 'routes.ts' })).toHaveCount(1)
+  await expect(page.locator('.cm-content:visible')).toContainText('export const routes')
+
+  // Paths are copied from the editor and the tree.
+  await page.locator('.cm-content:visible').click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Copy relative path' }).click()
+  await expect.poll(readClipboard).toBe('src/server/routes.ts')
+  await page.getByRole('tree').getByRole('treeitem', { name: 'README.md' }).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Copy absolute path' }).click()
+  await expect.poll(readClipboard).toBe(join(project, 'README.md'))
 
   await close()
   await rm(root, { recursive: true, force: true })

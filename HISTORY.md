@@ -87,7 +87,7 @@ Check current versions and APIs against documentation when adding each one.
 - A user can remove a project from the list. This stops its processes and forgets its layout.
 - Closing and removing a project go through one list of what main keeps per project (`src/main/project-lifecycle.ts`). A resource that fails to save or delete is logged and the project closes or goes anyway: a half-removed project couldn't safely open again, and ids are never reused, so failing leaves only unused files. Quitting stays an ordered sequence in `src/main/index.ts`, since its order is about the API, the IDE server and clients rather than projects.
 - **Project switcher (⌘⇧P):** a keyboard-driven palette: projects with sessions waiting for input first, then with unread turns, then the rest by recency, with the current project last. Each row shows what is going on there (sessions waiting, unread or working; processes running or crashed). Typing a path or fuzzy name in the same palette opens a new project; there is no separate "open project" UI.
-- **Opening files:** the same palette also matches the active project's files by fuzzy name, in a group below the matching projects, so the phone can open files from it too. ⌘⇧O opens it with only the files. The list is fetched afresh each time the palette opens (git's tracked and untracked files, or a capped walk outside git), so there is no index to build or keep current.
+- **Opening files:** the same palette also matches the active project's files by fuzzy name, in a group below the matching projects, so the phone can open files from it too. ⌘⇧O opens it with only the files. The list is fetched afresh each time the palette opens (git's tracked and untracked files, or a capped walk outside git), so there is no index to build or keep current. In ⌘⇧O, typing a full path (starting with `/` or `~`) opens that file wherever it is; one inside the project opens the same tab as choosing it from the tree.
 
 ### Keyboard
 
@@ -191,6 +191,7 @@ Learnings from The Running Man carried over:
 - **Autosave promptly**, including when an editor tab loses focus. There is no manual-save workflow; do not design around long-lived unsaved editor buffers.
 - **New files are always real files in the project**, never unsaved buffers, so autosave, the tree, git, SQL connections and agents all work on them unchanged. One input, from ⌘N, the new tab page or the tree's context menu (which starts it in the clicked directory), takes either a path, creating any missing directories, or just an extension (`.sql`), which makes a scratch file named for the time in `.scratch/`. A scratch file is notes or a quick query; keeping it, committing it, or moving it to a proper path is up to the user, and whether `.scratch/` is ignored by git is up to each project. `./.env` names a dotfile.
 - Rename (which can also move) and Move to Trash from the tree's context menu. Open tabs and SQL connections follow a rename. Deleting moves to the OS trash rather than asking for confirmation.
+- Copy relative path (to the project root) and Copy absolute path from the context menus of the tree and the editor. A file outside the project only offers its absolute path.
 
 ### Git
 

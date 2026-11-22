@@ -3,6 +3,7 @@ import { link, lstat, mkdir, open, readdir, readFile, realpath, rename, stat, un
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import watcher from '@parcel/watcher'
 import type { DirectoryEntry, FileContent, FilesChanged, WriteResult } from '../shared/files'
+import { expandHome } from './paths'
 import { ProjectWatches } from './project-watches'
 
 const hiddenNames = new Set(['.git', '.DS_Store'])
@@ -323,7 +324,7 @@ export class ProjectFiles {
    * the project. Clients can run shells, so this gives them nothing new.
    */
   private async resolveFile(projectId: string, path: string): Promise<string> {
-    return realpathAllowingMissing(resolve(await realpath(this.options.projectPath(projectId)), path))
+    return realpathAllowingMissing(resolve(await realpath(this.options.projectPath(projectId)), expandHome(path)))
   }
 
   private async resolve(projectId: string, path: string): Promise<string> {
