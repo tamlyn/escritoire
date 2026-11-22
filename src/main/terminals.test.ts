@@ -64,6 +64,17 @@ test('saves scrollback and directory when the project closes, and restores them 
   expect(fresh.data).not.toContain('before-close')
 })
 
+test('attaching twice at once restores a saved terminal to both', async () => {
+  await terminals.attach('p', 't', size)
+  terminals.write('t', 'echo before-close\r')
+  await vi.waitFor(() => expect(received()).toMatch(/\r\nbefore-close/))
+  await terminals.closeProject('p')
+
+  terminals = newTerminals()
+  const snapshots = await Promise.all([terminals.attach('p', 't', size), terminals.attach('p', 't', size)])
+  for (const snapshot of snapshots) expect(snapshot.data).toContain('before-close')
+})
+
 test('a key press after the shell exits starts a new one', async () => {
   await terminals.attach('p', 't', size)
   terminals.write('t', 'exit\r')

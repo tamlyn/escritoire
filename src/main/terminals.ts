@@ -24,6 +24,7 @@ type TerminalsOptions = {
 export class Terminals {
   private readonly terminals = new Map<string, ShellTerminal>()
   private readonly saved = new Map<string, Promise<ProjectTerminals>>()
+  private readonly starting = new Map<string, Promise<ShellTerminal>>()
 
   constructor(private readonly options: TerminalsOptions) {}
 
@@ -32,22 +33,28 @@ export class Terminals {
    * scrollback and directory, and sends its output until detached.
    */
   async attach(projectId: string, terminalId: string, size: ScreenSize): Promise<ScreenSnapshot> {
-    let terminal = this.terminals.get(terminalId)
-    if (!terminal) {
-      const saved = await this.takeSaved(projectId, terminalId)
-      // Attaching twice at once would otherwise start two shells.
-      terminal = this.terminals.get(terminalId)
-      if (!terminal) {
-        terminal = new ShellTerminal(projectId, size, saved?.scrollback, (data, seq) =>
+    const terminal = this.terminals.get(terminalId) ?? (await this.start(projectId, terminalId, size))
+    terminal.screen.resize(size)
+    terminal.screen.attached = true
+    return terminal.screen.snapshot()
+  }
+
+  /** Shared by attaches at once, since only the first can take the saved state. */
+  private start(projectId: string, terminalId: string, size: ScreenSize): Promise<ShellTerminal> {
+    let starting = this.starting.get(terminalId)
+    if (!starting) {
+      starting = (async () => {
+        const saved = await this.takeSaved(projectId, terminalId)
+        const terminal = new ShellTerminal(projectId, size, saved?.scrollback, (data, seq) =>
           this.options.send({ screenId: terminalId, data, seq }),
         )
         terminal.start(saved?.cwd ?? this.options.projectPath(projectId))
         this.terminals.set(terminalId, terminal)
-      }
+        return terminal
+      })().finally(() => this.starting.delete(terminalId))
+      this.starting.set(terminalId, starting)
     }
-    terminal.screen.resize(size)
-    terminal.screen.attached = true
-    return terminal.screen.snapshot()
+    return starting
   }
 
   detach(terminalId: string): void {
