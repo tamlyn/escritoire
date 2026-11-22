@@ -75,6 +75,14 @@ export function Composer({
     return () => { flushers.delete(saveDraft) }
   }, [saveDraft])
 
+  // Typing carries on after a draft, such as the hand-off that starts a continued session.
+  useEffect(() => {
+    const element = textarea.current
+    if (!autoFocus || !element) return
+    element.setSelectionRange(element.value.length, element.value.length)
+    element.scrollTop = element.scrollHeight
+  }, [])
+
   const findFiles = useMemo(
     () => (files ? fuzzyFinder(files, { path: (path) => path, limit: mentionLimit }) : null),
     [files],

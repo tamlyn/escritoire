@@ -72,6 +72,11 @@ export type Api = {
    * branched from just before it. Clients showing this one follow the move.
    */
   editMessage(session: SessionPointer, itemId: string, text: string): Promise<void>
+  /**
+   * Starts a new session whose draft hands off from this one: the user's
+   * messages and the agent's final reply. Clients showing this one follow the move.
+   */
+  continueInNewSession(session: SessionPointer): Promise<void>
   editQueuedMessage(session: SessionPointer, id: string, text: string): Promise<void>
   cancelQueuedMessage(session: SessionPointer, id: string): Promise<void>
   /** While held, as when the user is editing it, the message isn't sent even if the turn ends. */
@@ -187,6 +192,7 @@ const apiMethodSet: Record<keyof Api, true> = {
   sendMessage: true,
   scheduleMessage: true,
   editMessage: true,
+  continueInNewSession: true,
   editQueuedMessage: true,
   cancelQueuedMessage: true,
   setQueuedMessageHeld: true,

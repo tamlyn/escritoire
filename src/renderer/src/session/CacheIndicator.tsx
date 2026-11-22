@@ -30,11 +30,11 @@ export function CacheIndicator({ pointer, usage, working }: { pointer: SessionPo
     if (inside) setOpen(true)
     else closeTimer.current = setTimeout(() => setOpen(false), 150)
   }
-  const rewarm = async () => {
-    if (!warm || working || sending) return
+  const request = async (call: () => Promise<void>) => {
+    if (working || sending) return
     setError(null)
     setSending(true)
-    try { await api.rewarmSession(pointer) }
+    try { await call() }
     catch (error) { setError(errorMessage(error)) }
     finally { setSending(false) }
   }
@@ -85,10 +85,15 @@ export function CacheIndicator({ pointer, usage, working }: { pointer: SessionPo
             : `${ttl / 60_000}-minute lifetime after each request${usage.cacheTtlMs ? '' : ' (assumed)'}.`}
           {working && ' Requests during this turn keep it warm.'}
         </p>
-        {warm && (
+        {warm ? (
           <div className="flex items-center gap-3 border-t pt-3">
             <p className="text-muted-foreground flex-1">Send a short message to extend the cache lifetime.</p>
-            <Button type="button" variant="outline" size="xs" disabled={working || sending} onClick={() => void rewarm()}>Keep warm</Button>
+            <Button type="button" variant="outline" size="xs" disabled={working || sending} onClick={() => void request(() => api.rewarmSession(pointer))}>Keep warm</Button>
+          </div>
+        ) : (
+          <div className="flex flex-col items-start gap-2 border-t pt-3">
+            <p className="text-muted-foreground">Start a new session from your messages and the agent's last reply, rather than resending the whole conversation to an empty cache.</p>
+            <Button type="button" variant="outline" size="xs" disabled={sending} onClick={() => void request(() => api.continueInNewSession(pointer))}>Continue in new session</Button>
           </div>
         )}
         {error && <p role="alert" className="text-destructive">{error}</p>}

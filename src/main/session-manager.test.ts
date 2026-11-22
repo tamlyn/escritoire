@@ -390,6 +390,37 @@ describe('SessionManager', () => {
     expect((await new SessionStore(dataDir).get('p1', 'original'))?.title).toBe('Bug fix')
   })
 
+  it('continues in a new session with a hand-off in its draft, which clients follow', async () => {
+    const { manager, runs, sent, dataDir } = await setup([
+      { kind: 'userMessage', id: 'u1', text: 'Fix the bug' },
+      { kind: 'agentMessage', id: 'a1', text: 'Fixed' },
+    ])
+    const pointer = { agent: 'claude' as const, agentSessionId: 'original' }
+    const opened = await manager.openSession('p1', pointer)
+    await manager.changeSettings(pointer, { model: 'opus' })
+    manager.saveDraft(pointer, 'Commit it')
+
+    await manager.continueInNewSession(pointer)
+
+    const follow = sent.filter((s) => s.name === 'sessionEvent').at(-1)!.payload
+    expect(follow).toEqual({ agentSessionId: 'original', seq: opened.seq + 2, event: { type: 'conversationReset', agentSessionId: 'session-1' } })
+    expect(manager.summaries()).toEqual([])
+    const continued = await manager.openSession('p1', { agent: 'claude', agentSessionId: 'session-1' })
+    expect(continued.draft).toMatch(/Fix the bug[\s\S]*Fixed[\s\S]*---\n\nCommit it$/)
+    expect(runs).toHaveLength(0)
+    const record = await new SessionStore(dataDir).get('p1', 'session-1')
+    expect(record?.settings).toEqual({ model: 'opus' })
+  })
+
+  it("won't continue in a new session during a turn", async () => {
+    const { manager } = await setup([{ kind: 'userMessage', id: 'u1', text: 'Fix the bug' }])
+    const pointer = { agent: 'claude' as const, agentSessionId: 'original' }
+    await manager.openSession('p1', pointer)
+    manager.sendMessage(pointer, say('Hello'))
+
+    await expect(manager.continueInNewSession(pointer)).rejects.toThrow('Finish the current turn')
+  })
+
   it("won't edit a message during a turn", async () => {
     const { manager } = await setup([{ kind: 'userMessage', id: 'u1', text: 'Fix the bug' }])
     const pointer = { agent: 'claude' as const, agentSessionId: 'original' }

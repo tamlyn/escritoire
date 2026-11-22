@@ -18,6 +18,7 @@ import {
 } from '../shared/agent'
 import type { Events } from '../shared/api'
 import type { AgentAdapter, AgentRun } from './agents/types'
+import { handoffPrompt } from './handoff'
 import type { IdeServerConnection } from './ide-server'
 import type { SessionRecord, SessionStore } from './session-store'
 import { SettingDefaults } from './setting-defaults'
@@ -246,6 +247,30 @@ export class SessionManager {
     const fork = await this.load(projectId, { agent: pointer.agent, agentSessionId })
     this.dispatch(fork, { text, images: item.images ?? [] })
     // Sent rather than applied, which would move this session to the new id rather than leave it be.
+    session.seq++
+    this.deps.send('sessionEvent', { agentSessionId: pointer.agentSessionId, seq: session.seq, event: { type: 'conversationReset', agentSessionId } })
+    this.stop(session)
+  }
+
+  /**
+   * Starts a new session with a hand-off from this one in its draft, for the
+   * user to add their next instruction to, and clients showing this one follow.
+   * Once the prompt cache has expired that costs far less than resuming. The
+   * original stays as it was, to resume from past sessions.
+   */
+  async continueInNewSession(pointer: SessionPointer): Promise<void> {
+    const session = this.get(pointer)
+    const { view, projectId, record } = session
+    if (view.status === 'working' || view.requests.length || view.queued.length) {
+      throw new Error('Finish the current turn and queued messages before continuing in a new session.')
+    }
+    const draft = handoffPrompt(pointer, view.items) + record.draft
+    const agentSessionId = await this.project(projectId).work.run(async () => {
+      const id = await this.adapter(pointer.agent).createSession(session.cwd, this.deps.ideConnection?.(projectId))
+      await this.deps.store.put(projectId, id, { ...newRecord(pointer.agent), title: record.title, draft, settings: record.settings })
+      return id
+    })
+    // Sent rather than applied, as in editMessage.
     session.seq++
     this.deps.send('sessionEvent', { agentSessionId: pointer.agentSessionId, seq: session.seq, event: { type: 'conversationReset', agentSessionId } })
     this.stop(session)
