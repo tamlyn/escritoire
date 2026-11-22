@@ -60,7 +60,7 @@ export class ConnectionStore {
     })
   }
 
-  async deleteProject(projectId: string): Promise<void> {
+  async removeProject(projectId: string): Promise<void> {
     this.cache.delete(projectId)
     await deleteJson(this.path(projectId))
   }

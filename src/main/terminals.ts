@@ -87,7 +87,8 @@ export class Terminals {
     await writeJson(this.path(projectId), saved)
   }
 
-  async deleteProject(projectId: string): Promise<void> {
+  /** Stops the project's shells without saving them, and forgets what was saved. */
+  async removeProject(projectId: string): Promise<void> {
     for (const [terminalId, terminal] of this.terminals) {
       if (terminal.projectId !== projectId) continue
       terminal.screen.dispose()

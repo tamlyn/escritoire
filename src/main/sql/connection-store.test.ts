@@ -69,6 +69,6 @@ test('never stores a password, as a guard behind moving it to ~/.pgpass', async 
 test('removing the project removes its connections', async () => {
   const store = new ConnectionStore(dataDir)
   await store.save('p', lite)
-  await store.deleteProject('p')
+  await store.removeProject('p')
   expect(await new ConnectionStore(dataDir).get('p')).toEqual({ connections: [], files: {} })
 })

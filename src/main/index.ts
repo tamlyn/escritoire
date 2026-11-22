@@ -26,6 +26,7 @@ import { registerSupervisorTools } from './ide-tools'
 import { DesktopAttention } from './desktop-attention'
 import { completeDirectory } from './paths'
 import { ProjectFiles } from './project-files'
+import { ProjectLifecycle } from './project-lifecycle'
 import { ProjectStore } from './project-store'
 import { SessionManager } from './session-manager'
 import { SessionStore } from './session-store'
@@ -49,7 +50,7 @@ type Services = {
   push: PushSender
   projects: ProjectStore
   sessions: SessionManager
-  sessionStore: SessionStore
+  lifecycle: ProjectLifecycle
   files: ProjectFiles
   terminals: Terminals
   supervisor: Supervisor
@@ -58,7 +59,7 @@ type Services = {
 }
 
 /** The API as one client sees it. */
-function createApi(client: Client, { clients, remote, push, projects, sessions, sessionStore, files, terminals, supervisor, connections, databases }: Services): Api {
+function createApi(client: Client, { clients, remote, push, projects, sessions, lifecycle, files, terminals, supervisor, connections, databases }: Services): Api {
   const activate = async (change: () => Promise<AppState>) => clients.activate(client, await change())
   const terminalHost: ScreenHost = {
     attach: (projectId, terminalId, size) => terminals.attach(projectId, terminalId, size),
@@ -76,27 +77,8 @@ function createApi(client: Client, { clients, remote, push, projects, sessions, 
     getState: async () => clients.state(client, projects.getState()),
     openProject: (path) => activate(() => projects.openProject(path)),
     activateProject: (id) => activate(() => projects.activateProject(id)),
-    closeProject: async (id) => {
-      // Failing to save sessions or scrollback mustn't stop the project closing.
-      logFailures(await Promise.allSettled([
-        sessions.closeProject(id),
-        terminals.closeProject(id),
-        supervisor.closeProject(id),
-        databases.closeProject(id),
-      ]))
-      return clients.projectsChanged(await projects.closeProject(id), client)
-    },
-    removeProject: async (id) => {
-      await sessions.removeProject(id).catch(console.error)
-      await Promise.all([
-        sessionStore.deleteProject(id),
-        terminals.deleteProject(id),
-        supervisor.closeProject(id),
-        databases.closeProject(id),
-        connections.deleteProject(id),
-      ])
-      return clients.projectsChanged(await projects.removeProject(id), client)
-    },
+    closeProject: async (id) => clients.projectsChanged(await lifecycle.close(id), client),
+    removeProject: async (id) => clients.projectsChanged(await lifecycle.remove(id), client),
     loadLayout: (projectId) => projects.loadLayout(projectId),
     saveLayout: (projectId, layout) => projects.saveLayout(projectId, layout),
     completeDirectory,
@@ -399,7 +381,8 @@ void app.whenReady().then(async () => {
   })
 
   const apiWork = new Work()
-  const services: Services = { clients, remote, push, projects, sessions, sessionStore, files, terminals, supervisor, connections, databases }
+  const lifecycle = new ProjectLifecycle(projects, [sessions, terminals, supervisor, databases, connections])
+  const services: Services = { clients, remote, push, projects, sessions, lifecycle, files, terminals, supervisor, connections, databases }
   // The API work belongs to the app rather than the connection, so quitting waits for it all.
   function serve(client: Client): Connection {
     // A client that is reconnecting missed whatever changed while it was away.

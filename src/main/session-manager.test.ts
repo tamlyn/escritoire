@@ -244,8 +244,8 @@ describe('SessionManager', () => {
     expect(manager.summaries()).toEqual([{ ...pointer, projectId: 'p1', title: 'Hi', status: 'idle', attention: 'unread' }])
   })
 
-  it('forgets a removed project’s unread sessions', async () => {
-    const { manager, runs } = await setup()
+  it('forgets a removed project’s unread sessions and records', async () => {
+    const { manager, runs, dataDir } = await setup()
     const pointer = await manager.createSession('p1', 'claude')
     await manager.openSession('p1', pointer)
     manager.sendMessage(pointer, say('Hi'))
@@ -254,6 +254,7 @@ describe('SessionManager', () => {
     await manager.removeProject('p1')
 
     expect(manager.summaries()).toEqual([])
+    expect(await new SessionStore(dataDir).list('p1')).toEqual({})
   })
 
   it('marks a session seen when its tab closes, loaded or not', async () => {
