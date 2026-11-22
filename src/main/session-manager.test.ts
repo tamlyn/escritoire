@@ -14,6 +14,7 @@ function fakeAdapter(history: Item[] = []) {
     sent: string[]
     settings: SessionSettings[]
     refuseSettings: boolean
+    usageRefreshes: number
   }[] = []
   const adapter: AgentAdapter = {
     kind: 'claude',
@@ -24,7 +25,7 @@ function fakeAdapter(history: Item[] = []) {
     settingChoices: async () => ({ models: [], permissionModes: [] }),
     listCommands: async () => [],
     start(options, emit) {
-      const run = { options, emit, sent: [] as string[], settings: [] as SessionSettings[], refuseSettings: false }
+      const run = { options, emit, sent: [] as string[], settings: [] as SessionSettings[], refuseSettings: false, usageRefreshes: 0 }
       runs.push(run)
       return {
         send: (input) => {
@@ -38,6 +39,7 @@ function fakeAdapter(history: Item[] = []) {
           run.settings.push(settings)
         },
         stopTask: async () => {},
+        refreshUsage: async () => { run.usageRefreshes++ },
         close: () => {},
       }
     },
@@ -430,6 +432,19 @@ describe('SessionManager', () => {
     })
     const reopened = await restarted.openSession('p1', pointer)
     expect(reopened.view.settings).toEqual({ model: null, permissionMode: 'plan' })
+  })
+
+  it('starts the run to refresh usage, and keeps it for the next message', async () => {
+    const { manager, runs } = await setup([{ kind: 'userMessage', id: 'u1', text: 'Earlier' }])
+    const pointer = { agent: 'claude' as const, agentSessionId: 'external' }
+    await manager.openSession('p1', pointer)
+    await manager.refreshUsage(pointer)
+    await manager.refreshUsage(pointer)
+    manager.sendMessage(pointer, say('Carry on'))
+
+    expect(runs).toHaveLength(1)
+    expect(runs[0]!.usageRefreshes).toBe(2)
+    expect(runs[0]!.sent).toEqual(['Carry on'])
   })
 
   it('forgets a setting the run refuses', async () => {

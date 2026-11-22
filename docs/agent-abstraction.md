@@ -23,7 +23,7 @@ A session is a **transcript of items**, a list of **pending requests** and a **s
 
 ## Claude adapter
 
-- One long-lived `query()` per session with an `AsyncIterable` prompt; `send` feeds it. The run is started by the first message, not by opening the tab. Claude Code may pick a queued message up after the current turn's result, so any activity after a result sets `working` again.
+- One long-lived `query()` per session with an `AsyncIterable` prompt; `send` feeds it. The run is started by the first message or by opening the usage popover (`refreshUsage`), not by opening the tab. Claude Code may pick a queued message up after the current turn's result, so any activity after a result sets `working` again.
 - Behaves like ordinary Claude Code: the `claude_code` system prompt preset and all settings sources, so the user's permission mode, hooks and MCP servers apply.
 - **Item ids.** The SDK delivers each content block of an API message as its own message, in order, so a block's id is the API message id plus its position. Streamed deltas carry the same position as their block index, so the final message replaces the streamed item. Verified live.
 - **History** comes from `getSessionMessages`, which has the same message shapes but no structured tool results, so tool views are built from the `tool_use` input and the text result, which both paths have. Verified live: history, live output and resume agree.

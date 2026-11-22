@@ -82,6 +82,8 @@ export type Api = {
   /** Only the settings given change; `null` goes back to the agent's default. */
   changeSessionSettings(session: SessionPointer, settings: SessionSettings): Promise<void>
   stopTask(session: SessionPointer, taskId: string): Promise<void>
+  /** Starts the session's agent if it isn't running, to ask how full the context is and how much of the plan is used. */
+  refreshUsage(session: SessionPointer): Promise<void>
   respond(session: SessionPointer, requestId: string, response: RequestResponse): Promise<void>
   saveDraft(session: SessionPointer, draft: string): Promise<void>
   /** Whether the user can currently see the session, which marks its turns as read. */
@@ -190,6 +192,7 @@ const apiMethodSet: Record<keyof Api, true> = {
   listCommands: true,
   changeSessionSettings: true,
   stopTask: true,
+  refreshUsage: true,
   respond: true,
   saveDraft: true,
   setSessionVisible: true,

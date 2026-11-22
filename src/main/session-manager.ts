@@ -286,16 +286,20 @@ export class SessionManager {
       session.record.title = titleFrom(input.text) || 'Image'
       this.save(session)
     }
-    session.run ??= this.adapter(pointer.agent).start(
+    this.ensureRun(session).send(input)
+  }
+
+  private ensureRun(session: Session): AgentRun {
+    session.run ??= this.adapter(session.pointer.agent).start(
       {
         cwd: session.cwd,
-        agentSessionId: pointer.agentSessionId,
+        agentSessionId: session.pointer.agentSessionId,
         settings: session.record.settings ?? {},
         ide: this.deps.ideConnection?.(session.projectId),
       },
       (event) => this.apply(session, event),
     )
-    session.run.send(input)
+    return session.run
   }
 
   /**
@@ -315,6 +319,11 @@ export class SessionManager {
     }
     this.rememberSettings(session, settings)
     this.apply(session, { type: 'settingsChanged', settings })
+  }
+
+  /** Starting the run here also means the next message doesn't wait for the agent to start. */
+  async refreshUsage(pointer: SessionPointer): Promise<void> {
+    await this.ensureRun(this.get(pointer)).refreshUsage()
   }
 
   async stopTask(pointer: SessionPointer, taskId: string): Promise<void> {

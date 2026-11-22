@@ -53,7 +53,7 @@ export function SessionControls({
         onChange={(id) => change({ permissionMode: id })}
       />
       <Picker
-        label={model?.label ?? settings.model ?? 'Default model'}
+        label={(choices && model && modelLabel(choices.models, model)) ?? settings.model ?? 'Default model'}
         title="Model"
         value={model?.id ?? defaultValue}
         options={(choices?.models ?? []).map((m) => ({ id: m.id, label: m.label, description: m.description }))}
@@ -70,7 +70,7 @@ export function SessionControls({
         />
       )}
       <div className="ml-auto flex items-center gap-3.5">
-        <UsageIndicator usage={usage} limits={limits} />
+        <UsageIndicator pointer={pointer} usage={usage} limits={limits} />
         {usage && (pointer.agent === 'claude' ? <CacheIndicator usage={usage} working={working} /> : (
           <span title={`The latest request read ${usage.cacheReadTokens.toLocaleString()} tokens from the prompt cache.`}>
             {compact(usage.cacheReadTokens)} cached
@@ -98,6 +98,12 @@ function findModel(models: ModelChoice[], model: string | null | undefined): Mod
     models.find((m) => m.id !== 'default' && m.resolvedId === model) ??
     models.find((m) => m.resolvedId === model)
   )
+}
+
+// Until the agent reports the model it chose, the default is named by the model it stands for.
+function modelLabel(models: ModelChoice[], model: ModelChoice): string {
+  if (model.id !== 'default' || !model.resolvedId) return model.label
+  return models.find((m) => m.id !== 'default' && m.resolvedId === model.resolvedId)?.label ?? model.label
 }
 
 function Picker({

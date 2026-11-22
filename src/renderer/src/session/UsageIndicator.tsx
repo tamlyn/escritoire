@@ -1,16 +1,24 @@
 import { type PointerEvent as ReactPointerEvent, useRef, useState } from 'react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
-import type { ContextUsage, PlanLimit } from '../../../shared/agent'
+import type { ContextUsage, PlanLimit, SessionPointer } from '../../../shared/agent'
+import { api } from '../api'
 
 const categoryColors = ['bg-blue-500', 'bg-orange-500', 'bg-emerald-500', 'bg-violet-500', 'bg-pink-500', 'bg-cyan-500', 'bg-lime-500']
 const reservedColor = 'bg-muted-foreground/40'
 const closeDelayMs = 150
 
-/** A doughnut of how full the context is, opening on hover (or tap) to the breakdown and the plan's limits. */
-export function UsageIndicator({ usage, limits }: { usage?: ContextUsage; limits?: PlanLimit[] }) {
-  const [open, setOpen] = useState(false)
+/**
+ * A doughnut of how full the context is, opening on hover (or tap) to the
+ * breakdown and the plan's limits, which it asks the agent for afresh.
+ */
+export function UsageIndicator({ pointer, usage, limits }: { pointer: SessionPointer; usage?: ContextUsage; limits?: PlanLimit[] }) {
+  const [open, setOpenState] = useState(false)
   const closeTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const setOpen = (next: boolean) => {
+    if (next && !open) void api.refreshUsage(pointer).catch(() => {})
+    setOpenState(next)
+  }
   // Touch has no hover, so a tap toggles it instead.
   const hover = (inside: boolean) => (event: ReactPointerEvent) => {
     if (event.pointerType !== 'mouse') return
@@ -86,7 +94,6 @@ function Doughnut({ fraction }: { fraction: number }) {
 
 function ContextSection({ usage }: { usage: ContextUsage }) {
   const { contextTokens, contextWindow, categories } = usage
-  const scale = contextWindow ?? Math.max(contextTokens, 1)
   let colorIndex = 0
   const segments = (categories ?? [{ name: 'Used', tokens: contextTokens, reserved: false }]).map((category) => ({
     ...category,
@@ -98,7 +105,8 @@ function ContextSection({ usage }: { usage: ContextUsage }) {
         <h3 className="text-foreground text-sm font-medium">Context window</h3>
         {contextWindow && <span className="text-muted-foreground">{percent(contextTokens / contextWindow)} used</span>}
       </div>
-      <Bar segments={segments.map((s) => ({ color: s.color, fraction: s.tokens / scale }))} />
+      {/* Without the window's size there's nothing to measure against. */}
+      {contextWindow && <Bar segments={segments.map((s) => ({ color: s.color, fraction: s.tokens / contextWindow }))} />}
       <p className="text-muted-foreground">
         {contextTokens.toLocaleString()}
         {contextWindow && ` of ${contextWindow.toLocaleString()}`} tokens

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { type AgentEvent, applyEvent, emptySessionView, type SessionView } from '../../shared/agent'
-import { claudeAdapter } from './claude'
+import { createClaudeAdapter } from './claude'
 import { codexAdapter } from './codex'
 import type { RpcMessage } from './codex-rpc'
 import type { AgentRun } from './types'
@@ -94,7 +94,7 @@ function fakeQuery({ prompt, options }: { prompt: AsyncIterable<{ message: { con
 }
 
 const claude: Harness = {
-  start: (emit) => claudeAdapter.start({ cwd: '/project', agentSessionId: 'session', settings: {} }, emit),
+  start: (emit) => createClaudeAdapter().start({ cwd: '/project', agentSessionId: 'session', settings: {} }, emit),
   sent: () => fakes.claude!.sent,
   askPermission: () => {
     void fakes.claude!.canUseTool('Bash', { command: 'ls' }, { signal: new AbortController().signal, toolUseID: 'tool', suggestions: [] })

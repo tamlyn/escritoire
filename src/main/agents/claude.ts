@@ -38,6 +38,7 @@ import {
   type UserInput,
 } from '../../shared/agent'
 import { readOnlyTools } from '../ide-tools'
+import { ContextWindows } from './context-windows'
 import { AsyncQueue } from './async-queue'
 import type { AgentAdapter, AgentRun, StartOptions } from './types'
 
@@ -100,49 +101,51 @@ function ideOptions(ide: NonNullable<StartOptions['ide']>): {
   }
 }
 
-export const claudeAdapter: AgentAdapter = {
-  kind: 'claude',
+export function createClaudeAdapter(contextWindows = ContextWindows.inMemory()): AgentAdapter {
+  return {
+    kind: 'claude',
 
-  createSession: async () => randomUUID(),
+    createSession: async () => randomUUID(),
 
-  async forkSession(cwd, agentSessionId, itemId) {
-    const messages = await getSessionMessages(agentSessionId, { dir: cwd })
-    const index = messages.findIndex((message) => message.uuid === itemId)
-    if (index === -1) throw new Error("Couldn't find that message in Claude Code's transcript.")
-    // Editing the first message leaves nothing to keep.
-    if (index === 0) return randomUUID()
-    return (await forkSession(agentSessionId, { dir: cwd, upToMessageId: messages[index - 1]!.uuid })).sessionId
-  },
+    async forkSession(cwd, agentSessionId, itemId) {
+      const messages = await getSessionMessages(agentSessionId, { dir: cwd })
+      const index = messages.findIndex((message) => message.uuid === itemId)
+      if (index === -1) throw new Error("Couldn't find that message in Claude Code's transcript.")
+      // Editing the first message leaves nothing to keep.
+      if (index === 0) return randomUUID()
+      return (await forkSession(agentSessionId, { dir: cwd, upToMessageId: messages[index - 1]!.uuid })).sessionId
+    },
 
-  async listSessions(cwd) {
-    const sessions = await listSessions({ dir: cwd })
-    return sessions.map((s) => ({
-      agent: 'claude',
-      agentSessionId: s.sessionId,
-      title: s.customTitle ?? s.summary,
-      lastActiveAt: s.lastModified,
-    }))
-  },
+    async listSessions(cwd) {
+      const sessions = await listSessions({ dir: cwd })
+      return sessions.map((s) => ({
+        agent: 'claude',
+        agentSessionId: s.sessionId,
+        title: s.customTitle ?? s.summary,
+        lastActiveAt: s.lastModified,
+      }))
+    },
 
-  async loadHistory(agentSessionId, cwd) {
-    const messages = await getSessionMessages(agentSessionId, { dir: cwd })
-    const transcript = new ClaudeTranscript(cwd)
-    const events = messages.flatMap((m) => transcript.map(m as unknown as Message))
-    const { items, usage } = events.reduce(applyEvent, emptySessionView)
-    return { items, usage }
-  },
+    async loadHistory(agentSessionId, cwd) {
+      const messages = await getSessionMessages(agentSessionId, { dir: cwd })
+      const transcript = new ClaudeTranscript(cwd, contextWindows)
+      const events = messages.flatMap((m) => transcript.map(m as unknown as Message))
+      const { items, usage } = events.reduce(applyEvent, emptySessionView)
+      return { items, usage }
+    },
 
-  settingChoices(cwd) {
-    choices ??= loadSettingChoices(cwd).catch((error: unknown) => {
-      choices = undefined
-      throw error
-    })
-    return choices
-  },
+    settingChoices(cwd) {
+      choices ??= loadSettingChoices(cwd).catch((error: unknown) => {
+        choices = undefined
+        throw error
+      })
+      return choices
+    },
 
-  listCommands: loadCommands,
+    listCommands: loadCommands,
 
-  start: (options, emit) => new ClaudeRun(options, emit),
+    start: (options, emit) => new ClaudeRun(options, emit, contextWindows),
+  }
 }
 
 // The models are the account's and the user's settings', not the project's, so one list does.
@@ -231,12 +234,14 @@ class ClaudeRun implements AgentRun {
   private errorShown = false
   private working = false
   private ended = false
+  private refreshing: Promise<unknown> | undefined
 
   constructor(
     private readonly options: StartOptions,
     private readonly output: (event: AgentEvent) => void,
+    contextWindows: ContextWindows,
   ) {
-    this.transcript = new ClaudeTranscript(options.cwd)
+    this.transcript = new ClaudeTranscript(options.cwd, contextWindows)
     this.started = new Promise((resolve) => (this.markStarted = resolve))
     void this.run()
   }
@@ -302,6 +307,8 @@ class ClaudeRun implements AgentRun {
       // before writing one, and resuming an id it has never seen fails forever.
       const history = await getSessionMessages(this.options.agentSessionId, { dir: this.options.cwd }).catch(() => [])
       if (this.ended) return
+      // The events are already shown; this only carries the history's usage over, to size and break down.
+      for (const message of history) this.transcript.map(message as unknown as Message)
       const { model, effort, permissionMode } = this.options.settings
       this.query = query({
         prompt: this.input,
@@ -325,7 +332,7 @@ class ClaudeRun implements AgentRun {
         },
       })
       this.markStarted(this.query)
-      void this.refreshLimits()
+      void this.refreshUsage()
       for await (const message of this.query) {
         // A message queued during a turn becomes a turn of its own after the result.
         if (activityTypes.has(message.type)) this.setWorking(true)
@@ -384,8 +391,7 @@ class ClaudeRun implements AgentRun {
     this.interrupted = false
     this.errorShown = false
     this.setWorking(false)
-    void this.refreshContext()
-    void this.refreshLimits()
+    void this.refreshUsage()
     void this.refreshTitle(result.session_id)
   }
 
@@ -401,6 +407,12 @@ class ClaudeRun implements AgentRun {
     } catch {
       // The session keeps the title it has.
     }
+  }
+
+  async refreshUsage(): Promise<void> {
+    if (!(await this.started)) return
+    this.refreshing ??= Promise.all([this.refreshContext(), this.refreshLimits()]).finally(() => (this.refreshing = undefined))
+    await this.refreshing
   }
 
   private async refreshContext(): Promise<void> {
@@ -509,7 +521,6 @@ export class ClaudeTranscript {
   private readonly toolCalls = new Map<string, ToolCall>()
   private streamMessageId: string | undefined
   private usage: ContextUsage | undefined
-  private readonly contextWindows = new Map<string, number>()
   private usageModel: string | undefined
   // Claude Code also reports foreground tasks finishing; only background ones need a notice.
   private readonly backgroundTaskIds = new Set<string>()
@@ -517,7 +528,10 @@ export class ClaudeTranscript {
   /** The tool that started each task, which names it better than its type: a monitor is a shell task. */
   private readonly taskTools = new Map<string, string>()
 
-  constructor(private readonly cwd: string) {}
+  constructor(
+    private readonly cwd: string,
+    private readonly contextWindows = ContextWindows.inMemory(),
+  ) {}
 
   map(message: Message | SDKMessage): AgentEvent[] {
     const parentId = (message as Message).parent_tool_use_id as string | null | undefined
@@ -634,15 +648,18 @@ export class ClaudeTranscript {
   }
 
   mapContextUsage(context: SDKControlGetContextUsageResponse): AgentEvent[] {
+    // The same figure results give as the model's context window.
+    this.contextWindows.set(context.model, context.rawMaxTokens)
     if (!this.usage) return []
     const categories = context.categories
       .filter((category) => (category.kind === 'used' || category.kind === 'buffer') && category.tokens > 0)
       .map(({ name, tokens, kind }) => ({ name, tokens, reserved: kind === 'buffer' }))
-    this.usage = { ...this.usage, categories }
+    const contextWindow = (this.usageModel && this.contextWindows.get(this.usageModel)) || this.usage.contextWindow
+    this.usage = { ...this.usage, contextWindow, categories }
     return [{ type: 'usageChanged', usage: this.usage }]
   }
 
-  /** Only results give the context window's size, so the usage before them lacks it. */
+  /** Results and the context breakdown give the context window's size; until either has, usage lacks it. */
   private mapResult(result: Message): AgentEvent[] {
     const models = (result.modelUsage ?? {}) as Record<string, { contextWindow?: number }>
     for (const [model, usage] of Object.entries(models)) {

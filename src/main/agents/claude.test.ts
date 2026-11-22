@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { type AgentEvent, applyEvent, emptySessionView } from '../../shared/agent'
 import { ClaudeTranscript, planLimits, probe } from './claude'
+import { ContextWindows } from './context-windows'
 
 const cwd = '/work/project'
 
@@ -193,6 +194,23 @@ describe('ClaudeTranscript', () => {
       cacheTtlMs: 3_600_000,
       at: Date.parse('2026-11-13T09:00:00.000Z'),
     })
+  })
+
+  it('sizes the context from a window it learnt before, from a result or the breakdown', () => {
+    const windows = ContextWindows.inMemory()
+    const request = {
+      type: 'assistant',
+      timestamp: '2026-11-13T09:00:00.000Z',
+      parent_tool_use_id: null,
+      message: { id: 'msg_1', model: 'claude-opus-5-5', content: [], usage: { input_tokens: 30_000, output_tokens: 0 } },
+    }
+    const first = new ClaudeTranscript('/project', windows)
+    first.map(request as never)
+    const [event] = first.mapContextUsage({ model: 'claude-opus-5-5', rawMaxTokens: 200_000, categories: [] } as never)
+    expect(event).toMatchObject({ type: 'usageChanged', usage: { contextWindow: 200_000 } })
+
+    const later = new ClaudeTranscript('/project', windows)
+    expect(later.map(request as never)).toContainEqual(expect.objectContaining({ usage: expect.objectContaining({ contextWindow: 200_000 }) }))
   })
 
   it('breaks the context down by what uses it, until compaction makes that stale', () => {

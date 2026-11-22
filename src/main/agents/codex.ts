@@ -383,6 +383,8 @@ class CodexRun implements AgentRun {
     this.resolve(requestId)
   }
   async changeSettings(settings: SessionSettings): Promise<void> { this.settings = { ...this.settings, ...settings } }
+  // Codex reports the context's use as it changes, so only the limits are asked for.
+  async refreshUsage(): Promise<void> { await this.ready; await this.readRateLimits().catch(() => {}) }
   async stopTask(): Promise<void> { throw new Error('Codex does not expose task stopping here. Interrupt the turn instead.') }
   close(): void { this.closed = true; this.queue = []; this.rpc.close() }
   private adopt(resolved: Resolved, pending: SessionSettings = {}): void {

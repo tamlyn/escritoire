@@ -57,5 +57,7 @@ export interface AgentRun {
   /** Applies from the next request; only the settings given change. */
   changeSettings(settings: SessionSettings): Promise<void>
   stopTask(taskId: string): Promise<void>
+  /** Asks the agent again how full the context is and how much of the plan is used, where it can say. */
+  refreshUsage(): Promise<void>
   close(): void
 }
