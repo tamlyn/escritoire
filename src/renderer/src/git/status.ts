@@ -15,7 +15,7 @@ export const statusColours: Record<string, string> = {
   C: added,
   A: added,
   '?': 'text-git-untracked',
-  '!': 'text-muted-foreground',
+  '!': 'text-git-ignored',
   D: 'text-muted-foreground',
   U: 'text-git-conflicted',
 }

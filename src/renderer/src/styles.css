@@ -20,6 +20,8 @@
   --secondary-foreground: oklch(0.22 0.01 165);
   --primary: oklch(0.5 0.09 160);
   --primary-foreground: oklch(1 0 0);
+  /* Primary's chroma is too low for text to stand out from the ink at this lightness. */
+  --link: oklch(0.52 0.15 155);
   --muted: oklch(0.955 0.006 165);
   --muted-foreground: oklch(0.5 0.012 165);
   /* shadcn's name for hover: ink over whatever surface is beneath, so it shows on the desk too. */
@@ -38,6 +40,7 @@
   --git-added: #067d17;
   --git-untracked: #b23247;
   --git-conflicted: #de1b2e;
+  --git-ignored: oklch(0.66 0.008 165);
   --syntax-keyword: oklch(0.5 0.17 300);
   --syntax-string: oklch(0.5 0.13 150);
   --syntax-number: oklch(0.55 0.15 50);
@@ -59,6 +62,7 @@
     --secondary-foreground: oklch(0.93 0.005 165);
     --primary: oklch(0.74 0.11 160);
     --primary-foreground: oklch(0.2 0.03 160);
+    --link: var(--primary);
     --muted: oklch(0.24 0.005 165);
     --muted-foreground: oklch(0.68 0.01 165);
     --accent: oklch(1 0 0 / 6%);
@@ -76,6 +80,7 @@
     --git-added: #73bd79;
     --git-untracked: #e88f89;
     --git-conflicted: #de6a66;
+    --git-ignored: var(--muted-foreground);
     --syntax-keyword: oklch(0.75 0.12 300);
     --syntax-string: oklch(0.78 0.12 150);
     --syntax-number: oklch(0.8 0.11 60);
@@ -123,6 +128,8 @@
   --color-git-added: var(--git-added);
   --color-git-untracked: var(--git-untracked);
   --color-git-conflicted: var(--git-conflicted);
+  --color-git-ignored: var(--git-ignored);
+  --color-link: var(--link);
   --animate-live: live 1.6s ease-in-out infinite;
   @keyframes live {
     50% {
@@ -156,6 +163,10 @@
 [data-compact] #root {
   height: var(--viewport-height, 100dvh);
   padding-inline: env(safe-area-inset-left) env(safe-area-inset-right);
+}
+/* Streamdown colours its links `text-primary`. */
+[data-streamdown='link'] {
+  color: var(--link);
 }
 /* iOS zooms the page when a smaller input is focused. */
 [data-compact] :is(input, textarea, select) {

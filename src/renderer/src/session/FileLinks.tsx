@@ -55,7 +55,7 @@ function MessageLink(props: ComponentProps<'a'> & ExtraProps) {
         event.preventDefault()
         links.open(path, ref.line)
       }}
-      className="text-primary wrap-anywhere hover:underline"
+      className="text-link wrap-anywhere hover:underline"
     >
       {props.children}
     </a>
