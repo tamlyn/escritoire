@@ -4,6 +4,7 @@ import { type ITheme, Terminal } from '@xterm/xterm'
 import { type RefObject, useEffect, useRef } from 'react'
 import type { ScreenOutput, ScreenSize, ScreenSnapshot } from '../../../shared/screen'
 import { subscribe } from '../api'
+import { isCommandKey } from '../commands'
 
 export type ScreenConnection = {
   /** Sends `screenOutput` for this screen from now on, and returns what's on it so far. */
@@ -41,6 +42,8 @@ export function ScreenView({ screenId, connection, autoFocus = false, terminalRe
       scrollback: 5000,
       theme: themeFrom(container),
     })
+    // On Linux the app's Ctrl+Shift shortcuts would otherwise go to the shell.
+    terminal.attachCustomKeyEventHandler((event) => !isCommandKey(event))
     const fitAddon = new FitAddon()
     terminal.loadAddon(fitAddon)
     terminal.open(container)

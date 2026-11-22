@@ -7,14 +7,19 @@ import { AppMenu } from './AppMenu'
 import { Inbox } from './Inbox'
 import { useIsCompact } from './phone/compact'
 import { PhoneWorkspace } from './phone/PhoneWorkspace'
-import { ProjectSwitcher } from './ProjectSwitcher'
+import { ActionPalette } from './ActionPalette'
+import { useCommand } from './commands'
+import { ProjectSwitcher, type SwitcherMode } from './ProjectSwitcher'
 import { type PendingSession, ProjectWorkspace, type ProjectWorkspaceHandle } from './ProjectWorkspace'
 import { followNotifications, notificationSessionShown } from './remote/push'
-import { isMac, modifierLabel, useShortcut } from './shortcuts'
+import { isMac, shortcutLabel } from './shortcuts'
+
+const switchProjectShortcut = { key: 'p', shift: true }
 
 export function App() {
   const [state, setState] = useState<AppState | null>(null)
-  const [switcherOpen, setSwitcherOpen] = useState(false)
+  // One at a time, so a palette's shortcut swaps to it from another.
+  const [palette, setPalette] = useState<SwitcherMode | 'actions' | null>(null)
   const [pendingSession, setPendingSession] = useState<PendingSession | null>(null)
   const workspaceRef = useRef<ProjectWorkspaceHandle>(null)
   const activeProjectId = state?.activeProjectId
@@ -49,7 +54,17 @@ export function App() {
     notificationSessionShown()
   }, [])
 
-  useShortcut('o', () => setSwitcherOpen(true))
+  useCommand({ id: 'actions', title: 'Search actions', shortcut: { key: 'a', shift: true }, inDialogs: true, run: () => setPalette('actions') })
+  useCommand({ id: 'switch-project', title: 'Switch project', shortcut: switchProjectShortcut, inDialogs: true, run: () => setPalette('project') })
+  useCommand({
+    id: 'open-file',
+    title: 'Open file',
+    shortcut: { key: 'o', shift: true },
+    inDialogs: true,
+    run: () => {
+      if (activeProjectId) setPalette('file')
+    },
+  })
 
   if (!state) return null
 
@@ -66,8 +81,8 @@ export function App() {
         <Inbox projects={state.projects} onSelect={(s) => goToSession(sessionTarget(s))} />
         <button
           type="button"
-          onClick={() => setSwitcherOpen(true)}
-          title={`Switch project or open a file (${modifierLabel}O)`}
+          onClick={() => setPalette('project')}
+          title={`Switch project or open a file (${shortcutLabel(switchProjectShortcut)})`}
           className="hover:bg-accent flex h-7 items-center gap-1.5 rounded-sm px-2 font-medium [-webkit-app-region:no-drag]"
         >
           {activeProject?.name ?? 'No project'}
@@ -93,20 +108,21 @@ export function App() {
           />
         ) : (
           <div className="text-muted-foreground flex h-full items-center justify-center">
-            {compact ? 'Tap No project to open one' : `Press ${modifierLabel}O to open a project`}
+            {compact ? 'Tap No project to open one' : `Press ${shortcutLabel(switchProjectShortcut)} to open a project`}
           </div>
         )}
       </main>
       <ProjectSwitcher
         state={state}
-        open={switcherOpen}
-        onOpenChange={setSwitcherOpen}
+        mode={palette === 'actions' ? null : palette}
+        onOpenChange={(open) => open || setPalette(null)}
         onActivate={(id) => void api.activateProject(id).then(setState)}
         onOpenPath={(path) => api.openProject(path).then(setState)}
         onOpenFile={(path) => workspaceRef.current?.openFile(path)}
         onClose={(id) => void api.closeProject(id).then(setState)}
         onRemove={(id) => void api.removeProject(id).then(setState)}
       />
+      <ActionPalette open={palette === 'actions'} onOpenChange={(open) => setPalette(open ? 'actions' : null)} />
     </div>
   )
 }

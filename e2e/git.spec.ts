@@ -21,7 +21,7 @@ test('summarises changes and history, and follows changes made elsewhere', async
   await writeFile(join(project, 'notes.md'), 'one\ntwo\nthree\n')
 
   const { page, close } = await launchApp(join(root, 'data'))
-  await page.keyboard.press(`${modifier}+o`)
+  await page.keyboard.press(`${modifier}+Shift+p`)
   await page.getByRole('combobox').fill(`${project}/`)
   await page.getByRole('option', { name: `Open ${project}/` }).click()
 
@@ -75,7 +75,7 @@ test('marks changes in the file tree, and shows history, commits, branches and b
   await writeFile(join(project, 'notes.md'), 'notes\n')
 
   const { page, close } = await launchApp(join(root, 'data'))
-  await page.keyboard.press(`${modifier}+o`)
+  await page.keyboard.press(`${modifier}+Shift+p`)
   await page.getByRole('combobox').fill(`${project}/`)
   await page.getByRole('option', { name: `Open ${project}/` }).click()
 

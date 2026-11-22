@@ -87,7 +87,7 @@ test('a paired browser recovers in its own project when the connection returns',
   await expect(remote.getByRole('banner')).toContainText('alpha')
   // The desktop was last to be active in beta until the browser moved, so make it the latest again.
   await page.keyboard.press('Escape')
-  await page.keyboard.press(`${modifier}+o`)
+  await page.keyboard.press(`${modifier}+Shift+p`)
   await page.getByRole('option', { name: /^beta/ }).click()
   await expect(page.getByRole('banner')).toContainText('beta')
 

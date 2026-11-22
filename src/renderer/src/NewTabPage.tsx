@@ -38,7 +38,7 @@ export function NewTabPage({ tab }: { tab: Tab }) {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto flex max-w-[540px] flex-col gap-7 px-6 py-16">
+      <div className="mx-auto flex max-w-[540px] flex-col gap-7 px-6 py-16" onKeyDown={moveFocusWithArrows}>
         <div className="flex flex-col gap-0.5">
           <NewSessionButton agent="claude" starting={starting} onStart={(agent) => void start(agent)} autoFocus />
           <NewSessionButton agent="codex" starting={starting} onStart={(agent) => void start(agent)} />
@@ -66,4 +66,16 @@ export function NewTabPage({ tab }: { tab: Tab }) {
       </div>
     </div>
   )
+}
+
+/** Up and down move between the page's buttons, as in a menu, rather than scrolling. */
+function moveFocusWithArrows(event: React.KeyboardEvent<HTMLElement>) {
+  if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+  const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')]
+  if (buttons.length === 0) return
+  event.preventDefault()
+  const index = buttons.indexOf(document.activeElement as HTMLButtonElement)
+  const step = event.key === 'ArrowDown' ? 1 : -1
+  const next = index === -1 ? 0 : Math.min(Math.max(index + step, 0), buttons.length - 1)
+  buttons[next]!.focus()
 }

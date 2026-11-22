@@ -86,8 +86,16 @@ Check current versions and APIs against documentation when adding each one.
 - Supervised processes are never stopped merely by switching away or by inactivity. Closing the project or quitting the app stops them.
 - A user can remove a project from the list. This stops its processes and forgets its layout.
 - Closing and removing a project go through one list of what main keeps per project (`src/main/project-lifecycle.ts`). A resource that fails to save or delete is logged and the project closes or goes anyway: a half-removed project couldn't safely open again, and ids are never reused, so failing leaves only unused files. Quitting stays an ordered sequence in `src/main/index.ts`, since its order is about the API, the IDE server and clients rather than projects.
-- **Project switcher:** a keyboard-driven palette: projects with sessions waiting for input first, then with unread turns, then the rest by recency, with the current project last. Each row shows what is going on there (sessions waiting, unread or working; processes running or crashed). Typing a path or fuzzy name in the same palette opens a new project; there is no separate "open project" UI.
-- **Opening files:** the same palette also matches the active project's files by fuzzy name, in a group below the matching projects. The list is fetched afresh each time the palette opens (git's tracked and untracked files, or a capped walk outside git), so there is no index to build or keep current.
+- **Project switcher (⌘⇧P):** a keyboard-driven palette: projects with sessions waiting for input first, then with unread turns, then the rest by recency, with the current project last. Each row shows what is going on there (sessions waiting, unread or working; processes running or crashed). Typing a path or fuzzy name in the same palette opens a new project; there is no separate "open project" UI.
+- **Opening files:** the same palette also matches the active project's files by fuzzy name, in a group below the matching projects, so the phone can open files from it too. ⌘⇧O opens it with only the files. The list is fetched afresh each time the palette opens (git's tracked and untracked files, or a capped walk outside git), so there is no index to build or keep current.
+
+### Keyboard
+
+- **Shortcuts follow WebStorm's macOS keymap,** the user's muscle memory: ⌘⇧A searches actions, ⌘⇧O opens a file, ⌘⇧P switches project, ⌘⇧[ and ⌘⇧] move between the current tabset's tabs. Elsewhere the modifier is Ctrl. ⌘T, ⌘W, ⌘N and ⌘B are as before. No ⌘1–9.
+- **Fixed, not configurable:** there's one user. Every shortcut is a command in one registry (`renderer/src/commands.ts`), offered while the component that owns it is mounted, so project commands come and go with the workspace. The action palette lists the registry with each command's shortcut; commands without a shortcut (new session, terminal, git history) are in it too.
+- A focused widget that handles a key itself takes it first (the palettes' own ⌘W and ⌘⌫). Terminals and the code editor are the exceptions: they leave the app's shortcuts to the app, or on Linux Ctrl+Shift would go to the shell and Ctrl+Shift+[ would fold code.
+- The new tab page moves between its rows with the arrow keys.
+- In a browser over remote access, the browser keeps ⌘T, ⌘W and ⌘N.
 
 ### Attention within a project
 

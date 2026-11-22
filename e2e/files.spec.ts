@@ -15,7 +15,7 @@ test('browses, edits and autosaves files, and shows changes made on disk', async
   await writeFile(join(project, 'README.md'), '# Hello\n')
 
   let { page, close } = await launchApp(dataDir)
-  await page.keyboard.press(`${modifier}+o`)
+  await page.keyboard.press(`${modifier}+Shift+p`)
   await page.getByRole('combobox').fill(`${project}/`)
   await page.getByRole('option', { name: `Open ${project}/` }).click()
 
@@ -79,7 +79,7 @@ test('creates scratch and named files, and renames them', async () => {
   await writeFile(join(project, 'notes', 'auth.md'), '# Auth\n')
 
   const { page, close } = await launchApp(join(root, 'data'))
-  await page.keyboard.press(`${modifier}+o`)
+  await page.keyboard.press(`${modifier}+Shift+p`)
   await page.getByRole('combobox').fill(`${project}/`)
   await page.getByRole('option', { name: `Open ${project}/` }).click()
   const tree = page.getByRole('tree', { name: 'Files' })
@@ -133,12 +133,12 @@ test('opens a project file from the switcher by fuzzy name', async () => {
   await writeFile(join(project, 'README.md'), '# Hello\n')
 
   const { page, close } = await launchApp(dataDir)
-  await page.keyboard.press(`${modifier}+o`)
+  await page.keyboard.press(`${modifier}+Shift+p`)
   await page.getByRole('combobox').fill(`${project}/`)
   await page.getByRole('option', { name: `Open ${project}/` }).click()
   await page.locator('[data-workspace]').waitFor()
 
-  await page.keyboard.press(`${modifier}+o`)
+  await page.keyboard.press(`${modifier}+Shift+p`)
   // The dot keeps the project's random temp path from matching and taking the highlight.
   await page.getByRole('combobox').fill('srvrt.ts')
   await expect(page.getByRole('group', { name: 'Files' }).getByRole('option')).toHaveText(['src/server/routes.ts'])
@@ -161,7 +161,7 @@ test('closes the selected tab with the close shortcut', async () => {
   await writeFile(join(project, 'b.md'), '# B\n')
 
   const { page, close } = await launchApp(dataDir)
-  await page.keyboard.press(`${modifier}+o`)
+  await page.keyboard.press(`${modifier}+Shift+p`)
   await page.getByRole('combobox').fill(`${project}/`)
   await page.getByRole('option', { name: `Open ${project}/` }).click()
 

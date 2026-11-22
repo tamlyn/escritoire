@@ -17,7 +17,7 @@ import {
   usePanelRef,
   useWorkspaceRef,
 } from 'react-resizable-panels'
-import type { SessionTarget } from '../../shared/agent'
+import type { AgentKind, SessionTarget } from '../../shared/agent'
 import type { Project } from '../../shared/api'
 import { api } from './api'
 import { FileTree } from './FileTree'
@@ -28,7 +28,8 @@ import { tabsetsIn } from './layout-tree'
 import { ProjectContext } from './project-context'
 import { SessionIndicator } from './session/SessionIndicator'
 import { useSessionSummary } from './sessions'
-import { modifierLabel, useShortcut } from './shortcuts'
+import { useCommand } from './commands'
+import { shortcutLabel } from './shortcuts'
 import { ProcessList } from './process/ProcessList'
 import { ProcessStatusDot } from './process/ProcessStatusDot'
 import { useProcess } from './processes'
@@ -40,10 +41,13 @@ import {
   createGitTab,
   createProcessTab,
   createSessionTab,
+  createTerminalTab,
   type Tab,
   TabContent,
   type TabData,
 } from './tabs'
+
+const newTabShortcut = { key: 't' }
 
 const emptyModel: WorkspaceModelInput<TabData> = {
   version: 1,
@@ -97,23 +101,58 @@ export function ProjectWorkspace({ project, pendingSession, onPendingSessionShow
     onPendingSessionShown()
   }, [model, pendingSession, project.id, workspaceRef, onPendingSessionShown])
 
-  useShortcut('t', () => workspaceRef.current?.addTab(createEmptyTab()))
-  useShortcut('w', () => {
+  /** The tabset the user is in. */
+  function currentTabset() {
     const workspace = workspaceRef.current
-    if (!workspace) return
+    if (!workspace) return undefined
     // Tab content isn't inside its tabset in the React tree, so focusing it
     // doesn't make the tabset active; the DOM knows where focus is.
     const focused = document.activeElement?.closest<HTMLElement>('[data-tabset-id]')?.dataset.tabsetId
     const tabsets = [...tabsetsIn(workspace.getModel())]
     const id = focused ?? workspace.getActiveTabsetId()
-    const tabset = tabsets.find((t) => t.id === id) ?? tabsets[0]
-    if (tabset?.selectedId) workspace.closeTab(tabset.selectedId)
+    return tabsets.find((t) => t.id === id) ?? tabsets[0]
+  }
+
+  function selectAdjacentTab(step: 1 | -1) {
+    const tabset = currentTabset()
+    if (!tabset || tabset.tabs.length < 2) return
+    const index = tabset.tabs.findIndex((tab) => tab.id === tabset.selectedId)
+    workspaceRef.current?.selectTab(tabset.tabs[(index + step + tabset.tabs.length) % tabset.tabs.length]!.id)
+  }
+
+  function startSession(agent: AgentKind) {
+    api.createSession(project.id, agent).then(
+      (pointer) => workspaceRef.current?.addTab(createSessionTab(pointer, '')),
+      (error: unknown) => console.error(`Couldn't start the ${agent} session:`, error),
+    )
+  }
+
+  useCommand({ id: 'new-tab', title: 'New tab', shortcut: newTabShortcut, run: () => workspaceRef.current?.addTab(createEmptyTab()) })
+  useCommand({
+    id: 'close-tab',
+    title: 'Close tab',
+    shortcut: { key: 'w' },
+    run: () => {
+      const selected = currentTabset()?.selectedId
+      if (selected) workspaceRef.current?.closeTab(selected)
+    },
   })
-  useShortcut('b', () => {
-    const sidebar = sidebarRef.current
-    if (sidebar?.isCollapsed()) sidebar.expand()
-    else sidebar?.collapse()
+  useCommand({ id: 'next-tab', title: 'Next tab', shortcut: { key: 'BracketRight', shift: true }, run: () => selectAdjacentTab(1) })
+  useCommand({ id: 'previous-tab', title: 'Previous tab', shortcut: { key: 'BracketLeft', shift: true }, run: () => selectAdjacentTab(-1) })
+  useCommand({
+    id: 'toggle-sidebar',
+    title: 'Show or hide the sidebar',
+    shortcut: { key: 'b' },
+    run: () => {
+      const sidebar = sidebarRef.current
+      if (sidebar?.isCollapsed()) sidebar.expand()
+      else sidebar?.collapse()
+    },
   })
+  useCommand({ id: 'new-claude-session', title: 'New Claude session', run: () => startSession('claude') })
+  useCommand({ id: 'new-codex-session', title: 'New Codex session', run: () => startSession('codex') })
+  useCommand({ id: 'new-terminal', title: 'New terminal', run: () => workspaceRef.current?.addTab(createTerminalTab()) })
+  useCommand({ id: 'git', title: 'Show git history', run: () => workspaceRef.current?.addTab(createGitTab()) })
 
   if (!model) return null
 
@@ -122,7 +161,7 @@ export function ProjectWorkspace({ project, pendingSession, onPendingSessionShow
   return (
     <ProjectContext.Provider value={project}>
       <FileActionsProvider workspaceRef={workspaceRef} openFile={openFile}>
-        <NewFileShortcut />
+        <NewFileCommand />
         <Group
           orientation="horizontal"
           className="h-full"
@@ -180,9 +219,9 @@ export function ProjectWorkspace({ project, pendingSession, onPendingSessionShow
   )
 }
 
-function NewFileShortcut() {
+function NewFileCommand() {
   const actions = useFileActions()
-  useShortcut('n', () => actions.newFile(''))
+  useCommand({ id: 'new-file', title: 'New file', shortcut: { key: 'n' }, run: () => actions.newFile('') })
   return null
 }
 
@@ -290,7 +329,7 @@ function NewTabButton() {
   return (
     <button
       type="button"
-      title={`New tab (${modifierLabel}T)`}
+      title={`New tab (${shortcutLabel(newTabShortcut)})`}
       className="text-muted-foreground hover:bg-accent hover:text-foreground flex size-6 items-center justify-center rounded"
       onClick={() => tabset?.addTab(createEmptyTab())}
     >
@@ -306,7 +345,7 @@ function renderSeparator() {
 function renderEmpty() {
   return (
     <div className="text-muted-foreground flex h-full items-center justify-center">
-      Press {modifierLabel}T to open a tab
+      Press {shortcutLabel(newTabShortcut)} to open a tab
     </div>
   )
 }

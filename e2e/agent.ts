@@ -29,7 +29,7 @@ export function fakeCodex(dir: string) {
 }
 
 export async function openProject(page: Page, path: string): Promise<void> {
-  await page.keyboard.press(`${modifier}+o`)
+  await page.keyboard.press(`${modifier}+Shift+p`)
   await page.getByRole('combobox').fill(`${path}/`)
   await page.getByRole('option', { name: `Open ${path}/` }).click()
   // The previous project's empty workspace says the same until this one replaces it.

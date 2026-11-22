@@ -14,7 +14,7 @@ test('gives another client its own active project, and moves the window off a pr
   await mkdir(join(root, 'beta'))
   const { page, close } = await launchApp()
 
-  await page.keyboard.press(`${modifier}+o`)
+  await page.keyboard.press(`${modifier}+Shift+p`)
   await page.getByRole('combobox').fill(`${root}/alpha/`)
   await page.getByRole('option', { name: `Open ${root}/alpha/` }).click()
   await expect(page.getByRole('banner')).toHaveText('alpha')
@@ -26,7 +26,7 @@ test('gives another client its own active project, and moves the window off a pr
 
   const beta = await other.api.openProject(join(root, 'beta'))
   expect(beta.projects.find((p) => p.id === beta.activeProjectId)?.name).toBe('beta')
-  await page.keyboard.press(`${modifier}+o`)
+  await page.keyboard.press(`${modifier}+Shift+p`)
   await expect(page.getByRole('option', { name: /^beta/ })).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(page.getByRole('banner')).toHaveText('alpha')
@@ -58,7 +58,7 @@ test('keeps the session tabs of a project another client closes', async () => {
   await other.api.closeProject(state.activeProjectId!)
   await expect(page.getByRole('banner')).toContainText('beta')
 
-  await page.keyboard.press(`${modifier}+o`)
+  await page.keyboard.press(`${modifier}+Shift+p`)
   await page.getByRole('option', { name: /^alpha/ }).click()
   await expect(page.getByRole('banner')).toContainText('alpha')
   await expect(page.getByRole('tab', { name: 'hello' })).toBeVisible()

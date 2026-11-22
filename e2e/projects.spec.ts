@@ -16,7 +16,7 @@ test('opens projects, keeps tabs per project, and restores them after restart', 
   expect(await app.evaluate(({ app }) => app.getPath('userData'))).toBe(dataDir)
 
   async function openProject(name: string) {
-    await page.keyboard.press(`${modifier}+o`)
+    await page.keyboard.press(`${modifier}+Shift+p`)
     await page.getByRole('combobox').fill(`${root}/${name}/`)
     await page.getByRole('option', { name: `Open ${root}/${name}/` }).click()
     await expect(page.getByRole('banner')).toHaveText(name)
@@ -31,7 +31,7 @@ test('opens projects, keeps tabs per project, and restores them after restart', 
   await openProject('beta')
   await expect(page.getByRole('tab')).toHaveCount(0)
 
-  await page.keyboard.press(`${modifier}+o`)
+  await page.keyboard.press(`${modifier}+Shift+p`)
   await page.getByRole('option', { name: /^alpha/ }).click()
   await expect(page.getByRole('banner')).toHaveText('alpha')
   await expect(page.getByRole('tab')).toHaveCount(2)
@@ -53,7 +53,7 @@ test('completes the path still listed after typing narrows the completions', asy
   await mkdir(join(root, 'hustle'))
 
   const { page, close } = await launchApp()
-  await page.keyboard.press(`${modifier}+o`)
+  await page.keyboard.press(`${modifier}+Shift+p`)
   const input = page.getByRole('combobox')
   await input.fill(`${root}/h`)
   await expect(page.getByRole('option', { name: `${root}/hardware` })).toHaveAttribute('aria-selected', 'true')
@@ -77,7 +77,7 @@ test("shows what is going on in other projects in the switcher", async () => {
 
   const { page, close } = await launchApp()
   async function openProject(name: string) {
-    await page.keyboard.press(`${modifier}+o`)
+    await page.keyboard.press(`${modifier}+Shift+p`)
     await page.getByRole('combobox').fill(`${root}/${name}/`)
     await page.getByRole('option', { name: `Open ${root}/${name}/` }).click()
     await expect(page.getByRole('banner')).toHaveText(name)
@@ -89,7 +89,7 @@ test("shows what is going on in other projects in the switcher", async () => {
   await expect(page.getByRole('tab', { name: 'npm run boom' }).getByLabel('Failed')).toBeVisible()
   await openProject('beta')
 
-  await page.keyboard.press(`${modifier}+o`)
+  await page.keyboard.press(`${modifier}+Shift+p`)
   const options = page.getByRole('option')
   await expect(options.first()).toContainText('alpha')
   await expect(options.first().getByLabel('1 crashed')).toBeVisible()

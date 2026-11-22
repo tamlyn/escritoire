@@ -1,4 +1,4 @@
-import { Annotation, Compartment, EditorState, type Extension } from '@codemirror/state'
+import { Annotation, Compartment, EditorState, type Extension, Prec } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { basicSetup } from 'codemirror'
 import { type RefObject, useEffect, useRef, useState } from 'react'
@@ -6,6 +6,7 @@ import { baseName } from '../../../shared/files'
 import { isTaskFile } from '../../../shared/process'
 import { ContextMenu, ContextMenuCheckboxItem, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { api, flushers, subscribe } from '../api'
+import { runCommandKey } from '../commands'
 import { blameGutter } from './blame'
 import { changeMarkers } from './change-markers'
 import { changeFromDisk, editorTheme, loadLanguage } from './editor'
@@ -119,6 +120,8 @@ export function Editor({
           blameCompartment.of([]),
           onRunTask && isTaskFile(baseName(path)) ? runGutter(baseName(path), (name) => onRunTaskRef.current?.(name)) : [],
           basicSetup,
+          // The app's shortcuts before the editor's keymap, which on Linux folds code on Ctrl+Shift+[.
+          Prec.highest(EditorView.domEventHandlers({ keydown: runCommandKey })),
           // After basicSetup, so its gutter sits between the line numbers and the text.
           changeMarkers({
             load: () => api.getGitHeadText(projectId, path),

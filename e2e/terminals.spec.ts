@@ -13,7 +13,7 @@ test('runs a shell in a terminal tab and restores its scrollback after a restart
   await mkdir(join(project, 'sub'), { recursive: true })
 
   let { page, close } = await launchApp(dataDir)
-  await page.keyboard.press(`${modifier}+o`)
+  await page.keyboard.press(`${modifier}+Shift+p`)
   await page.getByRole('combobox').fill(`${project}/`)
   await page.getByRole('option', { name: `Open ${project}/` }).click()
 
@@ -51,7 +51,7 @@ test('refits a terminal split into a smaller tabset and follows the system theme
   await mkdir(project)
   const { page, close } = await launchApp()
   await page.emulateMedia({ colorScheme: 'light' })
-  await page.keyboard.press(`${modifier}+o`)
+  await page.keyboard.press(`${modifier}+Shift+p`)
   await page.getByRole('combobox').fill(`${project}/`)
   await page.getByRole('option', { name: `Open ${project}/` }).click()
   await expect(page.getByText('to open a tab')).toBeVisible()

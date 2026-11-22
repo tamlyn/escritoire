@@ -23,9 +23,12 @@ const fileLimit = 50
 // Distinguishes a file's item from a project's, whose value is its absolute path.
 const filePrefix = 'file:'
 
+/** Projects (and the active project's files below them), or only files. */
+export type SwitcherMode = 'project' | 'file'
+
 type Props = {
   state: AppState
-  open: boolean
+  mode: SwitcherMode | null
   onOpenChange: (open: boolean) => void
   onActivate: (id: string) => void
   onOpenPath: (path: string) => Promise<void>
@@ -40,20 +43,22 @@ type Props = {
  * opening a new project.
  */
 export function ProjectSwitcher(props: Props) {
-  const { state, open, onOpenChange } = props
+  const { state, mode, onOpenChange } = props
+  const open = mode !== null
+  const filesOnly = mode === 'file'
   const [query, setQuery] = useState('')
   const [highlighted, setHighlighted] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const isPath = query.startsWith('/') || query.startsWith('~')
+  const isPath = !filesOnly && (query.startsWith('/') || query.startsWith('~'))
   const completions = useDirectoryCompletions(isPath ? query : null)
   const files = useProjectFiles(open ? state.activeProjectId : null)
 
   useEffect(() => {
-    if (open) {
+    if (mode) {
       setQuery('')
       setError(null)
     }
-  }, [open])
+  }, [mode])
 
   const summaries = useSessionSummaries()
   const processes = useAllProcesses()
@@ -61,8 +66,8 @@ export function ProjectSwitcher(props: Props) {
   const projects = useMemo(() => orderProjects(state, activity), [state, activity])
   const findProjects = useMemo(() => fuzzyFinder(projects, { path: (p) => p.path, limit: projectLimit }), [projects])
   const findFiles = useMemo(() => fuzzyFinder(files, { path: (path) => path, limit: fileLimit }), [files])
-  const projectMatches = query ? findProjects(query) : projects.map((item) => ({ item, positions: new Set<number>() }))
-  const fileMatches = query ? findFiles(query) : []
+  const projectMatches = filesOnly ? [] : query ? findProjects(query) : projects.map((item) => ({ item, positions: new Set<number>() }))
+  const fileMatches = query || filesOnly ? findFiles(query) : []
   const isFileHighlighted = highlighted.startsWith(filePrefix)
   const openValue = query.endsWith('/') ? query.slice(0, -1) : null
   const pathValues = [...(openValue === null ? [] : [openValue]), ...completions]
@@ -99,9 +104,9 @@ export function ProjectSwitcher(props: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="top-[15%] translate-y-0 overflow-hidden p-0 sm:max-w-[620px]" showCloseButton={false}>
-        <DialogTitle className="sr-only">Switch project or open a file</DialogTitle>
+        <DialogTitle className="sr-only">{filesOnly ? 'Open a file' : 'Switch project or open a file'}</DialogTitle>
         <DialogDescription className="sr-only">
-          Choose a project or a file in this one, or type a path to open a new project
+          {filesOnly ? 'Choose a file in this project' : 'Choose a project or a file in this one, or type a path to open a new project'}
         </DialogDescription>
         <Command
           shouldFilter={false}
@@ -116,7 +121,7 @@ export function ProjectSwitcher(props: Props) {
               setQuery(value)
               setError(null)
             }}
-            placeholder="Switch project, open a file, or type a path…"
+            placeholder={filesOnly ? 'Open a file…' : 'Switch project, open a file, or type a path…'}
           />
           {error && <div className="text-destructive border-b px-3 py-2">{error}</div>}
           <CommandList className="max-h-[400px]">
@@ -137,7 +142,9 @@ export function ProjectSwitcher(props: Props) {
               </CommandGroup>
             ) : (
               <>
-                <CommandEmpty>No matching projects or files. Type a path to open a project.</CommandEmpty>
+                <CommandEmpty>
+                  {filesOnly ? 'No matching files.' : 'No matching projects or files. Type a path to open a project.'}
+                </CommandEmpty>
                 {projectMatches.length > 0 && (
                   <CommandGroup heading={query ? 'Projects' : undefined}>
                     {projectMatches.map(({ item: project, positions }) => (
@@ -156,7 +163,7 @@ export function ProjectSwitcher(props: Props) {
                   </CommandGroup>
                 )}
                 {fileMatches.length > 0 && (
-                  <CommandGroup heading="Files">
+                  <CommandGroup heading={filesOnly ? undefined : 'Files'}>
                     {fileMatches.map(({ item: path, positions }) => (
                       <CommandItem
                         key={path}

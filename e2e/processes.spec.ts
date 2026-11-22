@@ -22,7 +22,7 @@ test('runs package.json scripts from the gutter as supervised processes', async 
   await writeFile(join(project, 'package-lock.json'), '{}')
 
   let { page, close } = await launchApp(dataDir)
-  await page.keyboard.press(`${modifier}+o`)
+  await page.keyboard.press(`${modifier}+Shift+p`)
   await page.getByRole('combobox').fill(`${project}/`)
   await page.getByRole('option', { name: `Open ${project}/` }).click()
   await page.getByRole('tree').getByRole('treeitem', { name: 'package.json' }).click()
