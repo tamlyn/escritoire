@@ -158,7 +158,7 @@ describe('Codex adapter', () => {
     const item = { type: 'agentMessage', id: 'a', text: 'Hello' } as ThreadItem
     mocks.call.mockResolvedValueOnce({}).mockResolvedValueOnce({ data: [{ items: [item] }], nextCursor: 'next' }).mockResolvedValueOnce({ data: [{ items: [{ type: 'plan', id: 'b', text: 'Plan' }] }], nextCursor: null })
     const history = await codexAdapter.loadHistory('thread', '/project')
-    expect(history.items).toEqual([codexItem(item), { kind: 'agentMessage', id: 'b', text: 'Plan' }])
+    expect(history.items).toEqual([codexItem(item), { kind: 'plan', id: 'b', text: 'Plan' }])
     expect(mocks.call.mock.calls[2]![1]).toMatchObject({ cursor: 'next', sortDirection: 'asc', itemsView: 'full' })
     expect(mocks.clients[0].close).toHaveBeenCalled()
   })

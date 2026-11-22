@@ -23,6 +23,8 @@ export type Item =
   | { kind: 'userMessage'; id: string; text: string; images?: ImageAttachment[] }
   | { kind: 'agentMessage'; id: string; parentId?: string; text: string }
   | { kind: 'reasoning'; id: string; parentId?: string; text: string }
+  /** A plan the agent proposes before changing anything, in Markdown. */
+  | { kind: 'plan'; id: string; text: string }
   | {
       kind: 'toolCall'
       id: string
@@ -47,7 +49,8 @@ export type PendingRequest =
       id: string
       itemId?: string
       title: string
-      view: ToolView
+      /** `null` when the transcript already shows what is asked about, such as a plan. */
+      view: ToolView | null
       options: PermissionOption[]
     }
   | { kind: 'question'; id: string; questions: Question[] }
@@ -235,6 +238,7 @@ function appendText(item: Item, text: string): Item {
   switch (item.kind) {
     case 'agentMessage':
     case 'reasoning':
+    case 'plan':
       return { ...item, text: item.text + text }
     case 'toolCall':
       return item.view.type === 'command'

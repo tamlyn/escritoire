@@ -261,6 +261,15 @@ function ItemView({
           </MessageContent>
         </Message>
       )
+    case 'plan':
+      return (
+        <div className="bg-card space-y-3 rounded-lg border p-4">
+          <h3 className="text-muted-foreground text-ui font-medium">Plan</h3>
+          <MessageResponse isAnimating={streaming} {...fileLinkProps}>
+            {item.text}
+          </MessageResponse>
+        </div>
+      )
     case 'reasoning':
       // Claude Code doesn't always ask for the thinking text, leaving nothing to expand.
       if (!item.text && !streaming) {

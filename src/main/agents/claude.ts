@@ -28,6 +28,7 @@ import {
   type ImageAttachment,
   type Item,
   type PendingRequest,
+  type PermissionOption,
   type PlanLimit,
   type Question,
   type RequestResponse,
@@ -213,6 +214,7 @@ function loadCommands(cwd: string): Promise<SlashCommand[]> {
 }
 
 type Pending = {
+  toolName: string
   toolInput: Record<string, unknown>
   suggestions?: PermissionUpdate[]
   resolve: (result: PermissionResult) => void
@@ -293,7 +295,10 @@ class ClaudeRun implements AgentRun {
   respond(requestId: string, response: RequestResponse): void {
     const pending = this.pending.get(requestId)
     if (!pending) return
-    this.settle(requestId, pending, toPermissionResult(pending, response))
+    const result = toPermissionResult(pending, response)
+    // Turning a plan down stops the turn, which Claude Code reports as a failed result.
+    if (result.behavior === 'deny' && result.interrupt) this.interrupted = true
+    this.settle(requestId, pending, result)
   }
 
   close(): void {
@@ -437,10 +442,14 @@ class ClaudeRun implements AgentRun {
   private canUseTool: CanUseTool = (toolName, toolInput, { signal, suggestions, toolUseID, title }) =>
     new Promise((resolve) => {
       const id = randomUUID()
+      // Claude Code adds the plan to the input only now, so the transcript may not have it yet.
+      if (toolName === exitPlanMode) this.emit(upsert(planItem(toolUseID, toolInput)))
       const request: PendingRequest =
         toolName === 'AskUserQuestion'
           ? { kind: 'question', id, questions: toolInput.questions as Question[] }
-          : {
+          : toolName === exitPlanMode
+            ? { kind: 'permission', id, itemId: toolUseID, title: 'Approve the plan?', view: null, options: planOptions }
+            : {
               kind: 'permission',
               id,
               itemId: toolUseID,
@@ -454,7 +463,7 @@ class ClaudeRun implements AgentRun {
                 { id: 'deny', label: 'Deny', kind: 'deny' },
               ],
             }
-      const pending = { toolInput, suggestions, resolve }
+      const pending = { toolName, toolInput, suggestions, resolve }
       this.pending.set(id, pending)
       this.emit({ type: 'requestAdded', request })
       signal.addEventListener(
@@ -473,11 +482,36 @@ class ClaudeRun implements AgentRun {
 
 const activityTypes = new Set(['assistant', 'user', 'stream_event'])
 
+const exitPlanMode = 'ExitPlanMode'
+
+// As the Claude Code VS Code extension offers them: approving a plan also chooses the mode to build it in.
+const planModes: Record<string, PermissionMode> = { auto: 'auto', default: 'default' }
+const planOptions: PermissionOption[] = [
+  { id: 'auto', label: 'Yes, and use auto mode', kind: 'allowOnce' },
+  { id: 'default', label: 'Yes, and approve edits manually', kind: 'allowOnce' },
+  { id: 'deny', label: 'No, keep planning', kind: 'deny' },
+]
+
+function planItem(id: string, input: Record<string, unknown>): Item {
+  return { kind: 'plan', id, text: typeof input.plan === 'string' ? input.plan : '' }
+}
+
 function toPermissionResult(pending: Pending, response: RequestResponse): PermissionResult {
   if (response.kind === 'question') {
     return response.answers
       ? { behavior: 'allow', updatedInput: { ...pending.toolInput, answers: response.answers } }
       : { behavior: 'deny', message: 'The user dismissed the question without answering.' }
+  }
+  if (pending.toolName === exitPlanMode) {
+    const mode = planModes[response.optionId]
+    // Approving without a mode leaves Claude Code in its default mode, asking before every edit.
+    return mode
+      ? {
+          behavior: 'allow',
+          updatedInput: pending.toolInput,
+          updatedPermissions: [{ type: 'setMode', mode, destination: 'session' }],
+        }
+      : { behavior: 'deny', message: 'User chose to stay in plan mode and continue planning', interrupt: true }
   }
   switch (response.optionId) {
     case 'allow':
@@ -716,6 +750,7 @@ export class ClaudeTranscript {
         case 'tool_use': {
           const name = block.name as string
           const input = block.input as Record<string, unknown>
+          if (name === exitPlanMode) return [upsert(planItem(block.id as string, input))]
           const item: ToolCall = {
             kind: 'toolCall',
             id: block.id as string,

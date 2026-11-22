@@ -30,9 +30,11 @@ export function Requests({
     request.kind === 'permission' ? (
       <Confirmation key={request.id}>
         <ConfirmationTitle className="text-foreground font-medium">{request.title}</ConfirmationTitle>
-        <div className="space-y-2">
-          <ToolBody view={request.view} />
-        </div>
+        {request.view && (
+          <div className="space-y-2">
+            <ToolBody view={request.view} />
+          </div>
+        )}
         <ConfirmationActions>
           {request.options.map((option) => (
             <ConfirmationAction

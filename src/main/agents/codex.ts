@@ -237,7 +237,7 @@ export function codexItem(item: ThreadItem): Item {
       return match ? [{ mediaType: match[1]!, data: match[2]! }] : []
     }) }
     case 'agentMessage': return { kind: 'agentMessage', id: item.id, text: item.text }
-    case 'plan': return { kind: 'agentMessage', id: item.id, text: item.text }
+    case 'plan': return { kind: 'plan', id: item.id, text: item.text }
     case 'reasoning': return { kind: 'reasoning', id: item.id, text: (item.summary.length ? item.summary : item.content).join('\n\n') }
     case 'commandExecution': return { kind: 'toolCall', id: item.id, status: status(item.status), title: item.command, view: { type: 'command', command: item.command, output: item.aggregatedOutput ?? '' } }
     case 'fileChange': return { kind: 'toolCall', id: item.id, status: status(item.status), title: 'File changes', view: { type: 'fileChange', changes: item.changes.map((c) => ({ path: c.path, diff: c.diff })) } }

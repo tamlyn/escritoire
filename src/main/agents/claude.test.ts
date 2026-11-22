@@ -92,6 +92,19 @@ describe('ClaudeTranscript', () => {
     })
   })
 
+  it('shows a plan as a plan, untouched by its result', () => {
+    const items = fold([
+      assistant('msg_1', [{ type: 'tool_use', id: 'toolu_1', name: 'ExitPlanMode', input: { plan: '# Plan\n\n1. Do it' } }]),
+      {
+        type: 'user',
+        uuid: 'u1',
+        message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'User has approved your plan.' }] },
+        parent_tool_use_id: null,
+      },
+    ])
+    expect(items).toEqual([{ kind: 'plan', id: 'toolu_1', text: '# Plan\n\n1. Do it' }])
+  })
+
   it('shows an interruption as a notice rather than a user message', () => {
     const items = fold([
       {

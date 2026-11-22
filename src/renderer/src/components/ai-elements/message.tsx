@@ -48,6 +48,9 @@ export const MessageResponse = memo(
     <Streamdown
       className={cn(
         "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
+        // Streamdown sizes headings for documents; in a conversation they only need to stand out a little.
+        "[&_h1]:mt-4 [&_h1]:text-base [&_h2]:mt-4 [&_h2]:text-sm [&_h3]:mt-4 [&_h3]:text-sm",
+        "[&_h4]:mt-4 [&_h4]:text-sm [&_h5]:mt-4 [&_h5]:text-sm [&_h6]:mt-4 [&_h6]:text-sm",
         className
       )}
       plugins={streamdownPlugins}

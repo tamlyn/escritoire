@@ -138,6 +138,56 @@ beforeEach(() => {
   })
 })
 
+describe('Claude plan approval', () => {
+  let events: AgentEvent[]
+  let run: AgentRun
+  const view = (): SessionView => events.reduce(applyEvent, emptySessionView)
+  const plan = { plan: '1. Do it', planFilePath: '/plans/p.md' }
+
+  beforeEach(async () => {
+    events = []
+    run = claude.start((event) => events.push(event))
+    await tick()
+    run.send(say('Plan it'))
+    await tick()
+  })
+
+  afterEach(() => run.close())
+
+  function askToExitPlanMode() {
+    return fakes.claude!.canUseTool('ExitPlanMode', plan, { signal: new AbortController().signal, toolUseID: 'toolu_plan' })
+  }
+
+  it('shows the plan and approves it in the mode chosen', async () => {
+    const decision = askToExitPlanMode()
+    await tick()
+    expect(view().items.at(-1)).toEqual({ kind: 'plan', id: 'toolu_plan', text: '1. Do it' })
+    const [request] = view().requests
+    expect(request).toMatchObject({ kind: 'permission', view: null })
+
+    run.respond(request!.id, { kind: 'permission', optionId: 'auto' })
+
+    expect(await decision).toEqual({
+      behavior: 'allow',
+      updatedInput: plan,
+      updatedPermissions: [{ type: 'setMode', mode: 'auto', destination: 'session' }],
+    })
+  })
+
+  it('stops the turn quietly to keep planning', async () => {
+    const decision = askToExitPlanMode()
+    await tick()
+
+    run.respond(view().requests[0]!.id, { kind: 'permission', optionId: 'deny' })
+    expect(await decision).toMatchObject({ behavior: 'deny', interrupt: true })
+    fakes.claude!.put({ value: { type: 'result', subtype: 'error_during_execution', errors: [], is_error: true, session_id: 'session' } })
+    await tick()
+
+    expect(view().items.filter((item) => item.kind === 'notice')).toEqual([])
+    expect(view().status).toBe('idle')
+  })
+})
+
 describe.each([
   ['Claude', claude],
   ['Codex', codex],
