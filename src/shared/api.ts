@@ -38,6 +38,7 @@ import type {
 import type { ProcessInfo, ProcessSpec } from './process'
 import type { PushSubscription, RemoteAccess } from './remote'
 import type { ScreenOutput, ScreenSize, ScreenSnapshot } from './screen'
+import type { SearchResults, TextQuery } from './search'
 import type { Connection, ProjectConnections, StatementResult } from './sql'
 
 /**
@@ -113,6 +114,8 @@ export type Api = {
   deleteFile(projectId: string, path: string): Promise<void>
   /** Every file in the project that git doesn't ignore, as relative paths. */
   listProjectFiles(projectId: string): Promise<string[]>
+  /** Searches those files' text; `null` if a later search from the same client replaced it. */
+  searchProject(projectId: string, query: TextQuery): Promise<SearchResults | null>
 
   /** Starts the terminal's shell if needed and sends its `screenOutput` until detached. */
   attachTerminal(projectId: string, terminalId: string, size: ScreenSize): Promise<ScreenSnapshot>
@@ -215,6 +218,7 @@ const apiMethodSet: Record<keyof Api, true> = {
   renameFile: true,
   deleteFile: true,
   listProjectFiles: true,
+  searchProject: true,
   attachTerminal: true,
   detachTerminal: true,
   writeTerminal: true,

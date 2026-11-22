@@ -12,6 +12,8 @@ import { useCommand } from './commands'
 import { ProjectSwitcher, type SwitcherMode } from './ProjectSwitcher'
 import { type PendingSession, ProjectWorkspace, type ProjectWorkspaceHandle } from './ProjectWorkspace'
 import { followNotifications, notificationSessionShown } from './remote/push'
+import { revealLine } from './file/reveal'
+import { ProjectSearch, selectedEditorText } from './search/ProjectSearch'
 import { isMac, shortcutLabel } from './shortcuts'
 
 const switchProjectShortcut = { key: 'p', shift: true }
@@ -19,7 +21,8 @@ const switchProjectShortcut = { key: 'p', shift: true }
 export function App() {
   const [state, setState] = useState<AppState | null>(null)
   // One at a time, so a palette's shortcut swaps to it from another.
-  const [palette, setPalette] = useState<SwitcherMode | 'actions' | null>(null)
+  const [palette, setPalette] = useState<SwitcherMode | 'actions' | 'find' | null>(null)
+  const [findSeed, setFindSeed] = useState<string | null>(null)
   const [pendingSession, setPendingSession] = useState<PendingSession | null>(null)
   const workspaceRef = useRef<ProjectWorkspaceHandle>(null)
   const activeProjectId = state?.activeProjectId
@@ -63,6 +66,18 @@ export function App() {
     inDialogs: true,
     run: () => {
       if (activeProjectId) setPalette('file')
+    },
+  })
+
+  useCommand({
+    id: 'find-in-files',
+    title: 'Find in files',
+    shortcut: { key: 'f', shift: true },
+    inDialogs: true,
+    run: () => {
+      if (!activeProjectId) return
+      setFindSeed(selectedEditorText())
+      setPalette('find')
     },
   })
 
@@ -114,7 +129,7 @@ export function App() {
       </main>
       <ProjectSwitcher
         state={state}
-        mode={palette === 'actions' ? null : palette}
+        mode={palette === 'project' || palette === 'file' ? palette : null}
         onOpenChange={(open) => open || setPalette(null)}
         onActivate={(id) => void api.activateProject(id).then(setState)}
         onOpenPath={(path) => api.openProject(path).then(setState)}
@@ -123,6 +138,19 @@ export function App() {
         onRemove={(id) => void api.removeProject(id).then(setState)}
       />
       <ActionPalette open={palette === 'actions'} onOpenChange={(open) => setPalette(open ? 'actions' : null)} />
+      {activeProject && (
+        <ProjectSearch
+          projectId={activeProject.id}
+          open={palette === 'find'}
+          seed={findSeed}
+          onOpenChange={(open) => setPalette(open ? 'find' : null)}
+          onOpenResult={({ path, match }) => {
+            workspaceRef.current?.openFile(path)
+            // After the tab is shown, so an editor that was already open can scroll.
+            requestAnimationFrame(() => revealLine(activeProject.id, path, match.line, match))
+          }}
+        />
+      )}
     </div>
   )
 }

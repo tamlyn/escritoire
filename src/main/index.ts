@@ -28,6 +28,7 @@ import { DesktopAttention } from './desktop-attention'
 import { completeDirectory } from './paths'
 import { ProjectFiles } from './project-files'
 import { ProjectLifecycle } from './project-lifecycle'
+import { searchFiles } from './project-search'
 import { ProjectStore } from './project-store'
 import { SessionManager } from './session-manager'
 import { SessionStore } from './session-store'
@@ -63,6 +64,10 @@ type Services = {
 /** The API as one client sees it. */
 function createApi(client: Client, { clients, remote, push, projects, sessions, lifecycle, files, terminals, supervisor, connections, databases }: Services): Api {
   const activate = async (change: () => Promise<AppState>) => clients.activate(client, await change())
+  const listProjectFiles = async (projectId: string) =>
+    (await gitFiles(projects.getProject(projectId).path)) ?? files.listAllFiles(projectId)
+  // Each keystroke searches again, so a client's earlier search is abandoned.
+  let search: AbortController | null = null
   const terminalHost: ScreenHost = {
     attach: (projectId, terminalId, size) => terminals.attach(projectId, terminalId, size),
     detach: (terminalId) => terminals.detach(terminalId),
@@ -122,8 +127,12 @@ function createApi(client: Client, { clients, remote, push, projects, sessions, 
       await connections.moveFiles(projects.getProject(projectId).id, from, to).catch(console.error)
     },
     deleteFile: (projectId, path) => files.delete(projectId, path),
-    listProjectFiles: async (projectId) =>
-      (await gitFiles(projects.getProject(projectId).path)) ?? files.listAllFiles(projectId),
+    listProjectFiles,
+    searchProject: async (projectId, query) => {
+      search?.abort()
+      const controller = (search = new AbortController())
+      return searchFiles(projects.getProject(projectId).path, await listProjectFiles(projectId), query, controller.signal)
+    },
     attachTerminal: (projectId, terminalId, size) => clients.attachScreen(client, terminalHost, projectId, terminalId, size),
     detachTerminal: async (terminalId) => clients.detachScreen(client, terminalId),
     writeTerminal: async (terminalId, data) => clients.writeScreen(client, terminalId, data),
@@ -273,13 +282,25 @@ app.on('window-all-closed', () => app.quit())
 /**
  * Electron's default menu without its Close Window item, so ⌘W/Ctrl+W reaches
  * the renderer and closes a tab. There's one window, so closing it would quit.
+ * Nor its reloads, so ⌘R/Ctrl+R reaches the editor's replace.
  */
 function applicationMenu(): Menu {
   const isMac = process.platform === 'darwin'
   return Menu.buildFromTemplate([
     isMac ? { role: 'appMenu' } : { label: 'File', submenu: [{ role: 'quit' }] },
     { role: 'editMenu' },
-    { role: 'viewMenu' },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+      ],
+    },
     { label: 'Window', submenu: isMac ? [{ role: 'minimize' }, { role: 'zoom' }, { type: 'separator' }, { role: 'front' }] : [{ role: 'minimize' }] },
   ])
 }

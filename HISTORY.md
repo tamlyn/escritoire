@@ -91,7 +91,7 @@ Check current versions and APIs against documentation when adding each one.
 
 ### Keyboard
 
-- **Shortcuts follow WebStorm's macOS keymap,** the user's muscle memory: ⌘⇧A searches actions, ⌘⇧O opens a file, ⌘⇧P switches project, ⌘⇧[ and ⌘⇧] move between the current tabset's tabs. Elsewhere the modifier is Ctrl. ⌘T, ⌘W, ⌘N and ⌘B are as before. No ⌘1–9.
+- **Shortcuts follow WebStorm's macOS keymap,** the user's muscle memory: ⌘⇧A searches actions, ⌘⇧O opens a file, ⌘⇧F finds in files, ⌘⇧P switches project, ⌘⇧[ and ⌘⇧] move between the current tabset's tabs. Elsewhere the modifier is Ctrl. ⌘T, ⌘W, ⌘N and ⌘B are as before. No ⌘1–9.
 - **Fixed, not configurable:** there's one user. Every shortcut is a command in one registry (`renderer/src/commands.ts`), offered while the component that owns it is mounted, so project commands come and go with the workspace. The action palette lists the registry with each command's shortcut; commands without a shortcut (new session, terminal, git history) are in it too.
 - A focused widget that handles a key itself takes it first (the palettes' own ⌘W and ⌘⌫). Terminals and the code editor are the exceptions: they leave the app's shortcuts to the app, or on Linux Ctrl+Shift would go to the shell and Ctrl+Shift+[ would fold code.
 - The new tab page moves between its rows with the arrow keys.
@@ -193,6 +193,9 @@ Learnings from The Running Man carried over:
 - **New files are always real files in the project**, never unsaved buffers, so autosave, the tree, git, SQL connections and agents all work on them unchanged. One input, from ⌘N, the new tab page or the tree's context menu (which starts it in the clicked directory), takes either a path, creating any missing directories, or just an extension (`.sql`), which makes a scratch file named for the time in `.scratch/`. A scratch file is notes or a quick query; keeping it, committing it, or moving it to a proper path is up to the user, and whether `.scratch/` is ignored by git is up to each project. `./.env` names a dotfile.
 - Rename (which can also move) and Move to Trash from the tree's context menu. Open tabs and SQL connections follow a rename. Deleting moves to the OS trash rather than asking for confirmation.
 - Copy relative path (to the project root) and Copy absolute path from the context menus of the tree and the editor. A file outside the project only offers its absolute path.
+- **Find in the file** (⌘F) is CodeMirror's search with our own bar: match count, previous and next, and a replace row behind a disclosure. ⌘R opens it with the replace row, as WebStorm's does; the window's menu has no Reload or Force Reload, so the key reaches the editor. Typing selects the first match from the cursor. Text is literal unless Regex is on.
+- **Find in files** (⌘⇧F, as WebStorm) is a palette, like ⌘⇧O: one row per matching line, with a read-only preview of the highlighted one below; Enter opens the file with the match selected. It searches the same files ⌘⇧O lists, in main, line by line, skipping binary files and files over 1 MB, and stops at 1,000 matching lines. Each keystroke searches again and abandons the client's previous search. It starts from the editor's selection, or else the last query. No file mask, replace or multi-line matches yet.
+- Both share the Match case, Words and Regex toggles (⌥C, ⌥W, ⌥X). Words means neither end of a match falls between two word characters, so `.x` matches in `a.x`.
 
 ### Git
 

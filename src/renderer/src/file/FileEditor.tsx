@@ -17,6 +17,7 @@ import { runCommandKey } from '../commands'
 import { blameGutter } from './blame'
 import { changeMarkers } from './change-markers'
 import { changeFromDisk, editorTheme, loadLanguage } from './editor'
+import { findPanel } from './find-panel'
 import { followReveals } from './reveal'
 import { runGutter, setRunningTasks } from './run-gutter'
 
@@ -127,6 +128,7 @@ export function Editor({
           blameCompartment.of([]),
           onRunTask && isTaskFile(baseName(path)) ? runGutter(baseName(path), (name) => onRunTaskRef.current?.(name)) : [],
           basicSetup,
+          findPanel(),
           // The app's shortcuts before the editor's keymap, which on Linux folds code on Ctrl+Shift+[.
           Prec.highest(EditorView.domEventHandlers({ keydown: runCommandKey })),
           // After basicSetup, so its gutter sits between the line numbers and the text.

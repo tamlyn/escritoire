@@ -21,6 +21,12 @@ export function editorTheme(): Extension {
         '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection':
           { backgroundColor: 'color-mix(in oklch, var(--ring) 35%, transparent)' },
         '.cm-panels': { backgroundColor: 'var(--chrome)', color: 'var(--foreground)' },
+        '.cm-panels-top': { borderBottom: '1px solid var(--border)' },
+        '.cm-searchMatch': { backgroundColor: 'var(--search-match)', borderRadius: '2px' },
+        '.cm-searchMatch.cm-searchMatch-selected': {
+          backgroundColor: 'var(--search-match-selected)',
+          outline: '1px solid var(--search-match-outline)',
+        },
         '.cm-tooltip': { backgroundColor: 'var(--popover)', color: 'var(--popover-foreground)', border: '1px solid var(--border)' },
       },
       { dark: matchMedia('(prefers-color-scheme: dark)').matches },
