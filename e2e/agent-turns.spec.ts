@@ -74,6 +74,32 @@ test('shows a compact cache countdown with request and expiry times in a popover
     await page.getByTitle('Interrupt').click()
   }))
 
+test('moves straight between the context and cache popovers on hover', () =>
+  withSession(async ({ page }) => {
+    await send(page, 'cache-hit')
+    await expect(working(page)).toBeHidden()
+    const composer = page.getByPlaceholder(/Message agent/)
+    await composer.focus()
+    const contextButton = page.getByRole('button', { name: 'Context and plan usage' })
+    const cacheButton = page.getByRole('button', { name: 'Prompt cache', exact: true })
+    const context = page.getByRole('dialog').filter({ hasText: 'Context window' })
+    const cache = page.getByRole('dialog', { name: 'Prompt cache details' })
+
+    await contextButton.hover()
+    await expect(context).toBeVisible()
+    await cacheButton.hover()
+    await expect(context).toBeHidden()
+    await page.waitForTimeout(600)
+    await expect(cache).toBeVisible()
+
+    await contextButton.hover()
+    await expect(cache).toBeHidden()
+    await page.waitForTimeout(600)
+    await expect(context).toBeVisible()
+    // Hovering never takes focus from the composer.
+    await expect(composer).toBeFocused()
+  }))
+
 test('keeps the cache warm on request without clearing the composer draft', () =>
   withSession(async ({ page, agent }) => {
     await send(page, 'cache-hit')

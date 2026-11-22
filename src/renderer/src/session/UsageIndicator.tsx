@@ -56,6 +56,8 @@ export function UsageIndicator({ pointer, usage, limits }: { pointer: SessionPoi
         onPointerEnter={hover(true)}
         onPointerLeave={hover(false)}
         onOpenAutoFocus={(event) => event.preventDefault()}
+        // Focusing the trigger on close would dismiss the cache popover the pointer moved on to, and take focus from the composer.
+        onCloseAutoFocus={(event) => event.preventDefault()}
       >
         {usage && <ContextSection usage={usage} />}
         {limits && limits.length > 0 && (

@@ -65,6 +65,8 @@ export function CacheIndicator({ pointer, usage, working }: { pointer: SessionPo
         onPointerEnter={hover(true)}
         onPointerLeave={hover(false)}
         onOpenAutoFocus={(event) => event.preventDefault()}
+        // Focusing the trigger on close would dismiss the context popover the pointer moved on to, and take focus from the composer.
+        onCloseAutoFocus={(event) => event.preventDefault()}
       >
         <h3 className="text-foreground text-sm font-medium">Prompt cache</h3>
         <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-2">
