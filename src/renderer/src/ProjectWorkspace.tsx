@@ -236,8 +236,11 @@ function release(projectId: string, tabId: string, data: TabData): void {
 
 const classNames: WorkspaceClassNames = {
   tabset: 'flex h-full flex-col',
-  header: 'flex min-h-9 shrink-0 bg-chrome border-b',
-  tabList: 'flex min-w-0 flex-1 flex-wrap',
+  header: 'relative isolate flex min-h-9 shrink-0 bg-chrome border-b',
+  // The tab list is only as wide as its tabs, so the new tab button follows
+  // them. Its pseudo-element fills the header behind them, since the library
+  // takes drops and tabset drags only on the tab list.
+  tabList: 'flex min-w-0 flex-wrap after:absolute after:inset-0 after:-z-10',
   tabPanels: 'relative min-h-0 flex-1 bg-background',
   tabContent: 'h-full',
   toolbar: 'flex h-9 items-center px-1',
@@ -266,7 +269,7 @@ function TabHeader({ tab, props }: { tab: Tab; props: React.HTMLAttributes<HTMLE
         props.onAuxClick?.(event)
         if (event.button === 1) workspace?.closeTab(tab.id)
       }}
-      className={`${props.className ?? ''} group text-muted-foreground hover:text-foreground data-[tab-selected]:bg-background data-[tab-selected]:text-foreground text-ui flex h-9 max-w-56 cursor-default items-center gap-1.5 border-r pr-1 pl-3 data-[tab-selected]:-mb-px data-[tab-selected]:h-[37px] data-[tab-selected]:font-medium`}
+      className={`${props.className ?? ''} group relative before:absolute before:inset-y-1.5 before:hidden before:w-0.5 before:rounded-full before:bg-ring data-[drop-before]:before:-left-px data-[drop-before]:before:block data-[drop-after]:before:-right-px data-[drop-after]:before:block text-muted-foreground hover:text-foreground data-[tab-selected]:bg-background data-[tab-selected]:text-foreground text-ui flex h-9 max-w-56 cursor-default items-center gap-1.5 border-r pr-1 pl-3 data-[tab-selected]:-mb-px data-[tab-selected]:h-[37px] data-[tab-selected]:font-medium`}
     >
       {tab.data.kind === 'session' ? (
         <SessionTabLabel tab={tab} agentSessionId={tab.data.agentSessionId} />
