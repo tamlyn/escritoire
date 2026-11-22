@@ -65,12 +65,12 @@ test('keeps arguments as they were given', async () => {
   const { api } = connect()
 
   await api.writeFile('p', 'a.txt', 'text', undefined)
-  await api.changeSessionSettings(pointer, { model: null, effort: 'high' })
+  await api.changeSessionSettings(pointer, { model: null, effort: 'high' }, false)
 
   expect(handled).toEqual([
     // JSON would turn the undefined into null.
     { method: 'writeFile', args: ['p', 'a.txt', 'text'] },
-    { method: 'changeSessionSettings', args: [pointer, { model: null, effort: 'high' }] },
+    { method: 'changeSessionSettings', args: [pointer, { model: null, effort: 'high' }, false] },
   ])
 })
 

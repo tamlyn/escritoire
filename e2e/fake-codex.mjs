@@ -144,7 +144,19 @@ function handle(method, params) {
     case 'thread/turns/list':
       return { data: loadThread(params.threadId).turns, nextCursor: null }
     case 'model/list':
-      return { data: [{ model: 'other-model', displayName: 'Other model', supportedReasoningEfforts: [] }], nextCursor: null }
+      return {
+        data: [
+          {
+            model: 'fake-model',
+            displayName: 'Fake model',
+            isDefault: true,
+            supportedReasoningEfforts: ['low', 'medium', 'high'].map((reasoningEffort) => ({ reasoningEffort, description: '' })),
+            defaultReasoningEffort: 'medium',
+          },
+          { model: 'other-model', displayName: 'Other model', supportedReasoningEfforts: [] },
+        ],
+        nextCursor: null,
+      }
     case 'skills/list':
       return { data: [] }
     case 'account/rateLimits/read':

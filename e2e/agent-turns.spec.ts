@@ -188,6 +188,35 @@ test('says why a turn failed, and carries on in the same conversation', () =>
     expect(retried!.threadId).toBe(failed!.threadId)
   }))
 
+test('remembers the model and effort chosen for future sessions, unless Shift was held', () =>
+  withSession(async ({ page, agent }) => {
+    const model = page.getByTitle('Model', { exact: true }).filter({ visible: true })
+    await expect(model).toHaveText('Fake model· Medium')
+    await send(page, 'first')
+    await expect(page.getByText('Reply to: first')).toBeVisible()
+
+    await model.click()
+    const effort = page.getByRole('menuitem', { name: /Effort/ })
+    await expect(effort).toContainText('Effort (Medium)')
+    await effort.focus()
+    await page.keyboard.press('ArrowRight')
+    await expect(effort).toContainText('Effort (High)')
+    await page.getByRole('radio', { name: 'Low' }).click({ modifiers: ['Shift'] })
+    await expect(effort).toContainText('Effort (Low)')
+    await page.getByRole('menuitemradio', { name: 'Other model' }).click({ modifiers: ['Shift'] })
+    await expect(model).toHaveText('Other model')
+    await send(page, 'second')
+    await expect(page.getByText('Reply to: second')).toBeVisible()
+
+    await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+t`)
+    await page.getByRole('button', { name: 'New Codex session' }).click()
+    await expect(model).toHaveText('Fake model· High')
+    await send(page, 'third')
+    await expect(page.getByText('Reply to: third')).toBeVisible()
+
+    expect(agent.turnStarts().map((turn) => turn.effort)).toEqual(['medium', null, 'high'])
+  }))
+
 test('restores a conversation after a restart, resuming the agent only when sent a message', async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'escritoire-e2e-')))
   const project = join(root, 'project')
@@ -221,7 +250,7 @@ test('restores a conversation after a restart, resuming the agent only when sent
   const [before, after] = agent.turnStarts()
   expect(after!.threadId).toBe(before!.threadId)
   for (const turn of [before, after]) {
-    expect(turn).toMatchObject({ approvalPolicy: 'never', model: 'other-model' })
+    expect(turn).toMatchObject({ approvalPolicy: 'never', model: 'other-model', effort: null })
   }
   await expect(page.getByTitle('Permission mode (Shift+Tab)')).toHaveText('Full access')
   await expect(page.getByTitle('Model', { exact: true })).toHaveText('Other model')

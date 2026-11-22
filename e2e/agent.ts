@@ -4,7 +4,7 @@ import { expect, type Page } from '@playwright/test'
 
 const modifier = process.platform === 'darwin' ? 'Meta' : 'Control'
 
-type TurnStart = { threadId: string; approvalPolicy?: string; input: { type: string; text?: string }[] }
+type TurnStart = { threadId: string; approvalPolicy?: string; effort?: string | null; input: { type: string; text?: string }[] }
 
 /** The scripted agent in `fake-codex.mjs`, keeping its threads in `dir`. */
 export function fakeCodex(dir: string) {

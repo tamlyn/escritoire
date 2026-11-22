@@ -1,4 +1,4 @@
-import type { AgentEvent, ContextUsage, Item, PlanLimit, RequestResponse, SessionSettings, SlashCommand, ToolStatus, UserInput } from '../../shared/agent'
+import type { AgentEvent, ContextUsage, Item, ModelChoice, PlanLimit, RequestResponse, SessionSettings, SlashCommand, ToolStatus, UserInput } from '../../shared/agent'
 import type { ReviewStartResponse } from './codex-protocol/v2/ReviewStartResponse'
 import type { ReviewTarget } from './codex-protocol/v2/ReviewTarget'
 import type { SkillMetadata } from './codex-protocol/v2/SkillMetadata'
@@ -108,7 +108,10 @@ export const codexAdapter: AgentAdapter = {
       cursor = page.nextCursor
     } while (cursor)
     return {
-      models: [{ id: 'default', label: 'Default', efforts: models.find((m) => m.isDefault)?.supportedReasoningEfforts.map((e) => e.reasoningEffort) ?? [] }, ...models.map((m) => ({ id: m.model, label: m.displayName, description: m.description, efforts: m.supportedReasoningEfforts.map((e) => e.reasoningEffort) }))],
+      models: [
+        { ...efforts(models.find((m) => m.isDefault)), id: 'default', label: 'Default' },
+        ...models.map((m) => ({ ...efforts(m), id: m.model, label: m.displayName, description: m.description })),
+      ],
       permissionModes: Object.entries(modes).map(([id, { label }]) => ({ id, label })),
     }
   }),
@@ -152,6 +155,11 @@ async function listSkills(rpc: CodexRpc, cwd: string): Promise<SkillMetadata[]> 
 function parseCommand(text: string): { name: string; args: string } | null {
   const match = /^\/(\S+)\s*([\s\S]*)$/.exec(text)
   return match ? { name: match[1]!, args: match[2]!.trim() } : null
+}
+
+function efforts(model: ModelListResponse['data'][number] | undefined): Pick<ModelChoice, 'efforts' | 'defaultEffort'> {
+  if (!model) return { efforts: [] }
+  return { efforts: model.supportedReasoningEfforts.map((e) => e.reasoningEffort), defaultEffort: model.defaultReasoningEffort }
 }
 
 function resolvedSettings(result: Resolved): SessionSettings {

@@ -92,6 +92,8 @@ export type ModelChoice = {
   /** The model an alias such as `default` currently stands for. */
   resolvedId?: string
   efforts: string[]
+  /** The effort a session starts with, when the agent says. */
+  defaultEffort?: string
 }
 
 /** A command the composer offers after `/`. Messages starting `/name` run it. */

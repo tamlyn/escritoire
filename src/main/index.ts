@@ -31,6 +31,7 @@ import { ProjectLifecycle } from './project-lifecycle'
 import { ProjectStore } from './project-store'
 import { SessionManager } from './session-manager'
 import { SessionStore } from './session-store'
+import { SettingDefaults } from './setting-defaults'
 import { watchPresence } from './presence'
 import type { PushSubscription } from '../shared/remote'
 import { PushSender } from './push'
@@ -96,7 +97,7 @@ function createApi(client: Client, { clients, remote, push, projects, sessions, 
     interrupt: (session) => sessions.interrupt(session),
     getSettingChoices: (projectId, agent) => sessions.settingChoices(projectId, agent),
     listCommands: (projectId, agent) => sessions.listCommands(projectId, agent),
-    changeSessionSettings: (session, settings) => sessions.changeSettings(session, settings),
+    changeSessionSettings: (session, settings, asDefault) => sessions.changeSettings(session, settings, asDefault),
     stopTask: (session, taskId) => sessions.stopTask(session, taskId),
     refreshUsage: (session) => sessions.refreshUsage(session),
     respond: async (session, requestId, response) => sessions.respond(session, requestId, response),
@@ -296,6 +297,7 @@ void app.whenReady().then(async () => {
   const projects = await ProjectStore.load(dataDir)
   const sessionStore = new SessionStore(dataDir)
   const contextWindows = await ContextWindows.load(join(dataDir, 'context-windows.json'))
+  const settingDefaults = await SettingDefaults.load(join(dataDir, 'setting-defaults.json'))
   await shellEnv
   // Its dependencies are only used once a client connects, after they exist.
   const clients = new Clients({
@@ -347,6 +349,7 @@ void app.whenReady().then(async () => {
   const sessions = new SessionManager({
     adapters: { claude: createClaudeAdapter(contextWindows), codex: codexAdapter },
     store: sessionStore,
+    defaults: settingDefaults,
     projectPath: (projectId) => projects.getProject(projectId).path,
     ideConnection: (projectId) => ideServer.connection(projectId),
     send,

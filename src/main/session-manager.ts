@@ -20,6 +20,7 @@ import type { Events } from '../shared/api'
 import type { AgentAdapter, AgentRun } from './agents/types'
 import type { IdeServerConnection } from './ide-server'
 import type { SessionRecord, SessionStore } from './session-store'
+import { SettingDefaults } from './setting-defaults'
 import { Work } from './work'
 
 type ProjectWork = { work: Work; loading: Map<string, Promise<Session>> }
@@ -48,6 +49,8 @@ type Session = {
 export type SessionManagerDeps = {
   adapters: Partial<Record<AgentKind, AgentAdapter>>
   store: SessionStore
+  /** The model and effort new sessions start with. */
+  defaults?: SettingDefaults
   projectPath: (projectId: string) => string
   /** The IDE's MCP server for a project, given to every session the IDE starts. */
   ideConnection?: (projectId: string) => IdeServerConnection
@@ -79,9 +82,11 @@ export class SessionManager {
   private readonly commands = new Map<string, CommandList>()
   private closed = false
   private readonly now: () => number
+  private readonly defaults: SettingDefaults
 
   constructor(private readonly deps: SessionManagerDeps) {
     this.now = deps.now ?? Date.now
+    this.defaults = deps.defaults ?? SettingDefaults.inMemory()
   }
 
   private adapter(kind: AgentKind): AgentAdapter {
@@ -141,7 +146,7 @@ export class SessionManager {
         this.deps.projectPath(projectId),
         this.deps.ideConnection?.(projectId),
       )
-      await this.deps.store.put(projectId, agentSessionId, newRecord(agent))
+      await this.deps.store.put(projectId, agentSessionId, { ...newRecord(agent), settings: this.defaults.get(agent) })
       return { agent, agentSessionId }
     })
   }
@@ -304,9 +309,10 @@ export class SessionManager {
 
   /**
    * Applies the user's choice to the current run, if there is one, and
-   * remembers it for the next. A choice the run refuses is forgotten.
+   * remembers it for the next, and for new sessions if it's to be the default.
+   * A choice the run refuses is forgotten.
    */
-  async changeSettings(pointer: SessionPointer, settings: SessionSettings): Promise<void> {
+  async changeSettings(pointer: SessionPointer, settings: SessionSettings, asDefault = false): Promise<void> {
     const session = this.get(pointer)
     try {
       await session.run?.changeSettings(settings)
@@ -318,6 +324,7 @@ export class SessionManager {
       return
     }
     this.rememberSettings(session, settings)
+    if (asDefault) this.defaults.remember(pointer.agent, settings)
     this.apply(session, { type: 'settingsChanged', settings })
   }
 
@@ -512,7 +519,10 @@ export class SessionManager {
     const cwd = this.deps.projectPath(projectId)
     const record =
       (await this.deps.store.get(projectId, pointer.agentSessionId)) ?? newRecord(pointer.agent)
-    const settings = record.settings ?? {}
+    // Sessions from before efforts were always chosen take the latest choice.
+    const effort = record.settings?.effort ?? this.defaults.get(pointer.agent).effort
+    const settings = { ...record.settings, ...(effort ? { effort } : {}) }
+    record.settings = settings
     let view: SessionView
     try {
       const history = await this.adapter(pointer.agent).loadHistory(pointer.agentSessionId, cwd)

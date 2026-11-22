@@ -80,7 +80,8 @@ export type Api = {
   getSettingChoices(projectId: string, agent: AgentKind): Promise<SettingChoices>
   listCommands(projectId: string, agent: AgentKind): Promise<SlashCommand[]>
   /** Only the settings given change; `null` goes back to the agent's default. */
-  changeSessionSettings(session: SessionPointer, settings: SessionSettings): Promise<void>
+  /** As the default for new sessions too, if `asDefault`. */
+  changeSessionSettings(session: SessionPointer, settings: SessionSettings, asDefault: boolean): Promise<void>
   stopTask(session: SessionPointer, taskId: string): Promise<void>
   /** Starts the session's agent if it isn't running, to ask how full the context is and how much of the plan is used. */
   refreshUsage(session: SessionPointer): Promise<void>

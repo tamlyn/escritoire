@@ -16,9 +16,10 @@ function fakeAdapter(history: Item[] = []) {
     refuseSettings: boolean
     usageRefreshes: number
   }[] = []
+  let created = 0
   const adapter: AgentAdapter = {
     kind: 'claude',
-    createSession: async () => 'session-1',
+    createSession: async () => `session-${++created}`,
     forkSession: async () => 'fork-1',
     listSessions: async () => [],
     loadHistory: async () => ({ items: history }),
@@ -432,6 +433,24 @@ describe('SessionManager', () => {
     })
     const reopened = await restarted.openSession('p1', pointer)
     expect(reopened.view.settings).toEqual({ model: null, permissionMode: 'plan' })
+  })
+
+  it('starts new sessions with the model and effort last chosen for future sessions too', async () => {
+    const { manager, runs } = await setup()
+    const first = await manager.createSession('p1', 'claude')
+    const older = await manager.createSession('p1', 'claude')
+    await manager.openSession('p1', first)
+    await manager.changeSettings(first, { model: 'opus', effort: 'high', permissionMode: 'plan' }, true)
+    await manager.changeSettings(first, { model: 'haiku', effort: 'low' })
+
+    const next = await manager.createSession('p1', 'claude')
+    await manager.openSession('p1', next)
+    manager.sendMessage(next, say('Hi'))
+    // A session saved before efforts were always chosen keeps its model.
+    await manager.openSession('p1', older)
+    manager.sendMessage(older, say('Hi'))
+
+    expect(runs.map((run) => run.options.settings)).toEqual([{ model: 'opus', effort: 'high' }, { effort: 'high' }])
   })
 
   it('starts the run to refresh usage, and keeps it for the next message', async () => {

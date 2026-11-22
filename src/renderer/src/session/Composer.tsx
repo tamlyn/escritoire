@@ -210,7 +210,7 @@ export function Composer({
       const mode = nextPermissionMode(choices, settings.permissionMode)
       if (mode) {
         event.preventDefault()
-        void api.changeSessionSettings(pointer, { permissionMode: mode })
+        void api.changeSessionSettings(pointer, { permissionMode: mode }, false)
       }
     }
   }
