@@ -96,7 +96,7 @@ function Screen({ title, indicator, onBack, children }: {
 }) {
   return (
     <div className="flex h-full flex-col">
-      <div className="flex h-11 shrink-0 items-center gap-1.5 border-b pr-3">
+      <div className="bg-chrome flex h-11 shrink-0 items-center gap-1.5 border-b pr-3 text-[15px]">
         <button type="button" aria-label="Back" onClick={onBack} className="flex size-11 shrink-0 items-center justify-center">
           <ChevronLeftIcon className="size-5" />
         </button>
@@ -160,14 +160,14 @@ function pastSessionsOf(projectId: string): Promise<PastSession[]> {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="flex flex-col gap-1">
-      <h2 className="text-muted-foreground mb-1 px-2 text-xs font-medium">{title}</h2>
+    <section className="flex flex-col">
+      <h2 className="text-muted-foreground mb-1 px-2.5 text-[13px] font-medium">{title}</h2>
       {children}
     </section>
   )
 }
 
-const rowButton = 'hover:bg-accent flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-2.5 text-left'
+const rowButton = 'hover:bg-accent flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-sm px-2.5 text-left'
 
 function TerminalRow({ title, onOpen }: { title: string; onOpen: () => void }) {
   return (
@@ -187,7 +187,7 @@ function OpenRow({ title, onClose, children }: { title: string; onClose: () => v
         type="button"
         aria-label={`Close ${title}`}
         onClick={onClose}
-        className="text-muted-foreground hover:bg-accent flex size-11 shrink-0 items-center justify-center rounded-md"
+        className="text-muted-foreground hover:bg-accent flex size-11 shrink-0 items-center justify-center rounded-sm"
       >
         <XIcon className="size-4" />
       </button>
@@ -239,7 +239,7 @@ function ProjectHome({ projectId, onOpen }: { projectId: string; onOpen: Show })
   }
 
   return (
-    <div className="flex h-full flex-col gap-6 overflow-y-auto p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+    <div className="flex h-full flex-col gap-6 overflow-y-auto px-2 py-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] text-[15px]">
       {(loaded.length > 0 || started.length > 0) && (
         <Section title="Open">
           {loaded.map((session) => (
@@ -260,15 +260,15 @@ function ProjectHome({ projectId, onOpen }: { projectId: string; onOpen: Show })
           })}
         </Section>
       )}
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col">
         <NewSessionButton agent="claude" starting={starting} onStart={(agent) => void start(agent)} />
         <NewSessionButton agent="codex" starting={starting} onStart={(agent) => void start(agent)} />
         <NewTerminalButton onClick={startTerminal} />
         <button type="button" onClick={() => onOpen(files)} className={startButton}>
-          <FolderTreeIcon className="text-muted-foreground size-5" />
-          <span className="font-medium">Files</span>
+          <FolderTreeIcon className="text-muted-foreground size-4" />
+          <span>Files</span>
         </button>
-        {startError && <p role="alert" className="text-destructive px-1 text-sm">{startError}</p>}
+        {startError && <p role="alert" className="text-destructive px-2.5 pt-1 text-sm">{startError}</p>}
       </div>
       {terminals.length > 0 && (
         <Section title="Desktop terminals">

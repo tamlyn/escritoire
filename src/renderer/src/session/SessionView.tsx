@@ -54,7 +54,7 @@ export function SessionView({ pointer, shown, autoFocus = false, onMoved, onOpen
           onEdit={working || view.requests.length > 0 ? undefined : (itemId, text) => api.editMessage(pointer, itemId, text)}
         />
       </FileLinksProvider>
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-2 px-4 pb-4 compact:px-2 compact:pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-2 px-4 pb-2.5 compact:pr-2 compact:pl-4 compact:pb-[max(0.25rem,env(safe-area-inset-bottom))]">
         <StatusLine status={view.status} error={view.error} />
         <BackgroundTasks tasks={view.tasks} pointer={pointer} />
         <Requests requests={view.requests} pointer={pointer} />

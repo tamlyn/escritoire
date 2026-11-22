@@ -36,13 +36,13 @@ export function Inbox({ projects, onSelect }: Props) {
       <DropdownMenuTrigger
         aria-label={sessions.length === 0 ? 'Inbox' : `${sessions.length} ${sessions.length === 1 ? 'session needs' : 'sessions need'} you`}
         title="Sessions that need you"
-        className="hover:bg-accent text-muted-foreground hover:text-foreground flex items-center gap-1.5 rounded-md px-2 py-1 text-xs [-webkit-app-region:no-drag]"
+        className="hover:bg-accent text-muted-foreground hover:text-foreground data-[state=open]:bg-selected data-[state=open]:text-foreground flex h-7 min-w-7 items-center justify-center gap-1.5 rounded-sm px-1.5 text-xs [-webkit-app-region:no-drag]"
       >
         {sessions.length === 0 ? (
           <BellIcon className="size-3.5" />
         ) : (
           <>
-            <span className={`size-2 rounded-full ${waiting ? statusDotColors.waiting : statusDotColors.unread}`} />
+            <span className={`size-1.5 rounded-full ${waiting ? statusDotColors.waiting : statusDotColors.unread}`} />
             {sessions.length}
           </>
         )}

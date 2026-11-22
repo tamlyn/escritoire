@@ -38,8 +38,8 @@ export function NewTabPage({ tab }: { tab: Tab }) {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto flex max-w-xl flex-col gap-8 px-6 py-16">
-        <div className="flex flex-col gap-2">
+      <div className="mx-auto flex max-w-[540px] flex-col gap-7 px-6 py-16">
+        <div className="flex flex-col gap-0.5">
           <NewSessionButton agent="claude" starting={starting} onStart={(agent) => void start(agent)} autoFocus />
           <NewSessionButton agent="codex" starting={starting} onStart={(agent) => void start(agent)} />
           <NewTerminalButton onClick={() => replaceWith(createTerminalTab())} />
@@ -48,16 +48,16 @@ export function NewTabPage({ tab }: { tab: Tab }) {
             onClick={() => fileActions.newFile('', (path) => replaceWith(createFileTab(path)))}
             className={startButton}
           >
-            <FilePlusIcon className="text-muted-foreground size-5" />
-            <span className="font-medium">New file</span>
-            <span className="text-muted-foreground ml-auto text-xs">{modifierLabel}N</span>
+            <FilePlusIcon className="text-muted-foreground size-4" />
+            <span>New file</span>
+            <span className="text-muted-foreground ml-auto text-xs font-normal">{modifierLabel}N</span>
           </button>
-          {startError && <p role="alert" className="text-destructive px-1 text-sm">{startError}</p>}
+          {startError && <p role="alert" className="text-destructive px-2.5 pt-1 text-sm">{startError}</p>}
         </div>
 
         {pastSessions && pastSessions.length > 0 && (
-          <section className="flex flex-col gap-1">
-            <h2 className="text-muted-foreground mb-1 px-2 text-xs font-medium">Recent sessions</h2>
+          <section className="flex flex-col gap-0.5">
+            <h2 className="text-muted-foreground mb-1.5 px-2.5 text-xs font-medium">Recent sessions</h2>
             {pastSessions.map((session) => (
               <PastSessionRow key={session.agentSessionId} session={session} onOpen={() => replaceWith(createSessionTab(session, session.title))} />
             ))}

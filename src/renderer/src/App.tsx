@@ -58,7 +58,7 @@ export function App() {
   return (
     <div className="flex h-full flex-col">
       <header
-        className={`bg-chrome flex h-10 shrink-0 items-center border-b px-2 [-webkit-app-region:drag] compact:box-content compact:pt-[env(safe-area-inset-top)] ${isDesktop && isMac ? 'pl-20' : ''}`}
+        className={`bg-chrome text-ui flex h-10 shrink-0 items-center gap-0.5 border-b px-2 [-webkit-app-region:drag] compact:box-content compact:pt-[env(safe-area-inset-top)] ${isDesktop && isMac ? 'pl-20' : ''}`}
         // Clear of the window controls drawn over the header on Windows and Linux.
         style={isDesktop ? { paddingRight: 'calc(100% - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100%) + 0.5rem)' } : undefined}
       >
@@ -68,7 +68,7 @@ export function App() {
           type="button"
           onClick={() => setSwitcherOpen(true)}
           title={`Switch project or open a file (${modifierLabel}O)`}
-          className="hover:bg-accent flex items-center gap-1.5 rounded-md px-2.5 py-1 font-medium [-webkit-app-region:no-drag]"
+          className="hover:bg-accent flex h-7 items-center gap-1.5 rounded-sm px-2 font-medium [-webkit-app-region:no-drag]"
         >
           {activeProject?.name ?? 'No project'}
           <ChevronsUpDownIcon className="text-muted-foreground size-3.5" />

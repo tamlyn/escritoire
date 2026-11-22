@@ -15,7 +15,7 @@ export function GitStatusRow({ onOpen }: { onOpen: () => void }) {
       type="button"
       onClick={onOpen}
       title="Show changes and history"
-      className="hover:bg-accent flex shrink-0 items-center gap-2 border-t px-3 py-2 text-left text-sm"
+      className="hover:bg-accent text-ui flex h-8 shrink-0 items-center gap-2 border-t px-3 text-left"
     >
       <GitBranchIcon className="text-muted-foreground size-3.5 shrink-0" />
       <span className="truncate">{summary.branch ?? 'Detached HEAD'}</span>

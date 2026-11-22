@@ -9,26 +9,35 @@
 
 :root {
   color-scheme: light dark;
-  --radius: 0.5rem;
+  /* The desk (frame) is lightly tinted; the paper (tab content) is plain. */
   --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --foreground: oklch(0.22 0.01 165);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
+  --popover-foreground: oklch(0.22 0.01 165);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chrome: oklch(0.97 0 0);
+  --card-foreground: oklch(0.22 0.01 165);
+  --secondary: oklch(0.95 0.008 165);
+  --secondary-foreground: oklch(0.22 0.01 165);
+  --primary: oklch(0.5 0.09 160);
+  --primary-foreground: oklch(1 0 0);
+  --muted: oklch(0.955 0.006 165);
+  --muted-foreground: oklch(0.5 0.012 165);
+  /* shadcn's name for hover: ink over whatever surface is beneath, so it shows on the desk too. */
+  --accent: oklch(0.22 0.01 165 / 6%);
+  --accent-foreground: oklch(0.22 0.01 165);
+  --selected: oklch(0.22 0.01 165 / 10%);
+  --destructive: oklch(0.55 0.19 27);
+  --border: oklch(0.9 0.008 165);
+  --input: oklch(0.9 0.008 165);
+  --ring: oklch(0.5 0.09 160);
+  --chrome: oklch(0.962 0.007 165);
+  --menu-edge: oklch(0.22 0.01 165 / 18%);
+  --menu-shadow: inset 0 1px 0 transparent, 0 1px 2px oklch(0.2 0.02 165 / 14%), 0 10px 28px -6px oklch(0.2 0.02 165 / 28%);
+  --dialog-shadow: 0 2px 4px oklch(0.2 0.02 165 / 12%), 0 24px 64px -12px oklch(0.2 0.02 165 / 38%);
+  --git-modified: #0033b3;
+  --git-added: #067d17;
+  --git-untracked: #b23247;
+  --git-conflicted: #de1b2e;
   --syntax-keyword: oklch(0.5 0.17 300);
   --syntax-string: oklch(0.5 0.13 150);
   --syntax-number: oklch(0.55 0.15 50);
@@ -40,25 +49,33 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: oklch(0.18 0 0);
-    --foreground: oklch(0.93 0 0);
-    --popover: oklch(0.22 0 0);
-    --popover-foreground: oklch(0.93 0 0);
-    --card: oklch(0.2 0 0);
-    --card-foreground: oklch(0.93 0 0);
-    --secondary: oklch(0.27 0 0);
-    --secondary-foreground: oklch(0.93 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.25 0 0);
-    --muted-foreground: oklch(0.65 0 0);
-    --accent: oklch(0.27 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 8%);
+    --background: oklch(0.205 0.003 165);
+    --foreground: oklch(0.93 0.005 165);
+    --popover: oklch(0.25 0.005 165);
+    --popover-foreground: oklch(0.93 0.005 165);
+    --card: oklch(0.22 0.004 165);
+    --card-foreground: oklch(0.93 0.005 165);
+    --secondary: oklch(0.25 0.006 165);
+    --secondary-foreground: oklch(0.93 0.005 165);
+    --primary: oklch(0.74 0.11 160);
+    --primary-foreground: oklch(0.2 0.03 160);
+    --muted: oklch(0.24 0.005 165);
+    --muted-foreground: oklch(0.68 0.01 165);
+    --accent: oklch(1 0 0 / 6%);
+    --accent-foreground: oklch(0.93 0.005 165);
+    --selected: oklch(1 0 0 / 10%);
+    --destructive: oklch(0.7 0.17 25);
+    --border: oklch(1 0 0 / 9%);
     --input: oklch(1 0 0 / 12%);
-    --ring: oklch(0.556 0 0);
-    --chrome: oklch(0.15 0 0);
+    --ring: oklch(0.74 0.11 160);
+    --chrome: oklch(0.17 0.006 165);
+    --menu-edge: oklch(1 0 0 / 14%);
+    --menu-shadow: inset 0 1px 0 oklch(1 0 0 / 7%), 0 1px 2px oklch(0 0 0 / 40%), 0 12px 32px -6px oklch(0 0 0 / 60%);
+    --dialog-shadow: 0 2px 4px oklch(0 0 0 / 40%), 0 24px 64px -12px oklch(0 0 0 / 70%);
+    --git-modified: #70aeff;
+    --git-added: #73bd79;
+    --git-untracked: #e88f89;
+    --git-conflicted: #de6a66;
     --syntax-keyword: oklch(0.75 0.12 300);
     --syntax-string: oklch(0.78 0.12 150);
     --syntax-number: oklch(0.8 0.11 60);
@@ -70,10 +87,17 @@
 }
 
 @theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  /* Rows and chips; inputs and menus; composer and dialogs. */
+  --radius-sm: 4px;
+  --radius: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 10px;
+  /* The frame (tree, tabs, menus) is set a size below the reading text. */
+  --text-ui: 13px;
+  --text-ui--line-height: 20px;
+  --shadow-menu: var(--menu-shadow);
+  --shadow-dialog: var(--dialog-shadow);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-popover: var(--popover);
@@ -88,11 +112,23 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-selected: var(--selected);
   --color-destructive: var(--destructive);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-chrome: var(--chrome);
+  --color-menu-edge: var(--menu-edge);
+  --color-git-modified: var(--git-modified);
+  --color-git-added: var(--git-added);
+  --color-git-untracked: var(--git-untracked);
+  --color-git-conflicted: var(--git-conflicted);
+  --animate-live: live 1.6s ease-in-out infinite;
+  @keyframes live {
+    50% {
+      opacity: 0.35;
+    }
+  }
 }
 
 @layer base {
@@ -107,7 +143,12 @@
   }
   body {
     @apply bg-background text-foreground overflow-hidden text-sm antialiased select-none;
-    font-family: system-ui, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animate-live {
+      animation: none;
+    }
   }
 }
 
@@ -187,7 +228,7 @@
 }
 
 .cm-run-task-running {
-  color: var(--color-emerald-500);
+  color: var(--primary);
 }
 
 .cm-blame-gutter {

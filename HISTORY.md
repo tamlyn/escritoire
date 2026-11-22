@@ -184,7 +184,7 @@ Learnings from The Running Man carried over:
 
 ### Git
 
-- **A summary, not detailed review:** which files changed (staged, unstaged, untracked) and how much, per project. The file tree colours changed files and the directories containing them, and ignored files and directories, in JetBrains' Islands theme colours.
+- **A summary, not detailed review:** which files changed (staged, unstaged, untracked) and how much, per project. The file tree colours changed files and the directories containing them in JetBrains' Islands theme colours, and greys out ignored files and directories.
 - Commit history as a graph across local and remote branches and tags, with branch heads and tags labelled. A commit opens to show its message and files, each with its diff.
 - Drill into a file's diff, staged, unstaged or in a commit.
 - Switch branch, pull and push. These use the user's own git configuration and credentials; a prompt for credentials fails rather than waiting.
@@ -243,6 +243,16 @@ The first step towards using Escritoire from a phone (see [Remote access](PLAN.m
 - **Images are downscaled on the client** before sending (`renderer/src/session/images.ts`), since phone photos are large and Claude scales them down anyway.
 - **Electron stays at the edge.** API methods don't depend on native dialogs, the dock or a local window, so every method works from a remote client.
 - **Links to a process's port** point at the host's localhost, so they are plain text on a remote client.
+
+### Design language
+
+- **Desk and paper.** The frame you navigate by (header, file tree, tab strip, status row) is the desk: lightly green-tinted, set at 13px. Tab content is the paper: plain, at 14px. The user's messages sit on a desk-tinted well; the agent's on paper.
+- **One colour.** Leather green (`primary`) means primary or live: the send button, focus rings, running processes and working sessions, a warm cache, and the highlighted item in menus and the switcher. Everything else is ink at two strengths. Session attention (waiting, unread) and git status keep their own colours.
+- **Hover and selection** are ink over whatever surface is beneath (`accent` at 6%, `selected` at 10%), so they show on the desk as well as the paper.
+- **Shape:** rows are 26px on the desk, 32px on the paper and 44px on a phone. Radii are 4px for rows and chips, 6px for inputs and menus, 10px for dialogs.
+- **Markers:** activity groups, tool calls and statuses share one 6px dot: grey when done, pulsing green while live, red on failure.
+- **The composer is the next line of the page:** a rule across the text column with no box or focus ring.
+- **Menus and dialogs are lifted off the desk:** a firm edge and a two-layer shadow.
 
 ## Slices built
 

@@ -1,4 +1,4 @@
-import { FileIcon, FolderIcon, FolderOpenIcon, LoaderCircleIcon } from 'lucide-react'
+import { FileIcon, FolderIcon, FolderOpenIcon } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import type { AppState, Project } from '../../shared/api'
 import { api, errorMessage } from './api'
@@ -98,7 +98,7 @@ export function ProjectSwitcher(props: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="top-[20%] translate-y-0 overflow-hidden p-0" showCloseButton={false}>
+      <DialogContent className="top-[15%] translate-y-0 overflow-hidden p-0 sm:max-w-[620px]" showCloseButton={false}>
         <DialogTitle className="sr-only">Switch project or open a file</DialogTitle>
         <DialogDescription className="sr-only">
           Choose a project or a file in this one, or type a path to open a new project
@@ -177,16 +177,19 @@ export function ProjectSwitcher(props: Props) {
               </>
             )}
           </CommandList>
-          <div className="text-muted-foreground compact:hidden flex gap-4 border-t px-3 py-2 text-xs">
+          <div className="bg-chrome text-muted-foreground compact:hidden flex flex-wrap gap-x-5 gap-y-1.5 border-t px-4 py-2.5 text-xs">
             {isPath ? (
-              <span>Tab to complete · Enter to open</span>
+              <>
+                <Hint keys={['Tab']}>Complete</Hint>
+                <Hint keys={['↵']}>Open</Hint>
+              </>
             ) : isFileHighlighted ? (
-              <span>Enter to open</span>
+              <Hint keys={['↵']}>Open</Hint>
             ) : (
               <>
-                <span>Enter to switch</span>
-                <span>{modifierLabel}W to close</span>
-                <span>{modifierLabel}⌫ to remove from list</span>
+                <Hint keys={['↵']}>Switch</Hint>
+                <Hint keys={[modifierLabel, 'W']}>Close project</Hint>
+                <Hint keys={[modifierLabel, '⌫']}>Remove from list</Hint>
               </>
             )}
           </div>
@@ -207,7 +210,7 @@ type ProjectItemProps = {
 function ProjectItem({ project, positions, activity, isActive, onSelect }: ProjectItemProps) {
   return (
     <CommandItem value={project.path} onSelect={onSelect}>
-      <span className={project.isOpen ? '' : 'text-muted-foreground'}>{project.name}</span>
+      <span className={project.isOpen ? 'font-medium' : 'text-muted-foreground font-medium'}>{project.name}</span>
       <span className="text-muted-foreground truncate text-xs">
         <Highlighted text={project.path} positions={positions} />
       </span>
@@ -234,13 +237,26 @@ function ActivityIndicators({ activity }: { activity: ProjectActivity }) {
       {dot(activity.unread, statusDotColors.unread, 'unread')}
       {activity.working > 0 && (
         <span role="img" aria-label={`${activity.working} working`} className="flex items-center gap-1">
-          <LoaderCircleIcon className="size-3 animate-spin" />
+          <span className="bg-primary in-data-[selected=true]:bg-primary-foreground animate-live size-2 rounded-full" />
           {activity.working > 1 && activity.working}
         </span>
       )}
-      {dot(activity.running, 'bg-emerald-500', 'running')}
+      {dot(activity.running, 'bg-primary in-data-[selected=true]:bg-primary-foreground', 'running')}
       {dot(activity.failed, 'bg-destructive', 'crashed')}
     </>
+  )
+}
+
+function Hint({ keys, children }: { keys: string[]; children: string }) {
+  return (
+    <span className="flex items-center gap-1.5">
+      {keys.map((key) => (
+        <kbd key={key} className="bg-background text-foreground inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-sm border px-1 font-sans text-[11px]">
+          {key.replace(/\+$/, '')}
+        </kbd>
+      ))}
+      {children}
+    </span>
   )
 }
 
@@ -257,7 +273,7 @@ function Highlighted({ text, positions }: { text: string; positions: Set<number>
   })
   return runs.map((run, index) =>
     run.matched ? (
-      <mark key={index} className="bg-foreground text-background rounded-[2px]">
+      <mark key={index} className="text-foreground in-data-[selected=true]:text-primary-foreground bg-transparent font-semibold">
         {run.text}
       </mark>
     ) : (

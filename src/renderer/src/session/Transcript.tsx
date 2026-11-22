@@ -16,7 +16,7 @@ import {
 } from '@/components/ai-elements/tool'
 import { cn } from '@/lib/utils'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { BrainIcon, ChevronRightIcon, LoaderCircleIcon, PencilIcon } from 'lucide-react'
+import { ChevronRightIcon, PencilIcon } from 'lucide-react'
 import { type ReactNode, useState } from 'react'
 import type { ImageAttachment, Item, ToolView } from '../../../shared/agent'
 import { fileLinkProps } from './FileLinks'
@@ -112,17 +112,13 @@ function ActivityRow({ live, expandable = false, children }: { live: boolean; ex
   return (
     <div
       className={cn(
-        'text-muted-foreground -mx-1 flex items-center gap-2 rounded px-1 py-0.5 text-left text-sm',
-        expandable && 'hover:bg-muted/60 hover:text-foreground',
+        'text-muted-foreground text-ui -mx-1.5 flex h-[26px] items-center gap-2 rounded-sm px-1.5 text-left',
+        expandable && 'hover:bg-accent hover:text-foreground',
       )}
     >
-      {live ? (
-        <LoaderCircleIcon className="size-3.5 shrink-0 animate-spin" />
-      ) : (
-        <span className="flex size-3.5 shrink-0 items-center justify-center">
-          <span className="size-1.5 rounded-full bg-current" />
-        </span>
-      )}
+      <span className="flex size-3.5 shrink-0 items-center justify-center">
+        <span className={cn('size-1.5 rounded-full', live ? 'bg-primary animate-live' : 'bg-current')} />
+      </span>
       <span className="min-w-0 truncate">{children}</span>
       {expandable && (
         <ChevronRightIcon className="ml-auto size-3.5 shrink-0 opacity-0 transition-transform group-hover/activity:opacity-100 group-data-[state=open]/activity:rotate-90 group-data-[state=open]/activity:opacity-100" />
@@ -269,14 +265,17 @@ function ItemView({
       // Claude Code doesn't always ask for the thinking text, leaving nothing to expand.
       if (!item.text && !streaming) {
         return (
-          <div className="text-muted-foreground flex items-center gap-2 py-0.5 text-sm">
-            <BrainIcon className="size-3.5" /> Thought
+          <div className="text-muted-foreground text-ui flex h-[26px] items-center gap-2">
+            <span className="flex size-3.5 shrink-0 items-center justify-center">
+              <span className="size-1.5 rounded-full bg-current" />
+            </span>
+            Thought
           </div>
         )
       }
       return (
         <Reasoning className="mb-0" isStreaming={streaming} defaultOpen={false}>
-          <ReasoningTrigger className="py-0.5 [&_svg]:size-3.5" />
+          <ReasoningTrigger className="text-ui h-[26px] [&_svg]:size-3.5" />
           <ReasoningContent className="mt-1 mb-2 ml-1.5 border-l pl-4">{item.text}</ReasoningContent>
         </Reasoning>
       )

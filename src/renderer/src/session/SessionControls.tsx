@@ -43,7 +43,7 @@ export function SessionControls({
   const mode = choices?.permissionModes.find((m) => m.id === settings.permissionMode)
 
   return (
-    <div className="text-muted-foreground flex items-center gap-1 text-xs">
+    <div className="text-muted-foreground -ml-1.5 flex items-center gap-0.5 text-xs compact:text-[13px]">
       <Picker
         // The user's settings choose the mode until a run reports it.
         label={mode?.label ?? (settings.permissionMode === 'custom' ? 'Custom permissions' : settings.permissionMode) ?? 'Default mode'}
@@ -69,7 +69,7 @@ export function SessionControls({
           onChange={(id) => change({ effort: id || null })}
         />
       )}
-      <div className="ml-auto flex items-center gap-3">
+      <div className="ml-auto flex items-center gap-3.5">
         <UsageIndicator usage={usage} limits={limits} />
         {usage && (pointer.agent === 'claude' ? <CacheIndicator usage={usage} working={working} /> : (
           <span title={`The latest request read ${usage.cacheReadTokens.toLocaleString()} tokens from the prompt cache.`}>
@@ -118,7 +118,7 @@ function Picker({
       <DropdownMenuTrigger
         title={title}
         disabled={options.length === 0}
-        className="hover:bg-muted hover:text-foreground data-[state=open]:bg-muted flex items-center gap-1 rounded px-1.5 py-1 outline-none compact:py-2"
+        className="hover:bg-accent hover:text-foreground data-[state=open]:bg-selected data-[state=open]:text-foreground flex h-6 items-center gap-1 rounded-sm px-1.5 outline-none compact:h-11"
       >
         {label}
         <ChevronDownIcon className="size-3" />
@@ -156,7 +156,7 @@ function CacheIndicator({ usage, working }: { usage: ContextUsage; working: bool
   ].join(' ')
   return (
     <span title={title} className="flex items-center gap-1.5">
-      <span className={cn('size-1.5 rounded-full', warm ? 'bg-green-600' : 'bg-muted-foreground/40')} />
+      <span className={cn('size-1.5 rounded-full', warm ? 'bg-primary' : 'bg-muted-foreground/40')} />
       {working ? 'Cache warm' : warm ? `Cache ${Math.ceil((expiresAt - now) / 60_000)}m` : 'Cache cold'}
     </span>
   )

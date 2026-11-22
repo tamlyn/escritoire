@@ -13,7 +13,7 @@ export function ProcessList({ onOpen }: { onOpen: (process: ProcessInfo) => void
   if (processes.length === 0) return null
 
   return (
-    <section aria-label="Processes" className="max-h-1/3 shrink-0 overflow-y-auto border-t py-1 text-sm">
+    <section aria-label="Processes" className="text-ui max-h-1/3 shrink-0 overflow-y-auto border-t py-1">
       <h2 className="text-muted-foreground px-3 py-1 text-xs font-medium">Processes</h2>
       <ul>
         {processes.map((process) => (
@@ -22,7 +22,7 @@ export function ProcessList({ onOpen }: { onOpen: (process: ProcessInfo) => void
               type="button"
               onClick={() => onOpen(process)}
               title={process.cwd ? `${process.command} (in ${process.cwd})` : process.command}
-              className="flex min-w-0 flex-1 items-center gap-2 py-1 pl-3 text-left"
+              className="flex h-[26px] min-w-0 flex-1 items-center gap-2 pl-3 text-left"
             >
               <span className="flex w-2 shrink-0 justify-center">
                 <ProcessStatusDot process={process} />

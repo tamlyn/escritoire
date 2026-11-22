@@ -25,7 +25,7 @@ export function UsageIndicator({ usage, limits }: { usage?: ContextUsage; limits
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         aria-label="Context and plan usage"
-        className="hover:bg-muted hover:text-foreground data-[state=open]:bg-muted flex items-center gap-1.5 rounded px-1.5 py-1 outline-none"
+        className="hover:bg-accent hover:text-foreground data-[state=open]:bg-selected data-[state=open]:text-foreground flex h-6 items-center gap-1.5 rounded-sm px-1.5 outline-none"
         onPointerEnter={hover(true)}
         onPointerLeave={hover(false)}
         // With a mouse, hovering already opened it; a click toggling would close it.

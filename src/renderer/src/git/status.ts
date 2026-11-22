@@ -1,12 +1,12 @@
 import { parentPath } from '../../../shared/files'
 import type { GitSummary } from '../../../shared/git'
 
-const modified = 'text-[#0033b3] dark:text-[#70aeff]'
-const added = 'text-[#067d17] dark:text-[#73bd79]'
+const modified = 'text-git-modified'
+const added = 'text-git-added'
 
 /**
  * Text colours for the letters `git status` shows, plus ! for ignored. JetBrains'
- * Islands Light and Islands Dark colours.
+ * Islands Light and Islands Dark colours, except ignored files, which recede.
  */
 export const statusColours: Record<string, string> = {
   M: modified,
@@ -14,10 +14,10 @@ export const statusColours: Record<string, string> = {
   R: modified,
   C: added,
   A: added,
-  '?': 'text-[#b23247] dark:text-[#e88f89]',
-  '!': 'text-[#8c4f00] dark:text-[#d69a6b]',
-  D: 'text-[#6c707e] dark:text-[#6f737a]',
-  U: 'text-[#de1b2e] dark:text-[#de6a66]',
+  '?': 'text-git-untracked',
+  '!': 'text-muted-foreground',
+  D: 'text-muted-foreground',
+  U: 'text-git-conflicted',
 }
 
 export const statusNames: Record<string, string> = {

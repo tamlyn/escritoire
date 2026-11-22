@@ -42,7 +42,7 @@ export function FileTree({
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        <div role="tree" aria-label="Files" className="h-full overflow-auto py-1 text-sm select-none">
+        <div role="tree" aria-label="Files" className="text-ui h-full overflow-auto py-1 select-none">
           <Directory
             path=""
             depth={0}
@@ -105,7 +105,7 @@ function Entry({
       }
       onClick={() => (entry.isDirectory ? onToggle(entry.path) : onOpenFile(entry.path))}
       style={{ paddingLeft: 8 + depth * indentPx }}
-      className={`hover:bg-accent focus-visible:bg-accent flex w-full items-center gap-1 py-0.5 pr-2 text-left outline-none compact:py-2.5 ${
+      className={`hover:bg-accent focus-visible:bg-selected data-[state=open]:bg-selected flex h-[26px] w-full items-center gap-1 pr-2.5 text-left outline-none compact:h-11 compact:text-[15px] ${
         status === undefined ? '' : (statusColours[status] ?? '')
       }`}
     >

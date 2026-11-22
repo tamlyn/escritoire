@@ -6,7 +6,7 @@ import { relativeTime } from '../lib/time'
 
 const agentNames: Record<AgentKind, string> = { claude: 'Claude', codex: 'Codex' }
 export const startButton =
-  'hover:bg-accent focus-visible:ring-ring flex items-center gap-3 rounded-lg border px-4 py-3 text-left outline-none focus-visible:ring-2'
+  'hover:bg-accent focus-visible:bg-selected flex h-9 items-center gap-3 rounded-sm px-2.5 text-left font-medium outline-none compact:h-11'
 
 /** Codex starts its app-server and a thread before a session can open, which can take seconds or fail. */
 export function useStartSession(projectId: string, onStarted: (pointer: SessionPointer) => void) {
@@ -38,11 +38,11 @@ export function NewSessionButton({ agent, starting, onStart, autoFocus = false }
   return (
     <button type="button" autoFocus={autoFocus} disabled={starting !== null} onClick={() => onStart(agent)} className={startButton}>
       {starting === agent ? (
-        <LoaderCircleIcon className="text-muted-foreground size-5 animate-spin" />
+        <LoaderCircleIcon className="text-muted-foreground size-4 animate-spin" />
       ) : (
-        <MessageSquarePlusIcon className="text-muted-foreground size-5" />
+        <MessageSquarePlusIcon className="text-muted-foreground size-4" />
       )}
-      <span className="font-medium">
+      <span>
         {starting === agent ? `Starting ${agentNames[agent]}…` : `New ${agentNames[agent]} session`}
       </span>
     </button>
@@ -52,8 +52,8 @@ export function NewSessionButton({ agent, starting, onStart, autoFocus = false }
 export function NewTerminalButton({ onClick }: { onClick: () => void }) {
   return (
     <button type="button" onClick={onClick} className={startButton}>
-      <SquareTerminalIcon className="text-muted-foreground size-5" />
-      <span className="font-medium">New terminal</span>
+      <SquareTerminalIcon className="text-muted-foreground size-4" />
+      <span>New terminal</span>
     </button>
   )
 }
@@ -63,7 +63,7 @@ export function PastSessionRow({ session, onOpen }: { session: PastSession; onOp
     <button
       type="button"
       onClick={onOpen}
-      className="hover:bg-accent focus-visible:bg-accent flex items-baseline gap-3 rounded-md px-2 py-1.5 text-left outline-none compact:py-2.5"
+      className="hover:bg-accent focus-visible:bg-selected flex h-8 items-center gap-3 rounded-sm px-2.5 text-left outline-none compact:h-11"
     >
       <span className="min-w-0 flex-1 truncate">{session.title || 'Untitled session'}</span>
       <span className="text-muted-foreground shrink-0 text-xs">

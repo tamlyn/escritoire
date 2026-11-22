@@ -16,7 +16,7 @@ export function AppMenu() {
       <DropdownMenu>
         <DropdownMenuTrigger
           aria-label="Menu"
-          className="hover:bg-accent text-muted-foreground hover:text-foreground rounded-md p-1.5 [-webkit-app-region:no-drag]"
+          className="hover:bg-accent text-muted-foreground hover:text-foreground data-[state=open]:bg-selected data-[state=open]:text-foreground flex size-7 items-center justify-center rounded-sm [-webkit-app-region:no-drag]"
         >
           <MenuIcon className="size-4" />
         </DropdownMenuTrigger>

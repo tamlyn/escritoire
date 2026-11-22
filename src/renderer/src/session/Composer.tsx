@@ -261,7 +261,7 @@ export function Composer({
   return (
     <div className="relative">
       {matches.length > 0 && (
-        <div className="bg-popover text-popover-foreground absolute right-0 bottom-full left-0 mb-1 max-h-72 overflow-y-auto rounded-lg border p-1 shadow-md">
+        <div className="bg-popover text-popover-foreground border-menu-edge shadow-menu text-ui absolute right-0 bottom-full left-0 mb-1 max-h-72 overflow-y-auto rounded-md border p-1">
           {matches.map((option, index) => (
             <button
               key={option.key}
@@ -275,8 +275,8 @@ export function Composer({
                 setPicked(true)
               }}
               className={cn(
-                'flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm',
-                index === selected && 'bg-accent text-accent-foreground',
+                'flex min-h-7 w-full items-center gap-2 rounded-sm px-2 py-1 text-left',
+                index === selected && 'bg-primary text-primary-foreground [&_.text-muted-foreground]:text-primary-foreground/85',
               )}
             >
               {mention?.kind === 'command' ? (
@@ -294,15 +294,15 @@ export function Composer({
       <div
         onDragOver={(event) => event.dataTransfer.types.includes('Files') && event.preventDefault()}
         onDrop={onDrop}
-        className="focus-within:ring-ring/50 bg-background flex flex-col gap-1 rounded-xl border p-2 focus-within:ring-2"
+        className="flex flex-col border-t pt-1.5"
       >
         {attachErrors.map((error) => (
-          <p key={error} className="text-destructive px-2 text-xs">
+          <p key={error} className="text-destructive pt-1 text-xs">
             {error}
           </p>
         ))}
         {images.length > 0 && (
-          <div className="flex flex-wrap gap-2 px-1 pt-1">
+          <div className="flex flex-wrap gap-2 pt-1.5">
             {images.map((image, index) => (
               <div key={index} className="group relative">
                 <img src={imageUrl(image)} alt="" className="h-16 max-w-32 rounded-md border object-cover" />
@@ -330,14 +330,14 @@ export function Composer({
             autoFocus={autoFocus}
             rows={1}
             placeholder={offered ? `${offered} (Tab)` : working ? (compact ? 'Queue a message' : 'Queue a message for when the agent finishes') : compact ? 'Message agent' : 'Message agent, @ to mention a file, / for commands'}
-            className="placeholder:text-muted-foreground field-sizing-content max-h-60 min-h-9 flex-1 resize-none bg-transparent px-2 py-1.5 outline-none"
+            className="placeholder:text-muted-foreground field-sizing-content max-h-60 min-h-8 flex-1 resize-none bg-transparent py-[5px] leading-[22px] caret-primary outline-none"
           />
           {working && !canSend ? (
             <button
               type="button"
               title={compact ? 'Interrupt' : 'Interrupt (Esc)'}
               onClick={() => void api.interrupt(pointer)}
-              className="bg-primary text-primary-foreground flex size-8 shrink-0 items-center justify-center rounded-lg compact:size-10"
+              className="bg-primary text-primary-foreground mb-0.5 flex size-7 shrink-0 items-center justify-center rounded-md compact:mb-0 compact:size-11"
             >
               <SquareIcon className="size-3.5 fill-current" />
             </button>
@@ -347,7 +347,7 @@ export function Composer({
               title={compact ? 'Send' : 'Send (Enter)'}
               disabled={!canSend}
               onClick={send}
-              className="bg-primary text-primary-foreground flex size-8 shrink-0 items-center justify-center rounded-lg disabled:opacity-40 compact:size-10"
+              className="bg-primary text-primary-foreground mb-0.5 flex size-7 shrink-0 items-center justify-center rounded-md disabled:opacity-30 compact:mb-0 compact:size-11"
             >
               <ArrowUpIcon className="size-4" />
             </button>

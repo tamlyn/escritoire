@@ -1,10 +1,9 @@
-import { LoaderCircleIcon } from 'lucide-react'
 import type { SessionSummary } from '../../../shared/agent'
 import { statusDotColors } from './status-dot-colors'
 
 export function SessionIndicator({ summary }: { summary: SessionSummary | undefined }) {
   if (summary?.status === 'working' && summary.attention !== 'waiting') {
-    return <LoaderCircleIcon aria-label="Working" className="size-3 shrink-0 animate-spin" />
+    return <span role="img" aria-label="Working" className="bg-primary animate-live size-1.5 shrink-0 rounded-full" />
   }
   const dot =
     summary?.attention === 'waiting'
@@ -15,5 +14,5 @@ export function SessionIndicator({ summary }: { summary: SessionSummary | undefi
           ? [statusDotColors.unread, 'Unread']
           : null
   if (!dot) return null
-  return <span role="img" aria-label={dot[1]} className={`size-2 shrink-0 rounded-full ${dot[0]}`} />
+  return <span role="img" aria-label={dot[1]} className={`size-1.5 shrink-0 rounded-full ${dot[0]}`} />
 }

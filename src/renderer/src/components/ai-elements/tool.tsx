@@ -5,13 +5,8 @@ import {
 } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import type { ToolStatus } from "../../../../shared/agent";
-import {
-  CheckIcon,
-  ChevronRightIcon,
-  CircleDashedIcon,
-  XIcon,
-} from "lucide-react";
-import type { ComponentProps, ReactNode } from "react";
+import { ChevronRightIcon } from "lucide-react";
+import type { ComponentProps } from "react";
 
 import { CodeBlock } from "./code-block";
 
@@ -28,23 +23,25 @@ export type ToolHeaderProps = {
   className?: string;
 };
 
-// Running is static: the transcript's activity row carries the one spinner.
-const statusIcons: Record<ToolStatus, ReactNode> = {
-  running: <CircleDashedIcon className="size-3.5 shrink-0" />,
-  completed: <CheckIcon className="size-3.5 shrink-0 text-green-600" />,
-  failed: <XIcon className="size-3.5 shrink-0 text-red-600" />,
+// Running is static: the transcript's activity row carries the one pulsing marker.
+const statusDots: Record<ToolStatus, [string, string]> = {
+  running: ["bg-primary", "Running"],
+  completed: ["bg-current", "Done"],
+  failed: ["bg-destructive", "Failed"],
 };
 
 export const ToolHeader = ({ className, title, status, ...props }: ToolHeaderProps) => (
   <CollapsibleTrigger
     className={cn(
-      "-mx-1 flex w-[calc(100%+0.5rem)] items-center gap-2 rounded px-1 py-0.5 text-left text-muted-foreground text-sm hover:bg-muted/60 hover:text-foreground",
+      "-mx-1.5 flex h-[26px] w-[calc(100%+0.75rem)] items-center gap-2 rounded-sm px-1.5 text-left text-muted-foreground text-ui hover:bg-accent hover:text-foreground",
       className
     )}
     title={title}
     {...props}
   >
-    {statusIcons[status]}
+    <span aria-label={statusDots[status][1]} role="img" className="flex size-3.5 shrink-0 items-center justify-center">
+      <span className={cn("size-1.5 rounded-full", statusDots[status][0])} />
+    </span>
     <span className="min-w-0 truncate">{title}</span>
     <ChevronRightIcon className="ml-auto size-3.5 shrink-0 opacity-0 transition-transform group-hover/tool:opacity-100 group-data-[state=open]/tool:rotate-90 group-data-[state=open]/tool:opacity-100" />
   </CollapsibleTrigger>
