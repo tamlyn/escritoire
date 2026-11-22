@@ -261,7 +261,7 @@ The first step towards using Escritoire from a phone (see [Remote access](PLAN.m
 - **One colour.** Leather green (`primary`) means primary or live: the send button, focus rings, running processes and working sessions, a warm cache, and the highlighted item in menus and the switcher. Everything else is ink at two strengths. Session attention (waiting, unread) and git status keep their own colours.
 - **Hover and selection** are ink over whatever surface is beneath (`accent` at 6%, `selected` at 10%), so they show on the desk as well as the paper.
 - **Shape:** rows are 26px on the desk, 32px on the paper and 44px on a phone. Radii are 4px for rows and chips, 6px for inputs and menus, 10px for dialogs.
-- **Markers:** activity groups, tool calls and statuses share one 6px dot: grey when done, pulsing green while live, red on failure.
+- **Markers:** activity groups, tool calls and statuses share one 6px dot: grey when done, pulsing green while live, red on failure. The transcript's live row is the exception: it traces a turning Lissajous figure on weekdays and three orbiting dots at the weekend, drawn on a canvas, and falls back to a still dot when reduced motion is asked for.
 - **The composer is the next line of the page:** a rule across the text column with no box or focus ring.
 - **Menus and dialogs are lifted off the desk:** a firm edge and a two-layer shadow.
 

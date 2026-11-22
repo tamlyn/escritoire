@@ -20,6 +20,7 @@ import { ChevronRightIcon, PencilIcon } from 'lucide-react'
 import { type ReactNode, useState } from 'react'
 import type { ImageAttachment, Item, ToolView } from '../../../shared/agent'
 import { fileLinkProps } from './FileLinks'
+import { WorkingAnimation } from './WorkingAnimation'
 
 /** `onEdit` sends new text in place of a past message of the user's; leave it out while that can't be done. */
 export function Transcript({ items, working, onEdit }: {
@@ -117,7 +118,7 @@ function ActivityRow({ live, expandable = false, children }: { live: boolean; ex
       )}
     >
       <span className="flex size-3.5 shrink-0 items-center justify-center">
-        <span className={cn('size-1.5 rounded-full', live ? 'bg-primary animate-live' : 'bg-current')} />
+        {live ? <WorkingAnimation /> : <span className="size-1.5 rounded-full bg-current" />}
       </span>
       <span className="min-w-0 truncate">{children}</span>
       {expandable && (
