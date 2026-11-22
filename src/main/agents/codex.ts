@@ -248,6 +248,7 @@ class CodexRun implements AgentRun {
   private turnId?: string
   private interruptRequested = false
   private starting = false
+  private working = false
   private completedTurns = new Set<string>()
   private queue: UserInput[] = []
   private settings: SessionSettings
@@ -308,13 +309,13 @@ class CodexRun implements AgentRun {
     this.starting = true
     this.interruptRequested = false
     const input = this.queue.shift()!
-    this.emit({ type: 'statusChanged', status: 'working' })
+    this.setWorking(true)
     try {
       await this.ready
       if (this.closed) return
       if (parseCommand(input.text)?.name === 'clear') {
         await this.startThread()
-        this.emit({ type: 'statusChanged', status: 'idle' })
+        this.setWorking(false)
         void Promise.resolve().then(() => this.drain())
         return
       }
@@ -388,6 +389,11 @@ class CodexRun implements AgentRun {
     this.sandbox = sandboxMode(resolved.sandbox)
     if (!this.closed) this.emit({ type: 'settingsChanged', settings: { ...resolvedSettings(resolved), ...pending } })
   }
+  private setWorking(working: boolean): void {
+    if (this.working === working) return
+    this.working = working
+    this.emit({ type: 'statusChanged', status: working ? 'working' : 'idle' })
+  }
   private resolve(id: string): void { this.requests.delete(id); this.emit({ type: 'requestResolved', requestId: id }) }
   private fail(error: unknown): void {
     if (this.closed) return
@@ -410,6 +416,8 @@ class CodexRun implements AgentRun {
         this.adopt({ ...settings, sandbox: settings.sandboxPolicy, reasoningEffort: settings.effort }); break
       }
       case 'turn/started': {
+        // Codex may start a turn of its own, not only one this run asked for.
+        this.setWorking(true)
         this.turnId = (p.turn as { id: string }).id
         this.turnStarted?.(this.turnId)
         this.turnStarted = undefined
@@ -421,7 +429,7 @@ class CodexRun implements AgentRun {
         const turn = p.turn as { id: string; status: string; error?: { message: string } }
         this.completedTurns.add(turn.id)
         if (turn.status === 'failed') { this.fail(new Error(turn.error?.message ?? 'Codex turn failed')); return }
-        this.emit({ type: 'statusChanged', status: 'idle' })
+        this.setWorking(false)
         // Start only after a pending turn/start response has been consumed.
         void Promise.resolve().then(async () => { while (this.starting && !this.closed) await new Promise((r) => setTimeout(r, 0)); await this.drain() })
         break
