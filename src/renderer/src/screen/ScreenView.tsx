@@ -5,6 +5,7 @@ import { type RefObject, useEffect, useRef } from 'react'
 import type { ScreenOutput, ScreenSize, ScreenSnapshot } from '../../../shared/screen'
 import { subscribe } from '../api'
 import { isCommandKey } from '../commands'
+import { codeFontSize, codeLineHeight } from '../lib/code-font'
 
 export type ScreenConnection = {
   /** Sends `screenOutput` for this screen from now on, and returns what's on it so far. */
@@ -35,9 +36,11 @@ export function ScreenView({ screenId, connection, autoFocus = false, terminalRe
   useEffect(() => {
     const connection = connectionRef.current
     const container = containerRef.current!
+    const fontFamily = getComputedStyle(container).getPropertyValue('--font-mono')
     const terminal = new Terminal({
-      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-      fontSize: 13,
+      fontFamily,
+      fontSize: codeFontSize,
+      lineHeight: lineHeightFor(container, fontFamily),
       cursorBlink: true,
       scrollback: 5000,
       theme: themeFrom(container),
@@ -69,6 +72,12 @@ export function ScreenView({ screenId, connection, autoFocus = false, terminalRe
       snapshotSeq = snapshot.seq
       for (const output of early) if (output.seq > snapshot.seq) terminal.write(output.data)
     })
+
+    // xterm's scrollbar only stays visible while hovered, unlike the native ones; styles.css shows it while there's scrollback.
+    const updateScrollable = () => container.toggleAttribute('data-scrollable', terminal.buffer.active.baseY > 0)
+    terminal.onWriteParsed(updateScrollable)
+    terminal.onResize(updateScrollable)
+    terminal.buffer.onBufferChange(updateScrollable)
 
     terminal.onData(connection.write)
     terminal.onResize(connection.resize)
@@ -105,19 +114,36 @@ export function ScreenView({ screenId, connection, autoFocus = false, terminalRe
     if (autoFocus) terminalRef.current?.focus()
   }, [autoFocus])
 
-  // Padded outside the container, which the fit addon measures.
+  // Padded outside the container, which the fit addon measures. Clipped because xterm's
+  // input textarea follows the cursor and keeps its place after a resize, so it can be left
+  // below the terminal, making the whole tab scroll.
   return (
-    <div className="h-full px-2 pt-1">
-      <div ref={containerRef} className="h-full" />
+    <div className="h-full p-2">
+      <div ref={containerRef} className="h-full overflow-clip" />
     </div>
   )
+}
+
+/** xterm's line height is a multiple of the font's own, so it's derived from that to come out at `codeLineHeight`. */
+function lineHeightFor(container: HTMLElement, fontFamily: string): number {
+  const probe = document.createElement('span')
+  probe.style.font = `${codeFontSize}px ${fontFamily}`
+  probe.textContent = 'W'
+  container.append(probe)
+  const height = probe.getBoundingClientRect().height
+  probe.remove()
+  return codeLineHeight / height
 }
 
 /** xterm only understands hex and rgb colours, so the app's oklch tokens are converted. */
 function themeFrom(element: HTMLElement): ITheme {
   const style = getComputedStyle(element)
   const token = (name: string) => toRgb(style.getPropertyValue(name))
+  const scrollbarThumb = token('--scrollbar-thumb')
   return {
+    scrollbarSliderBackground: scrollbarThumb,
+    scrollbarSliderHoverBackground: scrollbarThumb,
+    scrollbarSliderActiveBackground: scrollbarThumb,
     background: token('--background'),
     foreground: token('--foreground'),
     cursor: token('--foreground'),

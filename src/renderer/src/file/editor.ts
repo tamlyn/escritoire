@@ -3,15 +3,17 @@ import { languages } from '@codemirror/language-data'
 import type { Compartment, EditorState, Extension } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { classHighlighter } from '@lezer/highlight'
+import { codeFontSize, codeLineHeight } from '../lib/code-font'
 
 /** Colours come from the app's tokens; syntax colours are `.tok-*` rules in styles.css. */
 export function editorTheme(): Extension {
   return [
     EditorView.theme(
       {
-        '&': { height: '100%', fontSize: '13px', backgroundColor: 'var(--background)', color: 'var(--foreground)' },
+        '&': { height: '100%', fontSize: `${codeFontSize}px`, backgroundColor: 'var(--background)', color: 'var(--foreground)' },
         '&.cm-focused': { outline: 'none' },
-        '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', lineHeight: '1.55' },
+        '.cm-scroller': { fontFamily: 'var(--font-mono)', lineHeight: `${codeLineHeight}px` },
+        '.cm-content': { padding: '8px 0' },
         '.cm-gutters': { backgroundColor: 'var(--background)', color: 'var(--muted-foreground)', border: 'none' },
         '.cm-activeLine': { backgroundColor: 'color-mix(in oklch, var(--accent) 60%, transparent)' },
         '.cm-activeLineGutter': { backgroundColor: 'transparent', color: 'var(--foreground)' },

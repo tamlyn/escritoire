@@ -36,6 +36,7 @@
   --menu-edge: oklch(0.22 0.01 165 / 18%);
   --menu-shadow: inset 0 1px 0 transparent, 0 1px 2px oklch(0.2 0.02 165 / 14%), 0 10px 28px -6px oklch(0.2 0.02 165 / 28%);
   --dialog-shadow: 0 2px 4px oklch(0.2 0.02 165 / 12%), 0 24px 64px -12px oklch(0.2 0.02 165 / 38%);
+  --scrollbar-thumb: color-mix(in oklch, var(--muted-foreground) 40%, transparent);
   --git-modified: #0033b3;
   --git-added: #067d17;
   --git-untracked: #b23247;
@@ -141,7 +142,7 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
-    scrollbar-color: color-mix(in oklch, var(--muted-foreground) 40%, transparent) transparent;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
   }
   html,
   body,
@@ -171,6 +172,18 @@
 /* iOS zooms the page when a smaller input is focused. */
 [data-compact] :is(input, textarea, select) {
   font-size: 16px;
+}
+
+/* xterm draws its own scrollbar, so it's made to look like the native ones; its colour is in the terminal's theme. */
+.xterm .xterm-scrollable-element > .scrollbar > .slider {
+  border: 3.5px solid transparent;
+  border-radius: 9999px;
+  background-clip: padding-box;
+}
+/* Shown while there's scrollback, as native ones are, rather than only while hovered (`ScreenView`). */
+[data-scrollable] .xterm .xterm-scrollable-element > .scrollbar.vertical {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /* CodeMirror syntax highlighting (`classHighlighter` from @lezer/highlight). */

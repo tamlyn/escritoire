@@ -59,6 +59,9 @@ test('refits a terminal split into a smaller tabset and follows the system theme
   await page.getByRole('button', { name: 'New terminal' }).click()
   const terminal = page.locator('.xterm:visible')
   await expect(terminal).toBeVisible()
+  // Scrollback, and a cursor low down in the full-height terminal.
+  await page.keyboard.type('seq 1 100\n')
+  await expect(page.locator('.xterm-rows:visible')).toContainText('100')
 
   // Drag a new tab onto the bottom edge of the terminal's tabset, splitting it.
   await page.keyboard.press(`${modifier}+t`)
@@ -73,10 +76,17 @@ test('refits a terminal split into a smaller tabset and follows the system theme
 
   // xterm's own scrollbar keeps its old height unless the terminal refits once rendering resumes.
   await expect(page.getByRole('tab', { name: 'New tab' })).toBeVisible()
+  const scrollbar = terminal.locator('.scrollbar.vertical')
   await expect
-    .poll(() => terminal.evaluate((element) => element.scrollHeight - element.clientHeight))
-    .toBe(0)
+    .poll(async () => (await scrollbar.boundingBox())!.height - (await terminal.boundingBox())!.height)
+    .toBeLessThanOrEqual(0)
   expect((await terminal.boundingBox())!.height).toBeLessThan(panels.height * 0.75)
+  // xterm's input textarea stays where the cursor was, below the smaller terminal, and mustn't make the tabset scroll.
+  const tabset = page.locator('[data-tab-panels]').first().locator('..')
+  expect(await tabset.evaluate((element) => element.scrollHeight - element.clientHeight)).toBe(0)
+  // With scrollback, xterm's scrollbar shows without hovering, like native ones.
+  await page.mouse.move(0, 0)
+  await expect(scrollbar).toHaveCSS('opacity', '1')
 
   const textColor = () => page.locator('.xterm-rows:visible').evaluate((element) => getComputedStyle(element).color)
   const light = await textColor()
