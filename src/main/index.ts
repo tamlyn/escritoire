@@ -282,7 +282,7 @@ app.on('window-all-closed', () => app.quit())
 /**
  * Electron's default menu without its Close Window item, so ⌘W/Ctrl+W reaches
  * the renderer and closes a tab. There's one window, so closing it would quit.
- * Nor its reloads, so ⌘R/Ctrl+R reaches the editor's replace.
+ * Its Reload has no shortcut, so ⌘R/Ctrl+R reaches the editor's replace.
  */
 function applicationMenu(): Menu {
   const isMac = process.platform === 'darwin'
@@ -292,6 +292,7 @@ function applicationMenu(): Menu {
     {
       label: 'View',
       submenu: [
+        { label: 'Reload', click: () => BrowserWindow.getFocusedWindow()?.webContents.reload() },
         { role: 'toggleDevTools' },
         { type: 'separator' },
         { role: 'resetZoom' },
