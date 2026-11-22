@@ -174,16 +174,19 @@
   font-size: 16px;
 }
 
-/* xterm draws its own scrollbar, so it's made to look like the native ones; its colour is in the terminal's theme. */
+/* xterm draws its own scrollbar, so it's made to look like the native ones; its colour is in the terminal's theme.
+   Important because xterm injects the colour later as a `background` shorthand, which would reset the clip. */
 .xterm .xterm-scrollable-element > .scrollbar > .slider {
   border: 3.5px solid transparent;
   border-radius: 9999px;
-  background-clip: padding-box;
+  background-clip: padding-box !important;
 }
 /* Shown while there's scrollback, as native ones are, rather than only while hovered (`ScreenView`). */
 [data-scrollable] .xterm .xterm-scrollable-element > .scrollbar.vertical {
   opacity: 1;
   pointer-events: auto;
+  /* xterm marks it `invisible`, which Tailwind's utility of that name also hides. */
+  visibility: visible;
 }
 
 /* CodeMirror syntax highlighting (`classHighlighter` from @lezer/highlight). */

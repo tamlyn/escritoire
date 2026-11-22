@@ -84,9 +84,13 @@ test('refits a terminal split into a smaller tabset and follows the system theme
   // xterm's input textarea stays where the cursor was, below the smaller terminal, and mustn't make the tabset scroll.
   const tabset = page.locator('[data-tab-panels]').first().locator('..')
   expect(await tabset.evaluate((element) => element.scrollHeight - element.clientHeight)).toBe(0)
-  // With scrollback, xterm's scrollbar shows without hovering, like native ones.
+  // With scrollback, xterm's scrollbar shows without hovering, and is as thin as native ones.
   await page.mouse.move(0, 0)
+  const slider = scrollbar.locator('.slider')
+  await expect(slider).toBeVisible()
   await expect(scrollbar).toHaveCSS('opacity', '1')
+  await expect(slider).toHaveCSS('background-clip', 'padding-box')
+  expect(await slider.evaluate((element) => element.clientWidth)).toBe(7)
 
   const textColor = () => page.locator('.xterm-rows:visible').evaluate((element) => getComputedStyle(element).color)
   const light = await textColor()
