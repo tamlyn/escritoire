@@ -1,7 +1,7 @@
 import { type ComponentProps, createContext, useContext, useMemo } from 'react'
 import { defaultComponents, defaultRemarkPlugins, type ExtraProps } from 'streamdown'
 import { revealLine } from '../file/reveal'
-import { projectRelativePath, useProjectFileList } from '../files'
+import { openablePath, projectRelativePath, useProjectFileList } from '../files'
 import { useProject } from '../project-context'
 import { type FileRef, parseFileHref, remarkFileLinks } from './file-refs'
 
@@ -27,9 +27,11 @@ export function FileLinksProvider({ onOpenFile, children }: { onOpenFile: (path:
         return path
       },
       open(path, line) {
-        onOpenFile(path)
-        // After the tab is shown, so an editor that was already open can scroll.
-        if (line) requestAnimationFrame(() => revealLine(project.id, path, line))
+        void openablePath(project.id, project.path, path).then((openable) => {
+          onOpenFile(openable)
+          // After the tab is shown, so an editor that was already open can scroll.
+          if (line) requestAnimationFrame(() => revealLine(project.id, openable, line))
+        })
       },
     }
   }, [project.id, project.path, files, onOpenFile])

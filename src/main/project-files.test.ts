@@ -174,3 +174,18 @@ test('leaves links outside the project out of the tree', async () => {
   await expect(files.listDirectory('p', 'outside')).rejects.toThrow('Outside the project')
   expect(await files.listDirectory('p', '')).toEqual([])
 })
+
+test("names a file by the tree's path however it's reached, and others by their absolute path", async () => {
+  await mkdir(join(root, 'docs'))
+  await writeFile(join(root, 'docs', 'a.md'), '')
+  const link = `${root}-link`
+  await symlink(root, link)
+  try {
+    expect(await files.projectPathOf('p', join(link, 'docs', 'a.md'))).toBe('docs/a.md')
+    expect(await files.projectPathOf('p', join(root, 'docs', 'a.md'))).toBe('docs/a.md')
+    expect(await files.projectPathOf('p', '/elsewhere/b.md')).toBe('/elsewhere/b.md')
+    expect(await files.projectPathOf('p', '~/b.md')).toMatch(/^\/.*\/b\.md$/)
+  } finally {
+    await rm(link)
+  }
+})

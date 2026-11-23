@@ -1,14 +1,23 @@
 import { FilePlusIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useParentTab, useParentWorkspace } from 'react-resizable-panels'
-import { maxPastSessions, type PastSession } from '../../shared/agent'
+import { type AgentKind, maxPastSessions, type PastSession } from '../../shared/agent'
 import { api } from './api'
 import { useFileActions } from './file-actions'
 import { useProject } from './project-context'
 import { NewSessionButton, NewTerminalButton, PastSessionRow, startButton, useStartSession } from './session/StartSession'
 import { modifierLabel } from './shortcuts'
-import { createFileTab, createSessionTab, createTerminalTab, type Tab, type TabData } from './tabs'
+import { createEmptyTab, createFileTab, createSessionTab, createTerminalTab, type Tab, type TabData } from './tabs'
 
+// Not in the tab's data, which is saved: a tab restored after a quit shouldn't start another.
+const startOnOpen = new Map<string, AgentKind>()
+
+/** An empty tab that starts a session as it opens, showing its progress and any failure as the page does. */
+export function createStartingTab(agent: AgentKind): Tab {
+  const tab = createEmptyTab()
+  startOnOpen.set(tab.id, agent)
+  return tab
+}
 
 /** What an empty tab offers: start a session, or resume a recent one. */
 export function NewTabPage({ tab }: { tab: Tab }) {
@@ -35,6 +44,13 @@ export function NewTabPage({ tab }: { tab: Tab }) {
   }
 
   const { starting, startError, start } = useStartSession(project.id, (pointer) => replaceWith(createSessionTab(pointer, '')))
+
+  useEffect(() => {
+    const agent = startOnOpen.get(tab.id)
+    if (!agent) return
+    startOnOpen.delete(tab.id)
+    void start(agent)
+  }, [tab.id])
 
   return (
     <div className="h-full overflow-y-auto">

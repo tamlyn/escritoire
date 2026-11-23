@@ -327,6 +327,19 @@ export class ProjectFiles {
     return realpathAllowingMissing(resolve(await realpath(this.options.projectPath(projectId)), expandHome(path)))
   }
 
+  /**
+   * The name the project's tree gives a file, however the path to it was
+   * written (from `~`, or through a link to the project); any other file by
+   * its absolute path, with `~` expanded so it can be copied and used anywhere.
+   */
+  async projectPathOf(projectId: string, path: string): Promise<string> {
+    const root = await realpath(this.options.projectPath(projectId))
+    const file = await this.resolveFile(projectId, path)
+    if (file !== root && isInside(root, file)) return toProjectPath(root, file)
+    const expanded = expandHome(path)
+    return isAbsolute(expanded) ? expanded : file
+  }
+
   private async resolve(projectId: string, path: string): Promise<string> {
     const root = await realpath(this.options.projectPath(projectId))
     const resolved = await realpathAllowingMissing(resolve(root, path))

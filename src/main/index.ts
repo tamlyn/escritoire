@@ -27,7 +27,8 @@ import { DesktopAttention } from './desktop-attention'
 import { completeDirectory } from './paths'
 import { ProjectFiles } from './project-files'
 import { ProjectLifecycle } from './project-lifecycle'
-import { searchFiles } from './project-search'
+import { ProjectSearchRunner } from './project-search-runner'
+import { FileLists } from './file-lists'
 import { ProjectStore } from './project-store'
 import { SessionManager } from './session-manager'
 import { SessionStore } from './session-store'
@@ -54,6 +55,8 @@ type Services = {
   sessions: SessionManager
   lifecycle: ProjectLifecycle
   files: ProjectFiles
+  fileLists: FileLists
+  projectSearch: ProjectSearchRunner
   terminals: Terminals
   supervisor: Supervisor
   connections: ConnectionStore
@@ -61,10 +64,9 @@ type Services = {
 }
 
 /** The API as one client sees it. */
-function createApi(client: Client, { clients, remote, push, projects, sessions, lifecycle, files, terminals, supervisor, connections, databases }: Services): Api {
+function createApi(client: Client, { clients, remote, push, projects, sessions, lifecycle, files, fileLists, projectSearch, terminals, supervisor, connections, databases }: Services): Api {
   const activate = async (change: () => Promise<AppState>) => clients.activate(client, await change())
-  const listProjectFiles = async (projectId: string) =>
-    (await gitFiles(projects.getProject(projectId).path)) ?? files.listAllFiles(projectId)
+  const listProjectFiles = (projectId: string) => fileLists.get(projectId)
   // Each keystroke searches again, so a client's earlier search is abandoned.
   let search: AbortController | null = null
   const terminalHost: ScreenHost = {
@@ -127,10 +129,11 @@ function createApi(client: Client, { clients, remote, push, projects, sessions, 
     },
     deleteFile: (projectId, path) => files.delete(projectId, path),
     listProjectFiles,
+    projectFilePath: (projectId, path) => files.projectPathOf(projectId, path),
     searchProject: async (projectId, query) => {
       search?.abort()
       const controller = (search = new AbortController())
-      return searchFiles(projects.getProject(projectId).path, await listProjectFiles(projectId), query, controller.signal)
+      return projectSearch.search(projects.getProject(projectId).path, await listProjectFiles(projectId), query, controller.signal)
     },
     attachTerminal: (projectId, terminalId, size) => clients.attachScreen(client, terminalHost, projectId, terminalId, size),
     detachTerminal: async (terminalId) => clients.detachScreen(client, terminalId),
@@ -291,7 +294,11 @@ function applicationMenu(): Menu {
     {
       label: 'View',
       submenu: [
-        { label: 'Reload', click: () => BrowserWindow.getFocusedWindow()?.webContents.reload() },
+        {
+          label: 'Reload',
+          // With no window focused (minimised, or DevTools in a window of its own), the app's window.
+          click: (_item, window) => (window instanceof BrowserWindow ? window : BrowserWindow.getAllWindows()[0])?.webContents.reload(),
+        },
         { role: 'toggleDevTools' },
         { type: 'separator' },
         { role: 'resetZoom' },
@@ -335,6 +342,7 @@ void app.whenReady().then(async () => {
     watch: (projectIds) => {
       files.watch(projectIds)
       gitWatcher.watch(projectIds)
+      fileLists.watch(projectIds)
     },
   })
   const send = clients.send
@@ -384,15 +392,24 @@ void app.whenReady().then(async () => {
   await Promise.all(projects.getState().projects.map(async (p) => {
     await sessions.restoreUnread(p.id, await projects.sessionTabs(p.id)).catch(console.error)
   }))
+  const fileLists = new FileLists(async (projectId) =>
+    (await gitFiles(projects.getProject(projectId).path)) ?? files.listAllFiles(projectId))
+  const projectSearch = new ProjectSearchRunner()
   const files = new ProjectFiles({
     projectPath: (projectId) => projects.getProject(projectId).path,
     send: (payload) => send('filesChanged', payload),
-    onAnyChange: (projectId) => send('gitChanged', { projectId }),
+    onAnyChange: (projectId) => {
+      fileLists.changed(projectId)
+      send('gitChanged', { projectId })
+    },
     trash: (path) => shell.trashItem(path),
   })
   const gitWatcher = new GitWatcher({
     projectPath: (projectId) => projects.getProject(projectId).path,
-    onChanged: (projectId) => send('gitChanged', { projectId }),
+    onChanged: (projectId) => {
+      fileLists.changed(projectId)
+      send('gitChanged', { projectId })
+    },
   })
   const terminals = new Terminals({
     dataDir,
@@ -411,7 +428,7 @@ void app.whenReady().then(async () => {
 
   const apiWork = new Work()
   const lifecycle = new ProjectLifecycle(projects, [sessions, terminals, supervisor, databases, connections])
-  const services: Services = { clients, remote, push, projects, sessions, lifecycle, files, terminals, supervisor, connections, databases }
+  const services: Services = { clients, remote, push, projects, sessions, lifecycle, files, fileLists, projectSearch, terminals, supervisor, connections, databases }
   // The API work belongs to the app rather than the connection, so quitting waits for it all.
   function serve(client: Client): Connection {
     // A client that is reconnecting missed whatever changed while it was away.
@@ -460,6 +477,7 @@ void app.whenReady().then(async () => {
       // Clients first: each one disconnecting changes what's watched.
       const disconnected = await Promise.allSettled([server.close(), remote.close()])
       logFailures([...databasesClosed, ...disconnected, ...(await Promise.allSettled([files.unwatch(), gitWatcher.unwatch(), terminals.closeAll(), supervisor.closeAll()]))])
+      projectSearch.close()
       if (sessionsClosed[0].status === 'rejected') {
         dialog.showErrorBox("Couldn't save sessions before quitting", String(sessionsClosed[0].reason))
       }

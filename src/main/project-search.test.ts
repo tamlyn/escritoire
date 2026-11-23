@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, test } from 'vitest'
 import type { TextQuery } from '../shared/search'
-import { searchFiles } from './project-search'
+import { FileTextCache, searchFiles } from './project-search'
 
 let root: string
 
@@ -49,4 +49,13 @@ test('gives up once aborted', async () => {
   const searching = search(['a.txt'], 'needle', controller.signal)
   controller.abort()
   expect(await searching).toBeNull()
+})
+
+test('reads a file again once it has changed, though it keeps what it read', async () => {
+  const cache = new FileTextCache()
+  const cached = (text: string) => searchFiles(root, ['a.txt'], query(text), new AbortController().signal, cache)
+  await writeFile(join(root, 'a.txt'), 'needle')
+  expect((await cached('needle'))?.files).toHaveLength(1)
+  await writeFile(join(root, 'a.txt'), 'haystack only')
+  expect((await cached('needle'))?.files).toEqual([])
 })

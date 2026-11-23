@@ -8,9 +8,19 @@ export function projectRelativePath(projectPath: string, path: string): string {
   return path.startsWith(`${root}/`) ? path.slice(root.length + 1) : path
 }
 
-/** A file opened from outside the project keeps the full path it was opened with, which may start with `~`. */
+/** A file outside the project has its absolute path; one opened before those were expanded may start with `~/`. */
 export function isOutsideProject(path: string): boolean {
-  return path.startsWith('/') || path.startsWith('~')
+  return path.startsWith('/') || path.startsWith('~/')
+}
+
+/**
+ * The path to open a file by: the tree's name for a project file, however the
+ * path was written (`~`, a link), and any other file's absolute path.
+ */
+export async function openablePath(projectId: string, projectPath: string, path: string): Promise<string> {
+  const relative = projectRelativePath(projectPath, path)
+  if (!isOutsideProject(relative)) return relative
+  return api.projectFilePath(projectId, relative).catch(() => relative)
 }
 
 export function absolutePath(projectPath: string, path: string): string {

@@ -10,10 +10,10 @@ import {
   SearchQuery,
   setSearchQuery,
 } from '@codemirror/search'
-import { type EditorState, type Extension, Prec, StateEffect, StateField } from '@codemirror/state'
+import { type EditorState, type Extension, Prec, StateEffect, StateField, type Text } from '@codemirror/state'
 import { type Command, EditorView, keymap, type Panel, runScopeHandlers, type ViewUpdate } from '@codemirror/view'
 import { ArrowDownIcon, ArrowUpIcon, ChevronRightIcon, SearchIcon, XIcon } from 'lucide-react'
-import { type ReactNode, useMemo, useSyncExternalStore } from 'react'
+import { type ReactNode, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { Button } from '@/components/ui/button'
@@ -25,6 +25,8 @@ type QueryConfig = ConstructorParameters<typeof SearchQuery>[0]
 
 // Counting stops here, so a common word in a huge file doesn't slow typing.
 const maxCounted = 1000
+// Counting scans the document, so while it's edited the count waits for a pause.
+const recountDelayMs = 300
 
 const showReplace = StateEffect.define<boolean>()
 const replaceShown = StateField.define<boolean>({
@@ -100,7 +102,8 @@ function FindBar({ view, subscribe, getState }: Props) {
   const state = useSyncExternalStore(subscribe, getState)
   const query = getSearchQuery(state)
   const replacing = state.field(replaceShown)
-  const matches = useMemo(() => findMatches(state, query), [state.doc, query])
+  const doc = useSettled(state.doc, recountDelayMs)
+  const matches = useMemo(() => findMatches(doc, query), [doc, query])
   const { main } = state.selection
   const current = matches.findIndex((match) => match.from === main.from && match.to === main.to)
 
@@ -206,12 +209,22 @@ function firstMatch(state: EditorState, query: SearchQuery, from: number): { fro
   return any.done ? null : any.value
 }
 
-function findMatches(state: EditorState, query: SearchQuery): { from: number; to: number }[] {
+function findMatches(doc: Text, query: SearchQuery): { from: number; to: number }[] {
   if (!query.valid) return []
   const matches: { from: number; to: number }[] = []
-  const cursor = query.getCursor(state)
+  const cursor = query.getCursor(doc)
   for (let next = cursor.next(); !next.done && matches.length < maxCounted; next = cursor.next()) matches.push(next.value)
   return matches
+}
+
+/** The value once it has stayed the same for `delayMs`. */
+function useSettled<T>(value: T, delayMs: number): T {
+  const [settled, setSettled] = useState(value)
+  useEffect(() => {
+    const timer = setTimeout(() => setSettled(value), delayMs)
+    return () => clearTimeout(timer)
+  }, [value, delayMs])
+  return settled
 }
 
 function Field({ failed = false, children }: { failed?: boolean; children: ReactNode }) {

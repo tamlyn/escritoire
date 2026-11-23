@@ -114,6 +114,8 @@ export type Api = {
   deleteFile(projectId: string, path: string): Promise<void>
   /** Every file in the project that git doesn't ignore, as relative paths. */
   listProjectFiles(projectId: string): Promise<string[]>
+  /** A file's path as the project's tree names it, if it's in the project however `path` reaches it; else `path`. */
+  projectFilePath(projectId: string, path: string): Promise<string>
   /** Searches those files' text; `null` if a later search from the same client replaced it. */
   searchProject(projectId: string, query: TextQuery): Promise<SearchResults | null>
 
@@ -218,6 +220,7 @@ const apiMethodSet: Record<keyof Api, true> = {
   renameFile: true,
   deleteFile: true,
   listProjectFiles: true,
+  projectFilePath: true,
   searchProject: true,
   attachTerminal: true,
   detachTerminal: true,

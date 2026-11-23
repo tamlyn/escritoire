@@ -17,7 +17,7 @@ import {
   usePanelRef,
   useWorkspaceRef,
 } from 'react-resizable-panels'
-import type { AgentKind, SessionTarget } from '../../shared/agent'
+import type { SessionTarget } from '../../shared/agent'
 import type { Project } from '../../shared/api'
 import { api } from './api'
 import { FileTree } from './FileTree'
@@ -33,6 +33,7 @@ import { shortcutLabel } from './shortcuts'
 import { ProcessList } from './process/ProcessList'
 import { ProcessStatusDot } from './process/ProcessStatusDot'
 import { useProcess } from './processes'
+import { createStartingTab } from './NewTabPage'
 import { RememberFocus } from './RememberFocus'
 import { TabErrorBoundary } from './TabErrorBoundary'
 import {
@@ -121,13 +122,6 @@ export function ProjectWorkspace({ project, pendingSession, onPendingSessionShow
     workspaceRef.current?.selectTab(tabset.tabs[(index + step + tabset.tabs.length) % tabset.tabs.length]!.id)
   }
 
-  function startSession(agent: AgentKind) {
-    api.createSession(project.id, agent).then(
-      (pointer) => workspaceRef.current?.addTab(createSessionTab(pointer, '')),
-      (error: unknown) => console.error(`Couldn't start the ${agent} session:`, error),
-    )
-  }
-
   useCommand({ id: 'new-tab', title: 'New tab', shortcut: newTabShortcut, run: () => workspaceRef.current?.addTab(createEmptyTab()) })
   useCommand({
     id: 'close-tab',
@@ -150,8 +144,8 @@ export function ProjectWorkspace({ project, pendingSession, onPendingSessionShow
       else sidebar?.collapse()
     },
   })
-  useCommand({ id: 'new-claude-session', title: 'New Claude session', run: () => startSession('claude') })
-  useCommand({ id: 'new-codex-session', title: 'New Codex session', run: () => startSession('codex') })
+  useCommand({ id: 'new-claude-session', title: 'New Claude session', run: () => workspaceRef.current?.addTab(createStartingTab('claude')) })
+  useCommand({ id: 'new-codex-session', title: 'New Codex session', run: () => workspaceRef.current?.addTab(createStartingTab('codex')) })
   useCommand({ id: 'new-terminal', title: 'New terminal', run: () => workspaceRef.current?.addTab(createTerminalTab()) })
   useCommand({ id: 'git', title: 'Show git history', run: () => workspaceRef.current?.addTab(createGitTab()) })
 

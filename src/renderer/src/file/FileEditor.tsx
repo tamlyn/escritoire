@@ -92,14 +92,18 @@ export function Editor({
   useEffect(() => {
     let saveTimer: ReturnType<typeof setTimeout> | undefined
     let positionTimer: ReturnType<typeof setTimeout> | undefined
-    const positionChanged = (view: EditorView) => {
+    // Read as it changes, since once the editor unmounts it has no scroll position to read.
+    let position: EditorPosition | undefined
+    const reportPosition = () => {
       clearTimeout(positionTimer)
-      positionTimer = setTimeout(() => {
-        onPositionChangedRef.current({
-          scrollPos: view.lineBlockAtHeight(view.scrollDOM.scrollTop).from,
-          cursor: view.state.selection.main.head,
-        })
-      }, positionSaveDelayMs)
+      positionTimer = undefined
+      if (position) onPositionChangedRef.current(position)
+      position = undefined
+    }
+    const positionChanged = (view: EditorView) => {
+      position = { scrollPos: view.lineBlockAtHeight(view.scrollDOM.scrollTop).from, cursor: view.state.selection.main.head }
+      clearTimeout(positionTimer)
+      positionTimer = setTimeout(reportPosition, positionSaveDelayMs)
     }
 
     let pending: Promise<void> = Promise.resolve()
@@ -185,7 +189,7 @@ export function Editor({
     return () => {
       stopFollowing()
       flushers.delete(flush)
-      clearTimeout(positionTimer)
+      reportPosition()
       save()
       view.destroy()
       viewRef.current = null

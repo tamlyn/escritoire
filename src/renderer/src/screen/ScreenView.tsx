@@ -5,6 +5,7 @@ import { type RefObject, useEffect, useRef } from 'react'
 import type { ScreenOutput, ScreenSize, ScreenSnapshot } from '../../../shared/screen'
 import { subscribe } from '../api'
 import { isCommandKey } from '../commands'
+import { isMac } from '../shortcuts'
 import { codeFontSize, codeLineHeight } from '../lib/code-font'
 
 export type ScreenConnection = {
@@ -45,8 +46,9 @@ export function ScreenView({ screenId, connection, autoFocus = false, terminalRe
       scrollback: 5000,
       theme: themeFrom(container),
     })
-    // On Linux the app's Ctrl+Shift shortcuts would otherwise go to the shell.
-    terminal.attachCustomKeyEventHandler((event) => !isCommandKey(event))
+    // The app's shortcuts are Ctrl ones on Linux, and plain Ctrl+W, Ctrl+B and the
+    // like are the shell's, so only Ctrl+Shift ones leave the terminal. ⌘ never reaches the shell.
+    terminal.attachCustomKeyEventHandler((event) => !(isCommandKey(event) && (isMac || event.shiftKey)))
     const fitAddon = new FitAddon()
     terminal.loadAddon(fitAddon)
     terminal.open(container)

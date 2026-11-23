@@ -11,7 +11,7 @@ import {
   CommandList,
 } from './components/ui/command'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
-import { projectRelativePath } from './files'
+import { openablePath } from './files'
 import { fuzzyFinder } from './fuzzy'
 import { type ProjectActivity, projectActivity } from './project-activity'
 import { useAllProcesses } from './processes'
@@ -82,9 +82,9 @@ export function ProjectSwitcher(props: Props) {
       ? (pathValues[0] ?? '')
       : highlighted
 
-  function openFile(path: string) {
+  async function openFile(path: string) {
     const project = state.projects.find((p) => p.id === state.activeProjectId)
-    props.onOpenFile(project ? projectRelativePath(project.path, path) : path)
+    props.onOpenFile(project ? await openablePath(project.id, project.path, path) : path)
     onOpenChange(false)
   }
 

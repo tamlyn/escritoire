@@ -14,7 +14,7 @@ export function RememberFocus({ children }: { children: ReactNode }) {
   // After the content's own effects, so a remembered element wins over a tab's default focus.
   useEffect(() => {
     const element = lastFocused.current
-    if (!shown || !element?.isConnected) return
+    if (!shown || !element?.isConnected || focusedElsewhere(container.current)) return
     // Focusing CodeMirror's content element directly would let the browser's
     // selection replace the editor's.
     const editor = EditorView.findFromDOM(element)
@@ -34,4 +34,15 @@ export function RememberFocus({ children }: { children: ReactNode }) {
       {children}
     </div>
   )
+}
+
+/**
+ * Whether the user is working somewhere else, as when a tab in another tabset
+ * is shown without their asking. Focus left on the tab they clicked, in the
+ * tab hidden for this one, or nowhere, is theirs to take back.
+ */
+function focusedElsewhere(container: HTMLElement | null): boolean {
+  const active = document.activeElement
+  if (!(active instanceof HTMLElement) || active === document.body) return false
+  return !container?.contains(active) && !active.closest('[role="tab"]') && active.checkVisibility()
 }
