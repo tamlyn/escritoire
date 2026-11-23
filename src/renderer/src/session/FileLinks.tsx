@@ -37,6 +37,12 @@ export function FileLinksProvider({ onOpenFile, children }: { onOpenFile: (path:
   return <FileLinksContext.Provider value={links}>{children}</FileLinksContext.Provider>
 }
 
+/** Opens a file in an editor tab, where the transcript can. */
+export function useOpenFile(): ((path: string) => void) | null {
+  const links = useContext(FileLinksContext)
+  return links && ((path) => links.open(path, undefined))
+}
+
 const DefaultLink = defaultComponents.a!
 
 function MessageLink(props: ComponentProps<'a'> & ExtraProps) {

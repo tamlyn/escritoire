@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { type AgentEvent, applyEvent, emptySessionView, type SessionView } from '../../shared/agent'
 import { createClaudeAdapter } from './claude'
@@ -89,6 +92,7 @@ function fakeQuery({ prompt, options }: { prompt: AsyncIterable<{ message: { con
     // Messages already on their way can still arrive after closing.
     close: () => {},
     getContextUsage: unavailable,
+    askSideQuestion: async () => ({ response: 'Ready', synthetic: false }),
     usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: unavailable,
   })
 }
@@ -141,10 +145,14 @@ beforeEach(() => {
 describe('Claude plan approval', () => {
   let events: AgentEvent[]
   let run: AgentRun
+  let directory: string
+  let plan: { plan: string; planFilePath: string }
   const view = (): SessionView => events.reduce(applyEvent, emptySessionView)
-  const plan = { plan: '1. Do it', planFilePath: '/plans/p.md' }
 
   beforeEach(async () => {
+    directory = await mkdtemp(join(tmpdir(), 'escritoire-plan-'))
+    plan = { plan: '1. Do it', planFilePath: join(directory, 'plan.md') }
+    await writeFile(plan.planFilePath, plan.plan)
     events = []
     run = claude.start((event) => events.push(event))
     await tick()
@@ -152,7 +160,10 @@ describe('Claude plan approval', () => {
     await tick()
   })
 
-  afterEach(() => run.close())
+  afterEach(async () => {
+    run.close()
+    await rm(directory, { recursive: true, force: true })
+  })
 
   function askToExitPlanMode() {
     return fakes.claude!.canUseTool('ExitPlanMode', plan, { signal: new AbortController().signal, toolUseID: 'toolu_plan' })
@@ -161,7 +172,7 @@ describe('Claude plan approval', () => {
   it('shows the plan and approves it in the mode chosen', async () => {
     const decision = askToExitPlanMode()
     await tick()
-    expect(view().items.at(-1)).toEqual({ kind: 'plan', id: 'toolu_plan', text: '1. Do it' })
+    expect(view().items.at(-1)).toEqual({ kind: 'plan', id: 'toolu_plan', text: '1. Do it', path: plan.planFilePath })
     const [request] = view().requests
     expect(request).toMatchObject({ kind: 'permission', view: null })
 
@@ -172,6 +183,17 @@ describe('Claude plan approval', () => {
       updatedInput: plan,
       updatedPermissions: [{ type: 'setMode', mode: 'auto', destination: 'session' }],
     })
+  })
+
+  it('approves the plan as the user has since edited its file', async () => {
+    const decision = askToExitPlanMode()
+    await tick()
+    await writeFile(plan.planFilePath, '1. Do it properly')
+
+    run.respond(view().requests[0]!.id, { kind: 'permission', optionId: 'default' })
+
+    expect(await decision).toMatchObject({ behavior: 'allow', updatedInput: { ...plan, plan: '1. Do it properly' } })
+    expect(view().items.at(-1)).toMatchObject({ kind: 'plan', text: '1. Do it properly' })
   })
 
   it('stops the turn quietly to keep planning', async () => {
@@ -185,6 +207,22 @@ describe('Claude plan approval', () => {
 
     expect(view().items.filter((item) => item.kind === 'notice')).toEqual([])
     expect(view().status).toBe('idle')
+  })
+})
+
+describe('Claude rewarm', () => {
+  it('asks a side question, adding nothing to the conversation, and renews the cache', async () => {
+    const events: AgentEvent[] = []
+    const usage = { contextTokens: 1000, cacheReadTokens: 0, cacheWriteTokens: 0, at: 0 }
+    const run = createClaudeAdapter().start({ cwd: '/project', agentSessionId: 'session', settings: {}, usage }, (event) => events.push(event))
+    await tick()
+
+    await run.rewarm()
+
+    expect(fakes.claude!.sent).toEqual([])
+    expect(events).toEqual([{ type: 'usageChanged', usage: { ...usage, at: expect.any(Number) } }])
+    expect((events[0] as Extract<AgentEvent, { type: 'usageChanged' }>).usage.at).toBeGreaterThan(0)
+    run.close()
   })
 })
 

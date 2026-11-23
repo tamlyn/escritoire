@@ -15,6 +15,7 @@ function fakeAdapter(history: Item[] = []) {
     settings: SessionSettings[]
     refuseSettings: boolean
     usageRefreshes: number
+    rewarms: number
   }[] = []
   let created = 0
   const adapter: AgentAdapter = {
@@ -26,7 +27,7 @@ function fakeAdapter(history: Item[] = []) {
     settingChoices: async () => ({ models: [], permissionModes: [] }),
     listCommands: async () => [],
     start(options, emit) {
-      const run = { options, emit, sent: [] as string[], settings: [] as SessionSettings[], refuseSettings: false, usageRefreshes: 0 }
+      const run = { options, emit, sent: [] as string[], settings: [] as SessionSettings[], refuseSettings: false, usageRefreshes: 0, rewarms: 0 }
       runs.push(run)
       return {
         send: (input) => {
@@ -41,6 +42,7 @@ function fakeAdapter(history: Item[] = []) {
         },
         stopTask: async () => {},
         refreshUsage: async () => { run.usageRefreshes++ },
+        rewarm: async () => { run.rewarms++ },
         close: () => {},
       }
     },
@@ -80,7 +82,7 @@ describe('SessionManager', () => {
     ])
   })
 
-  it('rewarms with a minimal turn, keeping the draft and rejecting a second request while busy', async () => {
+  it('rewarms through the run, keeping the draft and rejecting a request while busy', async () => {
     const { manager, runs } = await setup()
     const pointer = await manager.createSession('p1', 'claude')
     await manager.openSession('p1', pointer)
@@ -88,12 +90,29 @@ describe('SessionManager', () => {
     runs[0]!.emit({ type: 'statusChanged', status: 'idle' })
     manager.saveDraft(pointer, 'My next question')
 
-    manager.rewarm(pointer)
-    expect(runs[0]!.sent.at(-1)).toBe('Rewarm the prompt cache. Reply only with "Ready". Do not use tools or take any other action.')
+    await manager.rewarm(pointer)
+    expect(runs[0]!.rewarms).toBe(1)
+    expect(runs[0]!.sent).toEqual(['Hi'])
     expect((await manager.openSession('p1', pointer)).draft).toBe('My next question')
-    expect(() => manager.rewarm(pointer)).toThrow('Finish the current turn')
-    expect(runs[0]!.sent).toHaveLength(2)
+    manager.sendMessage(pointer, say('Next'))
+    await expect(manager.rewarm(pointer)).rejects.toThrow('Finish the current turn')
     manager.closeSession(pointer)
+  })
+
+  it('remembers the context window, to size the usage of the history it loads next time', async () => {
+    const { manager, runs, dataDir } = await setup()
+    const pointer = await manager.createSession('p1', 'claude')
+    await manager.openSession('p1', pointer)
+    manager.sendMessage(pointer, say('Hi'))
+    const usage = { contextTokens: 1000, cacheReadTokens: 0, cacheWriteTokens: 0, at: 0 }
+    runs[0]!.emit({ type: 'usageChanged', usage: { ...usage, contextWindow: 200_000 } })
+    await manager.closeProject('p1')
+
+    const { adapter } = fakeAdapter()
+    adapter.loadHistory = async () => ({ items: [{ kind: 'userMessage', id: 'u1', text: 'Hi' }], usage })
+    const restarted = new SessionManager({ adapters: { claude: adapter }, store: new SessionStore(dataDir), projectPath: () => '/work/project', send: () => {} })
+    const reopened = await restarted.openSession('p1', pointer)
+    expect(reopened.view.usage).toEqual({ ...usage, contextWindow: 200_000 })
   })
 
   it('keeps the title of a session started elsewhere', async () => {
@@ -421,6 +440,17 @@ describe('SessionManager', () => {
     await expect(manager.continueInNewSession(pointer)).rejects.toThrow('Finish the current turn')
   })
 
+  it('makes one fork when the same edit is sent twice at once', async () => {
+    const { manager, runs } = await setup([{ kind: 'userMessage', id: 'u1', text: 'Fix the bug' }])
+    const pointer = { agent: 'claude' as const, agentSessionId: 'original' }
+    await manager.openSession('p1', pointer)
+
+    const results = await Promise.allSettled([manager.editMessage(pointer, 'u1', 'Fix it'), manager.editMessage(pointer, 'u1', 'Fix it')])
+
+    expect(results.map((result) => result.status)).toEqual(['fulfilled', 'rejected'])
+    expect(runs).toHaveLength(1)
+  })
+
   it("won't edit a message during a turn", async () => {
     const { manager } = await setup([{ kind: 'userMessage', id: 'u1', text: 'Fix the bug' }])
     const pointer = { agent: 'claude' as const, agentSessionId: 'original' }
@@ -500,6 +530,22 @@ describe('SessionManager', () => {
     expect(runs.map((run) => run.options.settings)).toEqual([{ model: 'opus', effort: 'high' }, { effort: 'high' }])
   })
 
+  it('keeps an effort deliberately left unset, for a model without efforts', async () => {
+    const { manager, runs } = await setup()
+    const first = await manager.createSession('p1', 'claude')
+    await manager.openSession('p1', first)
+    await manager.changeSettings(first, { effort: 'high' }, true)
+    const haiku = await manager.createSession('p1', 'claude')
+    await manager.openSession('p1', haiku)
+    await manager.changeSettings(haiku, { model: 'haiku', effort: null })
+    manager.closeSession(haiku)
+
+    await manager.openSession('p1', haiku)
+    manager.sendMessage(haiku, say('Hi'))
+
+    expect(runs[0]!.options.settings).toEqual({ model: 'haiku', effort: null })
+  })
+
   it('starts the run to refresh usage, and keeps it for the next message', async () => {
     const { manager, runs } = await setup([{ kind: 'userMessage', id: 'u1', text: 'Earlier' }])
     const pointer = { agent: 'claude' as const, agentSessionId: 'external' }
@@ -511,6 +557,18 @@ describe('SessionManager', () => {
     expect(runs).toHaveLength(1)
     expect(runs[0]!.usageRefreshes).toBe(2)
     expect(runs[0]!.sent).toEqual(['Carry on'])
+  })
+
+  it("doesn't restart a failed run to refresh usage", async () => {
+    const { manager, runs } = await setup([{ kind: 'userMessage', id: 'u1', text: 'Earlier' }])
+    const pointer = { agent: 'claude' as const, agentSessionId: 'external' }
+    await manager.openSession('p1', pointer)
+    await manager.refreshUsage(pointer)
+    runs[0]!.emit({ type: 'statusChanged', status: 'errored', error: 'Claude Code exited.' })
+
+    await manager.refreshUsage(pointer)
+
+    expect(runs).toHaveLength(1)
   })
 
   it('forgets a setting the run refuses', async () => {

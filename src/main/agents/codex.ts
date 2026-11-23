@@ -20,7 +20,7 @@ import type { AskForApproval } from './codex-protocol/v2/AskForApproval'
 import type { SandboxMode } from './codex-protocol/v2/SandboxMode'
 import type { SandboxPolicy } from './codex-protocol/v2/SandboxPolicy'
 import { CodexRpc, type RpcMessage } from './codex-rpc'
-import type { AgentAdapter, AgentRun, StartOptions } from './types'
+import { type AgentAdapter, type AgentRun, rewarmPrompt, type StartOptions } from './types'
 
 async function using<T>(cwd: string, fn: (rpc: CodexRpc) => Promise<T>): Promise<T> {
   const rpc = new CodexRpc(cwd)
@@ -393,6 +393,8 @@ class CodexRun implements AgentRun {
   async changeSettings(settings: SessionSettings): Promise<void> { this.settings = { ...this.settings, ...settings } }
   // Codex reports the context's use as it changes, so only the limits are asked for.
   async refreshUsage(): Promise<void> { await this.ready; await this.readRateLimits().catch(() => {}) }
+  // A forked thread would have its own cache key, so the turn has to be the thread's own.
+  async rewarm(): Promise<void> { this.send({ text: rewarmPrompt, images: [] }) }
   async stopTask(): Promise<void> { throw new Error('Codex does not expose task stopping here. Interrupt the turn instead.') }
   close(): void { this.closed = true; this.queue = []; this.rpc.close() }
   private adopt(resolved: Resolved, pending: SessionSettings = {}): void {

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import { relative } from 'node:path'
 import {
   type CanUseTool,
@@ -39,7 +40,6 @@ import {
   type UserInput,
 } from '../../shared/agent'
 import { readOnlyTools } from '../ide-tools'
-import { ContextWindows } from './context-windows'
 import { AsyncQueue } from './async-queue'
 import type { AgentAdapter, AgentRun, StartOptions } from './types'
 
@@ -102,7 +102,7 @@ function ideOptions(ide: NonNullable<StartOptions['ide']>): {
   }
 }
 
-export function createClaudeAdapter(contextWindows = ContextWindows.inMemory()): AgentAdapter {
+export function createClaudeAdapter(): AgentAdapter {
   return {
     kind: 'claude',
 
@@ -129,7 +129,7 @@ export function createClaudeAdapter(contextWindows = ContextWindows.inMemory()):
 
     async loadHistory(agentSessionId, cwd) {
       const messages = await getSessionMessages(agentSessionId, { dir: cwd })
-      const transcript = new ClaudeTranscript(cwd, contextWindows)
+      const transcript = new ClaudeTranscript(cwd)
       const events = messages.flatMap((m) => transcript.map(m as unknown as Message))
       const { items, usage } = events.reduce(applyEvent, emptySessionView)
       return { items, usage }
@@ -145,7 +145,7 @@ export function createClaudeAdapter(contextWindows = ContextWindows.inMemory()):
 
     listCommands: loadCommands,
 
-    start: (options, emit) => new ClaudeRun(options, emit, contextWindows),
+    start: (options, emit) => new ClaudeRun(options, emit),
   }
 }
 
@@ -216,9 +216,13 @@ function loadCommands(cwd: string): Promise<SlashCommand[]> {
 type Pending = {
   toolName: string
   toolInput: Record<string, unknown>
+  toolUseId: string
   suggestions?: PermissionUpdate[]
   resolve: (result: PermissionResult) => void
 }
+
+// Undocumented, though the SDK has it: what `/btw` asks.
+type SideQuestions = { askSideQuestion(question: string): Promise<unknown> }
 
 /**
  * One Claude Code process for a session. It ends for good when closed, when it
@@ -236,14 +240,14 @@ class ClaudeRun implements AgentRun {
   private errorShown = false
   private working = false
   private ended = false
-  private refreshing: Promise<unknown> | undefined
+  private refreshing: Promise<void> | undefined
+  private nextRefresh: Promise<void> | undefined
 
   constructor(
     private readonly options: StartOptions,
     private readonly output: (event: AgentEvent) => void,
-    contextWindows: ContextWindows,
   ) {
-    this.transcript = new ClaudeTranscript(options.cwd, contextWindows)
+    this.transcript = new ClaudeTranscript(options.cwd, options.usage)
     this.started = new Promise((resolve) => (this.markStarted = resolve))
     void this.run()
   }
@@ -295,10 +299,34 @@ class ClaudeRun implements AgentRun {
   respond(requestId: string, response: RequestResponse): void {
     const pending = this.pending.get(requestId)
     if (!pending) return
+    if (pending.toolName === exitPlanMode && response.kind === 'permission' && planModes[response.optionId]) {
+      void this.approvePlan(requestId, pending, response)
+      return
+    }
     const result = toPermissionResult(pending, response)
     // Turning a plan down stops the turn, which Claude Code reports as a failed result.
     if (result.behavior === 'deny' && result.interrupt) this.interrupted = true
     this.settle(requestId, pending, result)
+  }
+
+  /**
+   * Claude Code saves the plan it's given back over the plan's file, so the
+   * plan it asked about would undo any edit the user has made to the file since.
+   */
+  private async approvePlan(requestId: string, pending: Pending, response: RequestResponse): Promise<void> {
+    const { plan, planFilePath } = pending.toolInput
+    const saved = typeof planFilePath === 'string' ? await readFile(planFilePath, 'utf8').catch(() => undefined) : undefined
+    const toolInput = saved === undefined || saved === plan ? pending.toolInput : { ...pending.toolInput, plan: saved }
+    if (toolInput !== pending.toolInput) this.emit(upsert(planItem(pending.toolUseId, toolInput)))
+    this.settle(requestId, pending, toPermissionResult({ ...pending, toolInput }, response))
+  }
+
+  /** A side question reads the conversation's cached prefix without adding to the conversation. */
+  async rewarm(): Promise<void> {
+    const query = await this.started
+    if (!query) throw new Error('Claude Code has stopped.')
+    await (query as Query & SideQuestions).askSideQuestion('Reply with "Ready" only.')
+    for (const event of this.transcript.cacheUsed(Date.now())) this.emit(event)
   }
 
   close(): void {
@@ -312,8 +340,6 @@ class ClaudeRun implements AgentRun {
       // before writing one, and resuming an id it has never seen fails forever.
       const history = await getSessionMessages(this.options.agentSessionId, { dir: this.options.cwd }).catch(() => [])
       if (this.ended) return
-      // The events are already shown; this only carries the history's usage over, to size and break down.
-      for (const message of history) this.transcript.map(message as unknown as Message)
       const { model, effort, permissionMode } = this.options.settings
       this.query = query({
         prompt: this.input,
@@ -414,10 +440,19 @@ class ClaudeRun implements AgentRun {
     }
   }
 
+  /**
+   * One refresh at a time, and at most one more waiting behind it, so one asked
+   * for during another (as a turn ends) still reads what came after.
+   */
   async refreshUsage(): Promise<void> {
     if (!(await this.started)) return
-    this.refreshing ??= Promise.all([this.refreshContext(), this.refreshLimits()]).finally(() => (this.refreshing = undefined))
-    await this.refreshing
+    this.nextRefresh ??= (async () => {
+      await this.refreshing
+      this.nextRefresh = undefined
+      this.refreshing = Promise.all([this.refreshContext(), this.refreshLimits()]).then(() => {})
+      await this.refreshing
+    })()
+    await this.nextRefresh
   }
 
   private async refreshContext(): Promise<void> {
@@ -463,7 +498,7 @@ class ClaudeRun implements AgentRun {
                 { id: 'deny', label: 'Deny', kind: 'deny' },
               ],
             }
-      const pending = { toolName, toolInput, suggestions, resolve }
+      const pending = { toolName, toolInput, toolUseId: toolUseID, suggestions, resolve }
       this.pending.set(id, pending)
       this.emit({ type: 'requestAdded', request })
       signal.addEventListener(
@@ -493,7 +528,12 @@ const planOptions: PermissionOption[] = [
 ]
 
 function planItem(id: string, input: Record<string, unknown>): Item {
-  return { kind: 'plan', id, text: typeof input.plan === 'string' ? input.plan : '' }
+  return {
+    kind: 'plan',
+    id,
+    text: typeof input.plan === 'string' ? input.plan : '',
+    ...(typeof input.planFilePath === 'string' ? { path: input.planFilePath } : {}),
+  }
 }
 
 function toPermissionResult(pending: Pending, response: RequestResponse): PermissionResult {
@@ -554,8 +594,13 @@ export class ClaudeTranscript {
   private readonly blockCounts = new Map<string, number>()
   private readonly toolCalls = new Map<string, ToolCall>()
   private streamMessageId: string | undefined
-  private usage: ContextUsage | undefined
   private usageModel: string | undefined
+  /**
+   * Context window sizes by model, as this session's results and breakdowns
+   * give them. Not shared between sessions: Claude Code's 1M-context aliases
+   * use the same model id as the standard window.
+   */
+  private readonly windows = new Map<string, number>
   // Claude Code also reports foreground tasks finishing; only background ones need a notice.
   private readonly backgroundTaskIds = new Set<string>()
   private tasks: { id: string; type: string; description: string }[] = []
@@ -564,7 +609,7 @@ export class ClaudeTranscript {
 
   constructor(
     private readonly cwd: string,
-    private readonly contextWindows = ContextWindows.inMemory(),
+    private usage?: ContextUsage,
   ) {}
 
   map(message: Message | SDKMessage): AgentEvent[] {
@@ -667,10 +712,12 @@ export class ClaudeTranscript {
       : writes?.ephemeral_5m_input_tokens
         ? 5 * minute
         : this.usage?.cacheTtlMs
+    // Usage carried over from history doesn't say its model, but is most likely this one's.
+    const sameModel = (this.usageModel ?? message.model) === message.model
     this.usageModel = message.model
     this.usage = {
       contextTokens: (usage.input_tokens ?? 0) + cacheReadTokens + cacheWriteTokens + (usage.output_tokens ?? 0),
-      contextWindow: this.contextWindows.get(message.model),
+      contextWindow: this.windows.get(message.model) ?? (sameModel ? this.usage?.contextWindow : undefined),
       cacheReadTokens,
       cacheWriteTokens,
       cacheTtlMs,
@@ -682,14 +729,21 @@ export class ClaudeTranscript {
   }
 
   mapContextUsage(context: SDKControlGetContextUsageResponse): AgentEvent[] {
-    // The same figure results give as the model's context window.
-    this.contextWindows.set(context.model, context.rawMaxTokens)
+    // The same figure results give as the model's context window. Claude Code names a 1M-context model with a suffix.
+    this.windows.set(context.model.replace(/\[[^\]]*\]$/, ''), context.rawMaxTokens)
     if (!this.usage) return []
     const categories = context.categories
       .filter((category) => (category.kind === 'used' || category.kind === 'buffer') && category.tokens > 0)
       .map(({ name, tokens, kind }) => ({ name, tokens, reserved: kind === 'buffer' }))
-    const contextWindow = (this.usageModel && this.contextWindows.get(this.usageModel)) || this.usage.contextWindow
+    const contextWindow = (this.usageModel && this.windows.get(this.usageModel)) || this.usage.contextWindow
     this.usage = { ...this.usage, contextWindow, categories }
+    return [{ type: 'usageChanged', usage: this.usage }]
+  }
+
+  /** A request whose usage isn't reported, such as a side question, still renews the cache. */
+  cacheUsed(at: number): AgentEvent[] {
+    if (!this.usage) return []
+    this.usage = { ...this.usage, at }
     return [{ type: 'usageChanged', usage: this.usage }]
   }
 
@@ -697,9 +751,9 @@ export class ClaudeTranscript {
   private mapResult(result: Message): AgentEvent[] {
     const models = (result.modelUsage ?? {}) as Record<string, { contextWindow?: number }>
     for (const [model, usage] of Object.entries(models)) {
-      if (usage.contextWindow) this.contextWindows.set(model, usage.contextWindow)
+      if (usage.contextWindow) this.windows.set(model, usage.contextWindow)
     }
-    const contextWindow = this.usageModel && this.contextWindows.get(this.usageModel)
+    const contextWindow = this.usageModel && this.windows.get(this.usageModel)
     if (!this.usage || !contextWindow || this.usage.contextWindow === contextWindow) return []
     this.usage = { ...this.usage, contextWindow }
     return [{ type: 'usageChanged', usage: this.usage }]

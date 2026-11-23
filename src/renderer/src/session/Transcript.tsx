@@ -16,10 +16,10 @@ import {
 } from '@/components/ai-elements/tool'
 import { cn } from '@/lib/utils'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { ChevronRightIcon, PencilIcon } from 'lucide-react'
-import { type ReactNode, useState } from 'react'
+import { CheckIcon, ChevronRightIcon, CopyIcon, PencilIcon } from 'lucide-react'
+import { type ComponentProps, type ReactNode, useEffect, useState } from 'react'
 import type { ImageAttachment, Item, ToolView } from '../../../shared/agent'
-import { fileLinkProps } from './FileLinks'
+import { fileLinkProps, useOpenFile } from './FileLinks'
 import { WorkingAnimation } from './WorkingAnimation'
 
 /** `onEdit` sends new text in place of a past message of the user's; leave it out while that can't be done. */
@@ -236,6 +236,55 @@ function UserMessage({ item, onEdit }: {
   )
 }
 
+/** Editing the plan's file before approving it changes the plan Claude builds. */
+function Plan({ item, streaming }: { item: Extract<Item, { kind: 'plan' }>; streaming: boolean }) {
+  const openFile = useOpenFile()
+  const { path } = item
+  return (
+    <div className="bg-card space-y-3 rounded-lg border p-4">
+      <div className="flex items-center gap-1">
+        <h3 className="text-muted-foreground text-ui flex-1 font-medium">Plan</h3>
+        {!streaming && <CopyButton text={item.text} />}
+        {path && openFile && (
+          <ActionButton title="Edit the plan's file" onClick={() => openFile(path)}>
+            <PencilIcon className="size-3.5" />
+          </ActionButton>
+        )}
+      </div>
+      <MessageResponse isAnimating={streaming} {...fileLinkProps}>
+        {item.text}
+      </MessageResponse>
+    </div>
+  )
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    if (!copied) return
+    const timer = setTimeout(() => setCopied(false), 2000)
+    return () => clearTimeout(timer)
+  }, [copied])
+  return (
+    <ActionButton
+      title={copied ? 'Copied' : 'Copy as Markdown'}
+      onClick={() => void navigator.clipboard.writeText(text).then(() => setCopied(true), console.error)}
+    >
+      {copied ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
+    </ActionButton>
+  )
+}
+
+function ActionButton({ className, ...props }: ComponentProps<'button'>) {
+  return (
+    <button
+      type="button"
+      className={cn('text-muted-foreground hover:text-foreground hover:bg-accent rounded-sm p-1 compact:p-1.5', className)}
+      {...props}
+    />
+  )
+}
+
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`
 
 function ItemView({
@@ -263,14 +312,7 @@ function ItemView({
         </Message>
       )
     case 'plan':
-      return (
-        <div className="bg-card space-y-3 rounded-lg border p-4">
-          <h3 className="text-muted-foreground text-ui font-medium">Plan</h3>
-          <MessageResponse isAnimating={streaming} {...fileLinkProps}>
-            {item.text}
-          </MessageResponse>
-        </div>
-      )
+      return <Plan item={item} streaming={streaming} />
     case 'reasoning':
       // Claude Code doesn't always ask for the thinking text, leaving nothing to expand.
       if (!item.text && !streaming) {

@@ -77,6 +77,8 @@ export class SessionManager {
    * (its tab wasn't mounted, or it wasn't connected) still follows it.
    */
   private readonly moved = new Map<string, string>()
+  /** Sessions being forked into a new one, which a second request mustn't fork again. */
+  private readonly forking = new Set<string>()
   /** Projects with sessions loading or loaded, until they close. */
   private readonly projects = new Map<string, ProjectWork>()
   /** By project and agent. */
@@ -209,16 +211,13 @@ export class SessionManager {
     }
   }
 
-  /** A real turn warms the existing prompt prefix without clearing the user's draft. */
-  rewarm(pointer: SessionPointer): void {
+  /** Warms the existing prompt prefix without clearing the user's draft. */
+  async rewarm(pointer: SessionPointer): Promise<void> {
     const session = this.get(pointer)
     if (session.view.status === 'working' || session.view.requests.length || session.view.queued.length) {
       throw new Error('Finish the current turn and queued messages before rewarming.')
     }
-    this.dispatch(session, {
-      text: 'Rewarm the prompt cache. Reply only with "Ready". Do not use tools or take any other action.',
-      images: [],
-    })
+    await this.ensureRun(session).rewarm()
   }
 
   /** Queues the message to go no sooner than `sendAt`, as when continuing once a usage limit resets. */
@@ -239,17 +238,19 @@ export class SessionManager {
     const item = session.view.items.find((candidate) => candidate.id === itemId)
     if (item?.kind !== 'userMessage') throw new Error('Only your own messages can be edited.')
     const { projectId, record } = session
-    const agentSessionId = await this.project(projectId).work.run(async () => {
-      const id = await this.adapter(pointer.agent).forkSession(session.cwd, pointer.agentSessionId, itemId, this.deps.ideConnection?.(projectId))
-      await this.deps.store.put(projectId, id, { ...newRecord(pointer.agent), title: record.title, draft: record.draft, settings: record.settings })
-      return id
+    await this.forkOnce(session, async () => {
+      const agentSessionId = await this.project(projectId).work.run(async () => {
+        const id = await this.adapter(pointer.agent).forkSession(session.cwd, pointer.agentSessionId, itemId, this.deps.ideConnection?.(projectId))
+        await this.deps.store.put(projectId, id, { ...newRecord(pointer.agent), title: record.title, draft: record.draft, settings: record.settings })
+        return id
+      })
+      const fork = await this.load(projectId, { agent: pointer.agent, agentSessionId })
+      this.dispatch(fork, { text, images: item.images ?? [] })
+      // Sent rather than applied, which would move this session to the new id rather than leave it be.
+      session.seq++
+      this.deps.send('sessionEvent', { agentSessionId: pointer.agentSessionId, seq: session.seq, event: { type: 'conversationReset', agentSessionId } })
+      this.stop(session)
     })
-    const fork = await this.load(projectId, { agent: pointer.agent, agentSessionId })
-    this.dispatch(fork, { text, images: item.images ?? [] })
-    // Sent rather than applied, which would move this session to the new id rather than leave it be.
-    session.seq++
-    this.deps.send('sessionEvent', { agentSessionId: pointer.agentSessionId, seq: session.seq, event: { type: 'conversationReset', agentSessionId } })
-    this.stop(session)
   }
 
   /**
@@ -265,15 +266,29 @@ export class SessionManager {
       throw new Error('Finish the current turn and queued messages before continuing in a new session.')
     }
     const draft = handoffPrompt(pointer, view.items) + record.draft
-    const agentSessionId = await this.project(projectId).work.run(async () => {
-      const id = await this.adapter(pointer.agent).createSession(session.cwd, this.deps.ideConnection?.(projectId))
-      await this.deps.store.put(projectId, id, { ...newRecord(pointer.agent), title: record.title, draft, settings: record.settings })
-      return id
+    await this.forkOnce(session, async () => {
+      const agentSessionId = await this.project(projectId).work.run(async () => {
+        const id = await this.adapter(pointer.agent).createSession(session.cwd, this.deps.ideConnection?.(projectId))
+        await this.deps.store.put(projectId, id, { ...newRecord(pointer.agent), title: record.title, draft, settings: record.settings })
+        return id
+      })
+      // Sent rather than applied, as in editMessage.
+      session.seq++
+      this.deps.send('sessionEvent', { agentSessionId: pointer.agentSessionId, seq: session.seq, event: { type: 'conversationReset', agentSessionId } })
+      this.stop(session)
     })
-    // Sent rather than applied, as in editMessage.
-    session.seq++
-    this.deps.send('sessionEvent', { agentSessionId: pointer.agentSessionId, seq: session.seq, event: { type: 'conversationReset', agentSessionId } })
-    this.stop(session)
+  }
+
+  /** Two clients, or one resending after a reconnect, would otherwise each make a new session. */
+  private async forkOnce(session: Session, fork: () => Promise<void>): Promise<void> {
+    const id = session.pointer.agentSessionId
+    if (this.forking.has(id)) throw new Error('This session is already moving to a new one.')
+    this.forking.add(id)
+    try {
+      await fork()
+    } finally {
+      this.forking.delete(id)
+    }
   }
 
   editQueuedMessage(pointer: SessionPointer, id: string, text: string): void {
@@ -338,6 +353,7 @@ export class SessionManager {
         agentSessionId: session.pointer.agentSessionId,
         settings: session.record.settings ?? {},
         ide: this.deps.ideConnection?.(session.projectId),
+        usage: session.view.usage,
       },
       (event) => this.apply(session, event),
     )
@@ -365,9 +381,14 @@ export class SessionManager {
     this.apply(session, { type: 'settingsChanged', settings })
   }
 
-  /** Starting the run here also means the next message doesn't wait for the agent to start. */
+  /**
+   * Starting the run here also means the next message doesn't wait for the
+   * agent to start. A run that failed waits for the next message to try again.
+   */
   async refreshUsage(pointer: SessionPointer): Promise<void> {
-    await this.ensureRun(this.get(pointer)).refreshUsage()
+    const session = this.get(pointer)
+    if (!session.run && session.view.status === 'errored') return
+    await this.ensureRun(session).refreshUsage()
   }
 
   async stopTask(pointer: SessionPointer, taskId: string): Promise<void> {
@@ -499,6 +520,11 @@ export class SessionManager {
     if (permissionMode && permissionMode !== session.record.settings?.permissionMode) {
       this.rememberSettings(session, { permissionMode })
     }
+    const contextWindow = event.type === 'usageChanged' ? event.usage.contextWindow : undefined
+    if (contextWindow && contextWindow !== session.record.contextWindow) {
+      session.record.contextWindow = contextWindow
+      this.save(session)
+    }
     if (event.type === 'conversationReset') this.moveTo(session, event.agentSessionId)
     if (event.type === 'titleChanged') {
       if (event.title === session.record.title) return
@@ -556,14 +582,16 @@ export class SessionManager {
     const cwd = this.deps.projectPath(projectId)
     const record =
       (await this.deps.store.get(projectId, pointer.agentSessionId)) ?? newRecord(pointer.agent)
-    // Sessions from before efforts were always chosen take the latest choice.
-    const effort = record.settings?.effort ?? this.defaults.get(pointer.agent).effort
-    const settings = { ...record.settings, ...(effort ? { effort } : {}) }
+    // Sessions from before efforts were always chosen take the latest choice;
+    // `null` was chosen, for a model without efforts.
+    const { effort } = this.defaults.get(pointer.agent)
+    const settings = { ...(effort ? { effort } : {}), ...record.settings }
     record.settings = settings
     let view: SessionView
     try {
       const history = await this.adapter(pointer.agent).loadHistory(pointer.agentSessionId, cwd)
-      view = { ...emptySessionView, ...history, settings: { ...history.settings, ...settings } }
+      const usage = history.usage && { ...history.usage, contextWindow: history.usage.contextWindow ?? record.contextWindow }
+      view = { ...emptySessionView, ...history, usage, settings: { ...history.settings, ...settings } }
     } catch (error) {
       view = {
         ...emptySessionView,

@@ -4,7 +4,6 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { type AgentEvent, applyEvent, emptySessionView } from '../../shared/agent'
 import { ClaudeTranscript, planLimits, probe } from './claude'
-import { ContextWindows } from './context-windows'
 
 const cwd = '/work/project'
 
@@ -92,9 +91,9 @@ describe('ClaudeTranscript', () => {
     })
   })
 
-  it('shows a plan as a plan, untouched by its result', () => {
+  it('shows a plan as a plan with its file, untouched by its result', () => {
     const items = fold([
-      assistant('msg_1', [{ type: 'tool_use', id: 'toolu_1', name: 'ExitPlanMode', input: { plan: '# Plan\n\n1. Do it' } }]),
+      assistant('msg_1', [{ type: 'tool_use', id: 'toolu_1', name: 'ExitPlanMode', input: { plan: '# Plan\n\n1. Do it', planFilePath: '/plans/p.md' } }]),
       {
         type: 'user',
         uuid: 'u1',
@@ -102,7 +101,7 @@ describe('ClaudeTranscript', () => {
         parent_tool_use_id: null,
       },
     ])
-    expect(items).toEqual([{ kind: 'plan', id: 'toolu_1', text: '# Plan\n\n1. Do it' }])
+    expect(items).toEqual([{ kind: 'plan', id: 'toolu_1', text: '# Plan\n\n1. Do it', path: '/plans/p.md' }])
   })
 
   it('shows an interruption as a notice rather than a user message', () => {
@@ -209,21 +208,28 @@ describe('ClaudeTranscript', () => {
     })
   })
 
-  it('sizes the context from a window it learnt before, from a result or the breakdown', () => {
-    const windows = ContextWindows.inMemory()
-    const request = {
+  it('carries the window over from the usage it starts with, until the model changes', () => {
+    const request = (model: string) => ({
       type: 'assistant',
       timestamp: '2026-11-13T09:00:00.000Z',
       parent_tool_use_id: null,
-      message: { id: 'msg_1', model: 'claude-opus-5-5', content: [], usage: { input_tokens: 30_000, output_tokens: 0 } },
-    }
-    const first = new ClaudeTranscript('/project', windows)
-    first.map(request as never)
-    const [event] = first.mapContextUsage({ model: 'claude-opus-5-5', rawMaxTokens: 200_000, categories: [] } as never)
-    expect(event).toMatchObject({ type: 'usageChanged', usage: { contextWindow: 200_000 } })
+      message: { id: `msg_${model}`, model, content: [], usage: { input_tokens: 30_000, output_tokens: 0 } },
+    })
+    const transcript = new ClaudeTranscript('/project', { contextTokens: 20_000, contextWindow: 200_000, cacheReadTokens: 0, cacheWriteTokens: 0, at: 0 })
+    expect(transcript.map(request('claude-opus-5-5') as never)).toContainEqual(expect.objectContaining({ usage: expect.objectContaining({ contextWindow: 200_000 }) }))
+    expect(transcript.map(request('claude-sonnet-5-5') as never)).toContainEqual(expect.objectContaining({ usage: expect.objectContaining({ contextWindow: undefined }) }))
+  })
 
-    const later = new ClaudeTranscript('/project', windows)
-    expect(later.map(request as never)).toContainEqual(expect.objectContaining({ usage: expect.objectContaining({ contextWindow: 200_000 }) }))
+  it('sizes the context from the breakdown, whatever suffix names the model', () => {
+    const transcript = new ClaudeTranscript('/project')
+    transcript.map({
+      type: 'assistant',
+      timestamp: '2026-11-13T09:00:00.000Z',
+      parent_tool_use_id: null,
+      message: { id: 'msg_1', model: 'claude-sonnet-4-6', content: [], usage: { input_tokens: 30_000, output_tokens: 0 } },
+    } as never)
+    const [event] = transcript.mapContextUsage({ model: 'claude-sonnet-4-6[1m]', rawMaxTokens: 1_000_000, categories: [] } as never)
+    expect(event).toMatchObject({ type: 'usageChanged', usage: { contextWindow: 1_000_000 } })
   })
 
   it('breaks the context down by what uses it, until compaction makes that stale', () => {
@@ -237,6 +243,8 @@ describe('ClaudeTranscript', () => {
       message: { id: 'msg_1', model: 'claude-opus-5-5', content: [], usage: { input_tokens: 30_000, output_tokens: 0 } },
     } as never))
     apply(transcript.mapContextUsage({
+      model: 'claude-opus-5-5',
+      rawMaxTokens: 200_000,
       categories: [
         { name: 'System prompt', tokens: 5_000, kind: 'used', color: '' },
         { name: 'Messages', tokens: 25_000, kind: 'used', color: '' },

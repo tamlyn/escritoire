@@ -23,8 +23,8 @@ export type Item =
   | { kind: 'userMessage'; id: string; text: string; images?: ImageAttachment[] }
   | { kind: 'agentMessage'; id: string; parentId?: string; text: string }
   | { kind: 'reasoning'; id: string; parentId?: string; text: string }
-  /** A plan the agent proposes before changing anything, in Markdown. */
-  | { kind: 'plan'; id: string; text: string }
+  /** A plan the agent proposes before changing anything, in Markdown, and the file it's kept in if it has one. */
+  | { kind: 'plan'; id: string; text: string; path?: string }
   | {
       kind: 'toolCall'
       id: string

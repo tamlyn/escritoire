@@ -87,7 +87,11 @@ export function CacheIndicator({ pointer, usage, working }: { pointer: SessionPo
         </p>
         {warm ? (
           <div className="flex items-center gap-3 border-t pt-3">
-            <p className="text-muted-foreground flex-1">Send a short message to extend the cache lifetime.</p>
+            <p className="text-muted-foreground flex-1">
+              {estimated
+                ? 'Send a short message to extend the cache lifetime.'
+                : "Ask a side question, which isn't added to the conversation, to extend the cache lifetime."}
+            </p>
             <Button type="button" variant="outline" size="xs" disabled={working || sending} onClick={() => void request(() => api.rewarmSession(pointer))}>Keep warm</Button>
           </div>
         ) : (

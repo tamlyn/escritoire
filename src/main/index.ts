@@ -6,7 +6,6 @@ import { type Api, type AppState, apiMethods } from '../shared/api'
 import type { ApiConnection } from '../shared/api-client'
 import { codexAdapter } from './agents/codex'
 import { createClaudeAdapter } from './agents/claude'
-import { ContextWindows } from './agents/context-windows'
 import { ApiServer, type Connection, tokensMatch } from './api-server'
 import { type Client, Clients, type ScreenHost } from './clients'
 import {
@@ -321,7 +320,6 @@ void app.whenReady().then(async () => {
   const dataDir = app.getPath('userData')
   const projects = await ProjectStore.load(dataDir)
   const sessionStore = new SessionStore(dataDir)
-  const contextWindows = await ContextWindows.load(join(dataDir, 'context-windows.json'))
   const settingDefaults = await SettingDefaults.load(join(dataDir, 'setting-defaults.json'))
   await shellEnv
   // Its dependencies are only used once a client connects, after they exist.
@@ -372,7 +370,7 @@ void app.whenReady().then(async () => {
     registerSupervisorTools(mcp, supervisor, projectId)
   })
   const sessions = new SessionManager({
-    adapters: { claude: createClaudeAdapter(contextWindows), codex: codexAdapter },
+    adapters: { claude: createClaudeAdapter(), codex: codexAdapter },
     store: sessionStore,
     defaults: settingDefaults,
     projectPath: (projectId) => projects.getProject(projectId).path,

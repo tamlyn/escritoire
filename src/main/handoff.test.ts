@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { rewarmPrompt } from './agents/types'
 import { handoffPrompt } from './handoff'
 
 const image = { mediaType: 'image/png', data: 'AA==' }
@@ -20,6 +21,18 @@ describe('handoffPrompt', () => {
     expect(prompt).not.toContain('Which one?')
     expect(prompt).not.toContain('Subagent findings')
     expect(prompt.endsWith('\n\n---\n\n')).toBe(true)
+  })
+
+  it('leaves out turns sent to keep the cache warm', () => {
+    const prompt = handoffPrompt({ agent: 'codex', agentSessionId: 'abc' }, [
+      { kind: 'userMessage', id: 'u1', text: 'Fix the bug' },
+      { kind: 'agentMessage', id: 'a1', text: 'Fixed the bug.' },
+      { kind: 'userMessage', id: 'u2', text: rewarmPrompt },
+      { kind: 'agentMessage', id: 'a2', text: 'Ready' },
+    ])
+
+    expect(prompt).not.toContain('Rewarm')
+    expect(prompt).toContain('<your-final-reply>\nFixed the bug.\n</your-final-reply>')
   })
 
   it('notes images that were left out', () => {

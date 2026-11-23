@@ -1,6 +1,7 @@
 import type {
   AgentEvent,
   AgentKind,
+  ContextUsage,
   PastSession,
   RequestResponse,
   SessionSettings,
@@ -39,7 +40,12 @@ export type StartOptions = {
   settings: SessionSettings
   /** The IDE's MCP server for this project, offered to the agent. */
   ide?: IdeServerConnection
+  /** The usage the session's history left off with, for the run to carry on from. */
+  usage?: ContextUsage
 }
+
+/** Sent as a turn by agents that can't ask a side question; the hand-off leaves it out. */
+export const rewarmPrompt = 'Rewarm the prompt cache. Reply only with "Ready". Do not use tools or take any other action.'
 
 /**
  * A running agent process. A run that fails or exits emits `errored` and then
@@ -59,5 +65,7 @@ export interface AgentRun {
   stopTask(taskId: string): Promise<void>
   /** Asks the agent again how full the context is and how much of the plan is used, where it can say. */
   refreshUsage(): Promise<void>
+  /** Makes a minimal request on the conversation so far, extending its prompt cache's lifetime. */
+  rewarm(): Promise<void>
   close(): void
 }

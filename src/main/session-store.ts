@@ -12,6 +12,11 @@ export type SessionRecord = {
   lastTurnEndedAt: number
   /** The user's choices, for the next run. Missing from records saved before they existed. */
   settings?: SessionSettings
+  /**
+   * The context window size the agent last reported, which Claude only gives
+   * after a turn or when asked, so the session's usage has it as soon as it loads.
+   */
+  contextWindow?: number
 }
 
 type ProjectSessions = Record<string, SessionRecord>
