@@ -68,3 +68,38 @@ test('runs package.json scripts from the gutter as supervised processes', async 
   await close()
   await rm(root, { recursive: true, force: true })
 })
+
+test('switches back to a project whose hidden process tab has scrollback', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'escritoire-e2e-')))
+  await mkdir(join(root, 'alpha'))
+  await mkdir(join(root, 'beta'))
+  await writeFile(join(root, 'alpha', 'package.json'), JSON.stringify({ scripts: { spam: 'seq 1 300; sleep 300' } }, null, 2))
+  await writeFile(join(root, 'alpha', 'package-lock.json'), '{}')
+
+  const { page, close } = await launchApp()
+  async function openProject(name: string) {
+    await page.keyboard.press(`${modifier}+Shift+p`)
+    await page.getByRole('combobox').fill(`${root}/${name}/`)
+    await page.getByRole('option', { name: `Open ${root}/${name}/` }).click()
+    await expect(page.getByRole('banner')).toHaveText(name)
+  }
+
+  await openProject('alpha')
+  await page.getByRole('tree').getByRole('treeitem', { name: 'package.json' }).click()
+  await page.getByTitle('Run spam').click()
+  const terminal = page.locator('.xterm-rows:visible')
+  await expect(terminal).toContainText('300')
+  await page.getByRole('tab', { name: 'package.json' }).click()
+
+  await openProject('beta')
+  await page.keyboard.press(`${modifier}+Shift+p`)
+  await page.getByRole('option', { name: /^alpha/ }).click()
+  await expect(page.getByRole('banner')).toHaveText('alpha')
+
+  // Once xterm looped forever here, writing the snapshot into the hidden tab, and the window froze.
+  await page.getByRole('tab', { name: 'npm run spam' }).click()
+  await expect(terminal).toContainText('300')
+
+  await close()
+  await rm(root, { recursive: true, force: true })
+})

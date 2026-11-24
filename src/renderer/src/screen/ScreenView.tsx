@@ -33,10 +33,28 @@ export function ScreenView({ screenId, connection, autoFocus = false, terminalRe
   const terminalRef = givenRef ?? ownRef
   const connectionRef = useRef(connection)
   connectionRef.current = connection
+  const autoFocusRef = useRef(autoFocus)
+  autoFocusRef.current = autoFocus
 
   useEffect(() => {
-    const connection = connectionRef.current
     const container = containerRef.current!
+    let stop: (() => void) | null = null
+    // xterm opened in a hidden tab measures its cells as zero, and writing scrollback to it then
+    // makes its viewport loop forever, so it waits until the tab is first shown.
+    const firstShown = new IntersectionObserver((entries) => {
+      if (!entries.at(-1)!.isIntersecting || container.clientHeight === 0) return
+      firstShown.disconnect()
+      stop = start(container)
+    })
+    firstShown.observe(container)
+    return () => {
+      firstShown.disconnect()
+      stop?.()
+    }
+  }, [screenId])
+
+  function start(container: HTMLDivElement): () => void {
+    const connection = connectionRef.current
     const fontFamily = getComputedStyle(container).getPropertyValue('--font-mono')
     const terminal = new Terminal({
       fontFamily,
@@ -58,6 +76,7 @@ export function ScreenView({ screenId, connection, autoFocus = false, terminalRe
     }
     fit()
     terminalRef.current = terminal
+    if (autoFocusRef.current) terminal.focus()
 
     // Output can arrive before the snapshot; anything the snapshot includes is dropped.
     let snapshotSeq: number | null = null
@@ -85,7 +104,7 @@ export function ScreenView({ screenId, connection, autoFocus = false, terminalRe
     terminal.onResize(connection.resize)
     // xterm pauses rendering while hidden, and a resize then leaves its scrollbar at the old height,
     // overflowing the tab. Its own observer was created first, so it has resumed by the time this one fires.
-    let shown = false
+    let shown = true
     const visibility = new IntersectionObserver((entries) => {
       shown = entries.at(-1)!.isIntersecting
       if (shown) fit()
@@ -110,7 +129,7 @@ export function ScreenView({ screenId, connection, autoFocus = false, terminalRe
       terminal.dispose()
       terminalRef.current = null
     }
-  }, [screenId])
+  }
 
   useEffect(() => {
     if (autoFocus) terminalRef.current?.focus()
