@@ -25,6 +25,8 @@ Noticed using Escritoire day to day (November 2026).
 - Copy response markdown button - where to put it? maybe overlaid on the response, but shown on hover?
 - Add a 5-hr limit warning light - if the current usage suggests 100% will be reached before the reset time, show the centre of the context donut as amber, if the remaining 5hr usage is less than 10%, show it red
 - Bug: cannot click close on maximised table because the buttons are covered by the header bar?
+- Queuing a message should scroll the main session, else it covers the working indicator
+- Queued messages only come at the end of a turn?
 
 ### Open and dialogs
 - Create new project
@@ -40,6 +42,7 @@ Noticed using Escritoire day to day (November 2026).
 - Edit images when editing a message
 - Tab should indent, not move focus
 - Show line diff when hovering gutter a-la-IntelliJ
+- Image viewer - and any other file formats that come for free
 
 ### Process manager
 - Terminal shortcut to start command in process manager
