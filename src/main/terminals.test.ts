@@ -93,3 +93,25 @@ test('an unreadable saved state costs only the scrollback', async () => {
   await vi.waitFor(() => expect(received()).toMatch(/\r\nworks/))
   await terminals.closeProject('p')
 })
+
+test('closing a project while a shell starts stops that shell', async () => {
+  const attaching = terminals.attach('p', 't', size)
+  const closing = terminals.closeProject('p')
+  await attaching
+  await closing
+
+  terminals.write('t', 'echo after-close\r')
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  expect(received()).not.toContain('after-close')
+})
+
+test('closing a tab while its shell starts stops that shell', async () => {
+  const attaching = terminals.attach('p', 't', size)
+  const closing = terminals.close('p', 't')
+  await attaching
+  await closing
+
+  terminals.write('t', 'echo after-close\r')
+  await new Promise((resolve) => setTimeout(resolve, 300))
+  expect(received()).not.toContain('after-close')
+})

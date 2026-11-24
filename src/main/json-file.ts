@@ -1,6 +1,16 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { dirname, join } from 'node:path'
+
+/**
+ * A project's file in one of the data directory's folders. Ids come from
+ * clients, so one that isn't a plain name is refused rather than let reach
+ * another file, such as `../projects`.
+ */
+export function projectJsonPath(dataDir: string, folder: string, projectId: string): string {
+  if (!/^[\w-]+$/.test(projectId)) throw new Error(`Not a project id: ${projectId}`)
+  return join(dataDir, folder, `${projectId}.json`)
+}
 
 const pendingWrites = new Map<string, Promise<void>>()
 

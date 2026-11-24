@@ -312,8 +312,10 @@ function applicationMenu(): Menu {
   ])
 }
 
-// Read before loading the shell environment removes it.
-const devServerUrl = process.env.ELECTRON_RENDERER_URL
+// Read before loading the shell environment removes it. Only in `pnpm dev`, so a
+// built app launched from a shell that inherited the variable doesn't load, and
+// hand its API token to, another origin.
+const devServerUrl = !app.isPackaged && process.env.NODE_ENV_ELECTRON_VITE === 'development' ? process.env.ELECTRON_RENDERER_URL : undefined
 // Started before `ready` so the shell runs while Electron starts up. Agents and
 // their settings lookups read the environment, so the API waits for it.
 const shellEnv = loadShellEnv()
@@ -427,7 +429,8 @@ void app.whenReady().then(async () => {
   })
 
   const apiWork = new Work()
-  const lifecycle = new ProjectLifecycle(projects, [sessions, terminals, supervisor, databases, connections])
+  // Agents start processes through the IDE server, so they stop first, as when quitting.
+  const lifecycle = new ProjectLifecycle(projects, [[sessions], [terminals, supervisor, databases, connections]])
   const services: Services = { clients, remote, push, projects, sessions, lifecycle, files, fileLists, projectSearch, terminals, supervisor, connections, databases }
   // The API work belongs to the app rather than the connection, so quitting waits for it all.
   function serve(client: Client): Connection {

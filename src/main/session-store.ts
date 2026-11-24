@@ -1,6 +1,5 @@
-import { join } from 'node:path'
 import type { AgentKind, SessionSettings } from '../shared/agent'
-import { deleteJson, readJson, writeJson } from './json-file'
+import { deleteJson, projectJsonPath, readJson, writeJson } from './json-file'
 
 /** What the IDE remembers about a session that the agent can't tell it. */
 export type SessionRecord = {
@@ -63,6 +62,6 @@ export class SessionStore {
   }
 
   private path(projectId: string): string {
-    return join(this.dataDir, 'sessions', `${projectId}.json`)
+    return projectJsonPath(this.dataDir, 'sessions', projectId)
   }
 }

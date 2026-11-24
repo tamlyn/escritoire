@@ -81,6 +81,8 @@ export class SessionManager {
   private readonly forking = new Set<string>()
   /** Projects with sessions loading or loaded, until they close. */
   private readonly projects = new Map<string, ProjectWork>()
+  /** Never used again, so a late call can't start work for one. */
+  private readonly removed = new Set<string>()
   /** By project and agent. */
   private readonly commands = new Map<string, CommandList>()
   private closed = false
@@ -438,7 +440,7 @@ export class SessionManager {
       return
     }
     const unread = this.unread.get(pointer.agentSessionId)
-    if (!unread) return
+    if (!unread || this.removed.has(unread.projectId)) return
     this.unread.delete(pointer.agentSessionId)
     this.broadcastSummaries()
     const { projectId } = unread
@@ -482,6 +484,7 @@ export class SessionManager {
 
   /** Closes the project for good, so unlike closing it, its unread sessions and records go too. */
   async removeProject(projectId: string): Promise<void> {
+    this.removed.add(projectId)
     try {
       await this.closeProject(projectId)
     } finally {
@@ -617,6 +620,7 @@ export class SessionManager {
 
   private project(projectId: string): ProjectWork {
     if (this.closed) throw new Error('Closed')
+    if (this.removed.has(projectId)) throw new Error('The project has been removed.')
     let project = this.projects.get(projectId)
     if (!project) {
       project = { work: new Work(), loading: new Map() }

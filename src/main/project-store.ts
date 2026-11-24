@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { realpath, stat } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import type { AppState, Project } from '../shared/api'
-import { deleteJson, readJson, writeJson } from './json-file'
+import { deleteJson, projectJsonPath, readJson, writeJson } from './json-file'
 import { expandHome } from './paths'
 
 export class ProjectStore {
@@ -89,7 +89,7 @@ export class ProjectStore {
   }
 
   private layoutPath(projectId: string): string {
-    return join(this.dataDir, 'layouts', `${projectId}.json`)
+    return projectJsonPath(this.dataDir, 'layouts', projectId)
   }
 
   private find(id: string): Project {

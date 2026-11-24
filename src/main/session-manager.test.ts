@@ -295,6 +295,21 @@ describe('SessionManager', () => {
     expect(await new SessionStore(dataDir).list('p1')).toEqual({})
   })
 
+  it('starts no work for a project being removed when its tab closes meanwhile', async () => {
+    const { manager, runs } = await setup()
+    const pointer = await manager.createSession('p1', 'claude')
+    await manager.openSession('p1', pointer)
+    manager.sendMessage(pointer, say('Hi'))
+    runs[0]!.emit({ type: 'statusChanged', status: 'idle' })
+
+    const removing = manager.removeProject('p1')
+    manager.closeSession(pointer)
+    await removing
+
+    await expect(async () => manager.createSession('p1', 'claude')).rejects.toThrow('removed')
+    await manager.close()
+  })
+
   it('marks a session seen when its tab closes, loaded or not', async () => {
     const { manager, runs, dataDir } = await setup()
     const first = await manager.createSession('p1', 'claude')

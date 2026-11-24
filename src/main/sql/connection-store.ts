@@ -1,6 +1,5 @@
-import { join } from 'node:path'
 import type { Connection, ProjectConnections } from '../../shared/sql'
-import { deleteJson, readJson, writeJson } from '../json-file'
+import { deleteJson, projectJsonPath, readJson, writeJson } from '../json-file'
 
 /** Each project's saved connections, in the app data directory rather than the project. */
 export class ConnectionStore {
@@ -79,7 +78,7 @@ export class ConnectionStore {
   }
 
   private path(projectId: string): string {
-    return join(this.dataDir, 'connections', `${projectId}.json`)
+    return projectJsonPath(this.dataDir, 'connections', projectId)
   }
 }
 

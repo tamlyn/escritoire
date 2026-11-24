@@ -1,6 +1,6 @@
-# Escritoire: plan
+# Escritoire: todo list
 
-What is still to build. [HISTORY.md](HISTORY.md) holds what this is, the decisions made, the tech stack and the requirements of what's already built; read it first.
+What is still to build. [HISTORY.md](HISTORY.md) holds what's already built.
 
 This document captures direction, not an exhaustive specification. Build iteratively and resolve edge cases as they arise. Discuss substantial architecture choices before committing; routine implementation details can be worked out along the way. When a feature is built, move its requirements to HISTORY.md.
 
@@ -8,15 +8,42 @@ This document captures direction, not an exhaustive specification. Build iterati
 
 Noticed using Escritoire day to day (November 2026).
 
-### Missing features
+### Global
 
 - **Several windows**, each showing one project. Per-client state already makes each window just another client. This amends decision 7 (one project in view per window rather than per app), which HISTORY.md should say when built.
-- Dropping a file from the tree onto the tabs opens it where it was dropped, including in a new split, as if it had been opened and its tab dragged there.
-- A rendered Markdown view, a simple image viewer, and wrapping long lines in the editor.
 - Git graph view can get very wide - need a better layout algorithm.
+- Inbox update:
+  - Group by project, in project open recency order
+  - Show any read but still open sessions with a grey dot
+  - Keep the notification badge as it is now (unread and questions)
+  - Sessions only leave the inbox once their tab is closed
+- Unicode in terminal?
+- When does file tree update?
+
+### Sessions
+- Lissajou - seems to repeat, maybe use irrational ratio, or have the ration vary over time? Does the 3 particle animation ever repeat?
+- Copy response markdown button - where to put it? maybe overlaid on the response, but shown on hover?
+- Add a 5-hr limit warning light - if the current usage suggests 100% will be reached before the reset time, show the centre of the context donut as amber, if the remaining 5hr usage is less than 10%, show it red
+- Bug: cannot click close on maximised table because the buttons are covered by the header bar?
+
+### Open and dialogs
 - Create new project
 - Auto-complete project names from any sibling of an existing project
+- CLI command to open file from terminal
+- Open project dialog remembers focus between opens, which also implies scroll position, which is unexptected if you open the dialog and it's scrolled to the bottom
+
+### Editor
+- Dropping a file from the tree onto the tabs opens it where it was dropped, including in a new split, as if it had been opened and its tab dragged there.
+- A rendered Markdown view, a simple image viewer, and wrapping long lines in the editor.
+- Move line up/down keyboard shortcut
 - Don't ask for confirmation to open links
+- Edit images when editing a message
+- Tab should indent, not move focus
+- Show line diff when hovering gutter a-la-IntelliJ
+
+### Process manager
+- Terminal shortcut to start command in process manager
+- Stop/Start/Restart buttons on process list
 
 ## Architecture
 
@@ -61,7 +88,6 @@ Rarely needed: the user @-mentions files instead.
 
 ### Other
 
-- **Relate changes to the agent session that made them**, in the git view.
 - **Automatic session reaping.** Only reap finished sessions, never working sessions or sessions waiting for input. Preserve history, read state and unsent drafts. Choose a timeout through use rather than promising token-cost equivalence.
 - **Automatic terminal reaping.** Requires reliable idle detection on both platforms; leave a terminal running when uncertain. A foreground process name alone is insufficient.
 - **Docker Compose services** in the supervisor. Not needed now; don't design them out.
@@ -84,9 +110,3 @@ Rarely needed: the user @-mentions files instead.
 - Multi-user collaboration. Remote access is for the same single user on their own devices.
 - Distribution and packaging for other users.
 - Process start order, readiness checks and auto-restart. All need per-process configuration, which the supervisor deliberately lacks.
-- Git worktree support.
-
-## Working on a slice
-
-- Check details of the agent integrations against current documentation rather than memory; they are evolving quickly.
-- Try each slice on RHEL 8 as well as macOS, using the GitHub-built release. Native modules and the Claude Code binary are where platform problems will show up. Remote access is the exception, being personal-machine only.

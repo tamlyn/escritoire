@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
+import { removeLauncherEnv } from '../src/main/shell-env'
 
 export type RunningApp = { app: ElectronApplication; page: Page; close: () => Promise<void> }
 
@@ -11,9 +12,9 @@ export type RunningApp = { app: ElectronApplication; page: Page; close: () => Pr
  */
 export async function launchApp(userDataDir?: string, env?: Record<string, string>): Promise<RunningApp> {
   const dataDir = userDataDir ?? (await mkdtemp(join(tmpdir(), 'escritoire-e2e-')))
-  // Run from a shell inside `pnpm dev` (an agent in a dev build of Escritoire, say), this would load
-  // the dev server's renderer instead of the build.
-  const { ELECTRON_RENDERER_URL: _, ...inherited } = process.env
+  // Run from a shell inside `pnpm dev`, the app would otherwise act as a dev build.
+  const inherited = { ...process.env }
+  removeLauncherEnv(inherited)
   const app = await electron.launch({
     args: ['-r', join(import.meta.dirname, 'background.cjs'), '.', `--user-data-dir=${dataDir}`],
     // No real `tailscale` command, so tests can't publish anything to the user's tailnet.

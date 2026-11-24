@@ -1,10 +1,9 @@
 import { execFile } from 'node:child_process'
 import { readlink } from 'node:fs/promises'
 import { userInfo } from 'node:os'
-import { join } from 'node:path'
 import { promisify } from 'node:util'
 import type { ScreenOutput, ScreenSize, ScreenSnapshot } from '../shared/screen'
-import { deleteJson, readJson, writeJson } from './json-file'
+import { deleteJson, projectJsonPath, readJson, writeJson } from './json-file'
 import { notice, PtyScreen } from './screen'
 
 /** What's kept of a terminal between a project closing and reopening. */
@@ -24,7 +23,7 @@ type TerminalsOptions = {
 export class Terminals {
   private readonly terminals = new Map<string, ShellTerminal>()
   private readonly saved = new Map<string, Promise<ProjectTerminals>>()
-  private readonly starting = new Map<string, Promise<ShellTerminal>>()
+  private readonly starting = new Map<string, { projectId: string; terminal: Promise<ShellTerminal> }>()
 
   constructor(private readonly options: TerminalsOptions) {}
 
@@ -41,7 +40,7 @@ export class Terminals {
 
   /** Shared by attaches at once, since only the first can take the saved state. */
   private start(projectId: string, terminalId: string, size: ScreenSize): Promise<ShellTerminal> {
-    let starting = this.starting.get(terminalId)
+    let starting = this.starting.get(terminalId)?.terminal
     if (!starting) {
       starting = (async () => {
         const saved = await this.takeSaved(projectId, terminalId)
@@ -52,7 +51,7 @@ export class Terminals {
         this.terminals.set(terminalId, terminal)
         return terminal
       })().finally(() => this.starting.delete(terminalId))
-      this.starting.set(terminalId, starting)
+      this.starting.set(terminalId, { projectId, terminal: starting })
     }
     return starting
   }
@@ -76,6 +75,7 @@ export class Terminals {
 
   /** Stops the shell and forgets the terminal, as when its tab is closed. */
   async close(projectId: string, terminalId: string): Promise<void> {
+    await this.finishStarting((starting) => starting === terminalId)
     this.terminals.get(terminalId)?.screen.dispose()
     this.terminals.delete(terminalId)
     await this.takeSaved(projectId, terminalId)
@@ -83,19 +83,22 @@ export class Terminals {
 
   /** Stops the project's shells, saving each one's scrollback and directory for its tab to restore. */
   async closeProject(projectId: string): Promise<void> {
+    await this.finishStarting((_, starting) => starting === projectId)
     const closing = [...this.terminals].filter(([, terminal]) => terminal.projectId === projectId)
     if (closing.length === 0) return
+    for (const [terminalId] of closing) this.terminals.delete(terminalId)
     const saved = await this.loadSaved(projectId)
-    for (const [terminalId, terminal] of closing) {
-      this.terminals.delete(terminalId)
+    // Together, since finding a shell's directory runs `lsof` on macOS.
+    await Promise.all(closing.map(async ([terminalId, terminal]) => {
       saved[terminalId] = await terminal.save(this.options.projectPath(projectId))
       terminal.screen.dispose()
-    }
+    }))
     await writeJson(this.path(projectId), saved)
   }
 
   /** Stops the project's shells without saving them, and forgets what was saved. */
   async removeProject(projectId: string): Promise<void> {
+    await this.finishStarting((_, starting) => starting === projectId)
     for (const [terminalId, terminal] of this.terminals) {
       if (terminal.projectId !== projectId) continue
       terminal.screen.dispose()
@@ -108,6 +111,15 @@ export class Terminals {
   async closeAll(): Promise<void> {
     const projectIds = new Set([...this.terminals.values()].map((t) => t.projectId))
     await Promise.all([...projectIds].map((projectId) => this.closeProject(projectId)))
+  }
+
+  /**
+   * A shell still starting joins the terminals once it has, and its saved state
+   * is being taken, so stopping or saving waits for it rather than miss it.
+   */
+  private async finishStarting(matches: (terminalId: string, projectId: string) => boolean): Promise<void> {
+    const starting = [...this.starting].filter(([terminalId, { projectId }]) => matches(terminalId, projectId))
+    await Promise.allSettled(starting.map(([, { terminal }]) => terminal))
   }
 
   /** Saved state is used once: a running terminal is saved again when it closes. */
@@ -137,7 +149,7 @@ export class Terminals {
   }
 
   private path(projectId: string): string {
-    return join(this.options.dataDir, 'terminals', `${projectId}.json`)
+    return projectJsonPath(this.options.dataDir, 'terminals', projectId)
   }
 }
 
