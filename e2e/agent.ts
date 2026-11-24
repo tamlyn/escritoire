@@ -1,10 +1,16 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { expect, type Page } from '@playwright/test'
 
 const modifier = process.platform === 'darwin' ? 'Meta' : 'Control'
 
 type TurnStart = { threadId: string; approvalPolicy?: string; effort?: string | null; input: { type: string; text?: string }[] }
+
+/**
+ * A turn `fake-codex.mjs` plays when sent exactly this message: Codex thread items,
+ * whose `id` and completed `status` are filled in, then the token usage, if any.
+ */
+export type ScriptedTurn = { items: Record<string, unknown>[]; usage?: Record<string, number> }
 
 /** The scripted agent in `fake-codex.mjs`, keeping its threads in `dir`. */
 export function fakeCodex(dir: string) {
@@ -22,6 +28,10 @@ export function fakeCodex(dir: string) {
     env: { ESCRITOIRE_CODEX_PATH: join(import.meta.dirname, 'fake-codex.mjs'), FAKE_CODEX_DIR: dir },
     /** Lets the turn started by a `hold` message finish. */
     release: () => writeFileSync(join(dir, 'release'), ''),
+    script: (turns: Record<string, ScriptedTurn>) => {
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'script.json'), JSON.stringify(turns))
+    },
     turnStarts,
     /** Each message the agent has actually been sent, in order. */
     messages: () => turnStarts().map((turn) => turn.input.find((input) => input.type === 'text')?.text),

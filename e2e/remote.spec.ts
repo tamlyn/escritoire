@@ -1,40 +1,10 @@
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
-import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { chromium, devices, expect, type Page, test, webkit } from '@playwright/test'
+import { chromium, devices, expect, test, webkit } from '@playwright/test'
 import { fakeCodex, openProject, send, startCodexSession } from './agent'
 import { launchApp } from './app'
-
-async function freePort(): Promise<number> {
-  const server = createServer()
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
-  const { port } = server.address() as { port: number }
-  await new Promise((resolve) => server.close(resolve))
-  return port
-}
-
-async function openRemoteAccess(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Menu' }).click()
-  await page.getByRole('menuitem', { name: 'Remote access' }).click()
-}
-
-async function turnOnRemoteAccess(page: Page): Promise<number> {
-  const port = await freePort()
-  await openRemoteAccess(page)
-  await page.getByLabel('Port').fill(String(port))
-  await page.getByRole('button', { name: 'Turn on' }).click()
-  return port
-}
-
-/** With the remote access dialog open on the desktop. */
-async function pair(page: Page, remote: Page, port: number): Promise<void> {
-  await page.getByRole('button', { name: 'Pair a device' }).click()
-  const code = await page.getByLabel('Pairing code').textContent()
-  await remote.goto(`http://127.0.0.1:${port}/`)
-  await remote.getByLabel('Pairing code').fill(code!)
-  await remote.getByRole('button', { name: 'Pair' }).click()
-}
+import { openRemoteAccess, pair, turnOnRemoteAccess } from './remote'
 
 for (const [name, browserType] of [['Chromium', chromium], ['WebKit', webkit]] as const) {
   test(`pairs ${name} with a code, serves it the app, and revokes it`, async () => {

@@ -6,7 +6,9 @@
 //   hold        keeps working until the test releases it or the user interrupts
 //   fail        ends the turn with an error
 //   cache-hit / cache-miss  reports prompt cache usage
-// Anything else is answered straight away. Threads are kept in FAKE_CODEX_DIR, as
+// A message with a turn in FAKE_CODEX_DIR/script.json plays that turn's items and
+// token usage instead (see `ScriptedTurn` in agent.ts). Anything else is answered
+// straight away. Threads are kept in FAKE_CODEX_DIR, as
 // Codex keeps its rollouts, and every request is logged there for tests to read.
 import { randomUUID } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -74,7 +76,24 @@ async function untilReleased(turn) {
   if (!turn.finished) rmSync(release)
 }
 
+function playScripted(turn, { items, usage }) {
+  for (const item of items) {
+    if (item.type === 'agentMessage') {
+      reply(turn, item.text)
+      continue
+    }
+    const started = { id: randomUUID(), status: 'completed', ...item }
+    notify('item/started', turn.threadId, { item: { ...started, status: 'inProgress' } })
+    complete(turn, started)
+  }
+  if (usage) notify('thread/tokenUsage/updated', turn.threadId, { tokenUsage: { last: usage, total: usage, modelContextWindow: 272000 } })
+  finish(turn, 'completed')
+}
+
 async function play(turn, text) {
+  const scriptPath = join(dir, 'script.json')
+  const scripted = existsSync(scriptPath) ? JSON.parse(readFileSync(scriptPath, 'utf8'))[text] : undefined
+  if (scripted) return playScripted(turn, scripted)
   const script = text.split(/\s+/)[0]
   if (script === 'cache-hit' || script === 'cache-miss' || script === 'Rewarm') {
     const usage = { totalTokens: 25000, inputTokens: 24000, cachedInputTokens: script === 'cache-miss' ? 0 : 20000, cacheWriteInputTokens: 1000, outputTokens: 1000, reasoningOutputTokens: 0 }
@@ -153,7 +172,7 @@ function handle(method, params) {
         data: [
           {
             model: 'fake-model',
-            displayName: 'Fake model',
+            displayName: process.env.FAKE_CODEX_MODEL_NAME ?? 'Fake model',
             isDefault: true,
             supportedReasoningEfforts: ['low', 'medium', 'high'].map((reasoningEffort) => ({ reasoningEffort, description: '' })),
             defaultReasoningEffort: 'medium',

@@ -9,6 +9,7 @@ Agentic IDE built with Electron. `HISTORY.md` holds the decisions, tech stack an
 - `pnpm release`: create a local `vYYYY.M.D` tag at HEAD using today's local date; does not push.
 - `pnpm test`: Vitest unit tests (`src/**/*.test.ts`)
 - `pnpm test:e2e`: builds, then drives the real app with Playwright (`e2e/`). Use `launchApp()` from `e2e/app.ts`, which isolates the user data directory and Claude Code's configuration, and runs the app hidden so tests don't take focus (`e2e/background.cjs`). Agent turns are driven by a scripted Codex (`e2e/fake-codex.mjs`, used through `e2e/agent.ts`). The remote access tests also drive Chromium and WebKit, so after Playwright updates run `npx playwright install chromium webkit`.
+- `pnpm screenshots`: regenerates the README and social media images in `docs/screenshots/` from scenes in `e2e/screenshots/`, with a demo project and sessions played by a scripted Claude Code (`e2e/fake-claude.mjs`, through `e2e/claude.ts`) and by the fake Codex's scripted turns (`ScriptedTurn` in `e2e/agent.ts`). The fake speaks the Agent SDK's undocumented stream-json and control protocol, so an SDK upgrade may need it updating. Not part of `pnpm test:e2e`. Needs `ffmpeg` for the GIFs. Run a single scene with `-g`, e.g. `pnpm screenshots -g mobile`.
 - `pnpm dist`: packages the app for this machine into `dist/`. The RHEL 8 build comes from GitHub Actions (`.github/workflows/build.yml`), built in an EL8 container; push a `vYYYY.M.D` tag (no leading zeros) to publish a release. CI sets the app version from the tag.
 
 ## Packaging
